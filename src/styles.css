@@ -216,14 +216,12 @@ label {
 
 .contact-list,
 .incoming-list,
-.object-list,
 .feed-list {
   display: grid;
   gap: 10px;
 }
 
-.contact-row,
-.object-list > div {
+.contact-row {
   align-items: center;
   border-top: 1px solid #edf0eb;
   display: flex;
@@ -233,7 +231,6 @@ label {
 }
 
 .contact-row div,
-.object-list > div,
 .incoming-card header div,
 .post-card header div {
   display: grid;
@@ -242,7 +239,6 @@ label {
 }
 
 .contact-row span,
-.object-list span,
 .incoming-card span,
 .post-card span,
 .feed-toolbar p,
@@ -285,6 +281,41 @@ time {
   line-height: 1.5;
   margin: 0;
   white-space: pre-wrap;
+}
+
+.thread {
+  border-top: 1px solid #edf0eb;
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.reply {
+  background: #f6f8f5;
+  border: 1px solid #e1e8df;
+  border-radius: 7px;
+  display: grid;
+  gap: 6px;
+  padding: 9px 10px;
+}
+
+.reply header {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.reply strong {
+  color: #304039;
+  font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.thread-empty {
+  color: #758178;
+  font-size: 12px;
 }
 
 .reply-box {
