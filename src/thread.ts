@@ -1,4 +1,5 @@
 import type { SpokeReply } from "./api";
+import type { Contact } from "./feed";
 
 export type RepliesByPost = Record<string, SpokeReply[]>;
 
@@ -15,4 +16,17 @@ export function addReplyToPost(current: RepliesByPost, reply: SpokeReply): Repli
       reply
     ])
   };
+}
+
+export function displayNameForReply(
+  reply: SpokeReply,
+  contacts: Contact[],
+  localIdentity: string,
+  localDisplayName: string
+) {
+  if (reply.sender === localIdentity) {
+    return localDisplayName || localIdentity;
+  }
+
+  return contacts.find((contact) => contact.identity === reply.sender)?.displayName || reply.sender;
 }
