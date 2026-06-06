@@ -11,6 +11,7 @@ import {
   X
 } from "lucide-react";
 import {
+  SPOKE_CAPABILITIES,
   acceptIngress,
   apiErrorMessage,
   decodeFetchData,
@@ -32,34 +33,35 @@ import {
   publishProfile,
   rejectIngress,
   requestSpokeSession,
-  submitReplyThroughIngress,
+  submitReplyByIdentity,
   type AppSessionStatus,
   type IngressRecord,
   type NodeStatus,
+  type PublishedContent,
   type SpokeFeedIndex,
   type SpokePost,
   type SpokeProfile,
   type SpokeReply
 } from "./api";
+import {
+  addOptimisticLocalPost,
+  displayNameForFeedItem,
+  isFeedItem,
+  latestPublishedByPath,
+  localPostReferences,
+  mergeFeedSnapshot,
+  mergeLocalFeedSnapshot,
+  removeContactFeedItems,
+  withLocalContentIds,
+  type Contact,
+  type FeedItem
+} from "./feed";
 import { addReplyToPost, type RepliesByPost } from "./thread";
 type StoredSession = {
   requestId: string;
   token?: string | null;
   identity?: string | null;
   status: AppSessionStatus;
-};
-
-type Contact = {
-  identity: string;
-  displayName: string;
-  receiverUrl: string;
-};
-
-type FeedItem = {
-  source: "local" | "contact";
-  contact?: Contact;
-  post: SpokePost;
-  address: string;
 };
 
 type ReviewState = {
@@ -73,7 +75,7 @@ type ReviewState = {
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
 const PROFILE_KEY = "spoke.profile";
-const FEED_REFRESH_MS = 5000;
+const FEED_REFRESH_MS = 2000;
 const INCOMING_REFRESH_MS = 2000;
 
 function loadJson<T>(key: string, fallback: T): T {
@@ -89,12 +91,16 @@ function saveJson<T>(key: string, value: T) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-function sortFeed(items: FeedItem[]) {
-  return [...items].sort((a, b) => b.post.createdAt.localeCompare(a.post.createdAt));
-}
-
 function displayIdentity(identity?: string | null) {
   return identity || "No identity";
+}
+
+function hasRequiredCapabilities(granted: string[]) {
+  return SPOKE_CAPABILITIES.every((capability) => granted.includes(capability));
+}
+
+function isAlreadyHandledIngressError(err: unknown) {
+  return err instanceof Error && err.message.includes("ingress envelope is not pending");
 }
 
 function App() {
@@ -111,8 +117,7 @@ function App() {
   );
   const [contactDraft, setContactDraft] = useState<Contact>({
     identity: "",
-    displayName: "",
-    receiverUrl: "http://127.0.0.1:9862"
+    displayName: ""
   });
   const [postDraft, setPostDraft] = useState({ title: "", body: "" });
   const [feedIndex, setFeedIndex] = useState<SpokeFeedIndex | null>(null);
@@ -124,12 +129,15 @@ function App() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [sessionValidated, setSessionValidated] = useState(false);
+  const [feedRefreshing, setFeedRefreshing] = useState(false);
   const feedRefreshInFlight = useRef(false);
   const incomingRefreshInFlight = useRef(false);
+  const feedRefreshGeneration = useRef(0);
 
   const sessionToken = session.token || "";
   const localIdentity = session.identity || status?.identity_address || "";
-  const canUseApp = Boolean(sessionToken && session.status === "active");
+  const canUseApp = Boolean(sessionToken && session.status === "active" && sessionValidated);
 
   const localPosts = useMemo(
     () => feed.filter((item) => item.source === "local").length,
@@ -155,6 +163,28 @@ function App() {
   }, [session]);
 
   useEffect(() => {
+    if (!sessionToken || session.status !== "active") {
+      setSessionValidated(false);
+      return;
+    }
+
+    setSessionValidated(false);
+    getCurrentSession(sessionToken)
+      .then((current) => {
+        if (!hasRequiredCapabilities(current.granted_capabilities)) {
+          setSession({ requestId: "", status: "expired", identity: current.identity });
+          setNotice("Spoke needs updated Jolt access. Request access again.");
+          return;
+        }
+        setSessionValidated(true);
+      })
+      .catch((err) => {
+        setSession({ requestId: "", status: "expired", identity: session.identity });
+        setError(apiErrorMessage(err));
+      });
+  }, [sessionToken, session.status]);
+
+  useEffect(() => {
     if (!session.requestId || session.status === "active") {
       return;
     }
@@ -169,6 +199,7 @@ function App() {
             status: next.status
           });
           if (next.status === "active") {
+            setSessionValidated(false);
             setNotice("Spoke session approved.");
           }
         })
@@ -206,13 +237,20 @@ function App() {
     }
 
     await withBusy("session", async () => {
+      setSessionValidated(false);
       const current = await getCurrentSession(sessionToken);
+      if (!hasRequiredCapabilities(current.granted_capabilities)) {
+        setSession({ requestId: "", status: "expired", identity: current.identity });
+        setNotice("Spoke needs updated Jolt access. Request access again.");
+        return;
+      }
       setSession({
         requestId: current.request_id,
         token: sessionToken,
         identity: current.identity,
         status: current.status
       });
+      setSessionValidated(current.status === "active");
     });
   }
 
@@ -230,11 +268,22 @@ function App() {
     });
   }
 
-  async function loadLocalFeed() {
+  async function fetchPublishedJson<T>(contentId: string) {
+    const result = await fetchTarget(sessionToken, contentId);
+    return JSON.parse(decodeFetchData(result)) as T;
+  }
+
+  async function loadLocalFeed(published?: PublishedContent[]) {
     let index: SpokeFeedIndex | null = null;
     try {
-      const result = await fetchTarget(sessionToken, `${localIdentity}/spoke/feed`);
-      index = JSON.parse(decodeFetchData(result)) as SpokeFeedIndex;
+      const inventory = published || await listPublished(sessionToken);
+      const feedObject = latestPublishedByPath(inventory, "/spoke/feed");
+      index = feedObject
+        ? withLocalContentIds(
+            await fetchPublishedJson<SpokeFeedIndex>(feedObject.content_id),
+            inventory
+          )
+        : null;
     } catch {
       index = feedIndex;
     }
@@ -264,9 +313,17 @@ function App() {
       const index = await loadLocalFeed();
       const publishedResult = await publishPostWithIndex(sessionToken, post, index);
       setFeedIndex(publishedResult.feedIndex);
+      feedRefreshGeneration.current += 1;
+      setFeed((current) =>
+        addOptimisticLocalPost(
+          current,
+          post,
+          publishedResult.post.address || `${localIdentity}${post.path}`
+        )
+      );
       setPostDraft({ title: "", body: "" });
       setNotice("Post published and local feed index updated.");
-      await refreshFeed();
+      void refreshFeedSilently();
     });
   }
 
@@ -278,18 +335,25 @@ function App() {
     }
     const nextContact: Contact = {
       identity,
-      displayName: contactDraft.displayName.trim() || identity,
-      receiverUrl: contactDraft.receiverUrl.trim() || "http://127.0.0.1:9862"
+      displayName: contactDraft.displayName.trim() || identity
     };
-    setContacts((current) => [
+    const nextContacts = [
       nextContact,
-      ...current.filter((contact) => contact.identity !== identity)
-    ]);
+      ...contacts.filter((contact) => contact.identity !== identity)
+    ];
+    setContacts(nextContacts);
+    setFeed((current) =>
+      current.map((item) =>
+        item.source === "contact" && item.contact?.identity === identity
+          ? { ...item, contact: nextContact }
+          : item
+      )
+    );
     setContactDraft({
       identity: "",
-      displayName: "",
-      receiverUrl: "http://127.0.0.1:9862"
+      displayName: ""
     });
+    void loadFeedSnapshot(nextContacts);
   }
 
   async function fetchIndex(identity: string) {
@@ -315,66 +379,110 @@ function App() {
     return parseJsonBytes<SpokeReply>(result.plaintext);
   }
 
-  async function loadFeedSnapshot() {
-    const nextItems: FeedItem[] = [];
-    const nextPublished = await listPublished(sessionToken);
-    const spokeObjects = nextPublished.filter((item) => item.path?.startsWith("/spoke/"));
+  async function loadFeedSnapshot(activeContacts = contacts) {
+    const generation = ++feedRefreshGeneration.current;
+    setFeedRefreshing(true);
+    const nextPublished = await listPublished(sessionToken).catch(() => []);
+    const localIndex = await loadLocalFeed(nextPublished);
 
-    const localIndex = await loadLocalFeed();
-    for (const item of localIndex?.posts || []) {
-      try {
-        const post = await fetchPost(item.address || item.path, localIdentity);
-        nextItems.push({
-          source: "local",
-          post,
-          address: item.address || `${localIdentity}${item.path}`
-        });
-      } catch {
-        // A stale feed entry should not block the rest of the timeline.
-      }
+    const localItems: Array<FeedItem | null> = await Promise.all(
+      localPostReferences(localIndex, nextPublished).map(async (item) => {
+        try {
+          const post = item.contentId
+            ? await fetchPublishedJson<SpokePost>(item.contentId)
+            : await fetchPost(item.address || item.path, localIdentity);
+          return {
+            source: "local" as const,
+            post,
+            address: item.address || `${localIdentity}${item.path}`
+          };
+        } catch {
+          // A stale feed entry should not block the rest of the timeline.
+          return null;
+        }
+      })
+    );
+    const nextLocalItems = localItems.filter(isFeedItem);
+
+    if (generation === feedRefreshGeneration.current) {
+      setFeed((current) => mergeLocalFeedSnapshot(current, nextLocalItems));
+      setFeedRefreshing(false);
     }
 
-    for (const contact of contacts) {
-      try {
-        const index = await fetchIndex(contact.identity);
-        for (const item of index.posts) {
-          try {
-            const post = await fetchPost(item.address || item.path, contact.identity);
-            nextItems.push({
-              source: "contact",
-              contact,
-              post,
-              address: item.address || `${contact.identity}${item.path}`
-            });
-          } catch {
-            // Keep loading the rest of this contact's posts.
-          }
+    const contactItemGroups: Array<Array<FeedItem | null>> = await Promise.all(
+      activeContacts.map(async (contact) => {
+        try {
+          const index = await fetchIndex(contact.identity);
+          return Promise.all(
+            index.posts.map(async (item) => {
+              try {
+                const post = item.contentId
+                  ? await fetchPublishedJson<SpokePost>(item.contentId)
+                  : await fetchPost(item.address || item.path, contact.identity);
+                return {
+                  source: "contact" as const,
+                  contact,
+                  post,
+                  address: item.address || `${contact.identity}${item.path}`
+                };
+              } catch {
+                // Keep loading the rest of this contact's posts.
+                return null;
+              }
+            })
+          );
+        } catch {
+          // Contacts can be offline or unknown.
+          return [];
         }
-      } catch {
-        // Contacts can be offline or unknown.
-      }
+      })
+    );
+
+    const nextItems: FeedItem[] = [
+      ...nextLocalItems,
+      ...contactItemGroups.flat().filter(isFeedItem)
+    ];
+    const spokeObjects = nextPublished.filter((item) => item.path?.startsWith("/spoke/"));
+
+    if (generation === feedRefreshGeneration.current) {
+      setFeed((current) => mergeFeedSnapshot(current, nextItems));
+      setFeedRefreshing(false);
     }
 
     const nextReplies: RepliesByPost = {};
-    for (const item of spokeObjects.filter((object) => object.path?.startsWith("/spoke/replies/"))) {
-      try {
-        const reply = await fetchReply(item.content_id);
+    const acceptedReplies = await Promise.all(
+      spokeObjects
+        .filter((object) => object.path?.startsWith("/spoke/replies/"))
+        .map(async (item) => {
+          try {
+            return await fetchReply(item.content_id);
+          } catch {
+            // Stale or non-reply objects should not block the conversation view.
+            return null;
+          }
+        })
+    );
+    const outgoingReplies = await Promise.all(
+      spokeObjects
+        .filter((object) => object.path?.startsWith("/spoke/outgoing/"))
+        .map(async (item) => {
+          try {
+            return await decryptReply(item.address || `${localIdentity}${item.path}`);
+          } catch {
+            // Outgoing encrypted objects may be old or not decryptable with this identity.
+            return null;
+          }
+        })
+    );
+    for (const reply of [...acceptedReplies, ...outgoingReplies]) {
+      if (reply) {
         Object.assign(nextReplies, addReplyToPost(nextReplies, reply));
-      } catch {
-        // Stale or non-reply objects should not block the conversation view.
-      }
-    }
-    for (const item of spokeObjects.filter((object) => object.path?.startsWith("/spoke/outgoing/"))) {
-      try {
-        const reply = await decryptReply(item.address || `${localIdentity}${item.path}`);
-        Object.assign(nextReplies, addReplyToPost(nextReplies, reply));
-      } catch {
-        // Outgoing encrypted objects may be old or not decryptable with this identity.
       }
     }
 
-    setFeed(sortFeed(nextItems));
-    setRepliesByPost(nextReplies);
+    if (generation === feedRefreshGeneration.current) {
+      setRepliesByPost(nextReplies);
+    }
   }
 
   async function refreshFeed() {
@@ -395,6 +503,7 @@ function App() {
       // Silent polling should not interrupt the active workflow.
     } finally {
       feedRefreshInFlight.current = false;
+      setFeedRefreshing(false);
     }
   }
 
@@ -404,11 +513,6 @@ function App() {
       setError("Reply body is required.");
       return;
     }
-    if (!item.contact?.receiverUrl) {
-      setError("Replies need a contact receiver URL.");
-      return;
-    }
-
     await withBusy(`reply:${item.address}`, async () => {
       const reply: SpokeReply = {
         schema: "spoke.reply.v1",
@@ -419,12 +523,7 @@ function App() {
         body,
         createdAt: new Date().toISOString()
       };
-      await submitReplyThroughIngress(
-        sessionToken,
-        item.contact!.receiverUrl,
-        item.contact!.identity,
-        reply
-      );
+      await submitReplyByIdentity(sessionToken, item.contact!.identity, reply);
       setRepliesByPost((current) => addReplyToPost(current, reply));
       setReplyDrafts((current) => ({ ...current, [item.address]: "" }));
       setNotice("Encrypted reply submitted to recipient ingress.");
@@ -481,12 +580,28 @@ function App() {
       const opened = review[record.ingress_id]?.opened || parseJsonBytes<SpokeReply>(
         (await openIngress(sessionToken, record.ingress_id)).plaintext
       );
-      await acceptIngress(sessionToken, record.ingress_id);
-      await publishJson(sessionToken, makeReplyPath(opened.id), opened);
+      try {
+        await acceptIngress(sessionToken, record.ingress_id);
+      } catch (err) {
+        if (!isAlreadyHandledIngressError(err)) {
+          throw err;
+        }
+      }
       setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
       setRepliesByPost((current) => addReplyToPost(current, opened));
-      setNotice("Reply accepted.");
+      setNotice("Reply accepted. Publishing local copy...");
+      void publishAcceptedReply(opened);
     });
+  }
+
+  async function publishAcceptedReply(reply: SpokeReply) {
+    try {
+      await publishJson(sessionToken, makeReplyPath(reply.id), reply);
+      setNotice("Reply accepted and published locally.");
+      void refreshFeedSilently();
+    } catch (err) {
+      setError(`Reply accepted, but local publish failed: ${apiErrorMessage(err)}`);
+    }
   }
 
   async function rejectIncoming(record: IngressRecord) {
@@ -611,16 +726,6 @@ function App() {
                   placeholder="Bob"
                 />
               </label>
-              <label>
-                Receiver URL
-                <input
-                  value={contactDraft.receiverUrl}
-                  onChange={(event) =>
-                    setContactDraft((current) => ({ ...current, receiverUrl: event.target.value }))
-                  }
-                  placeholder="http://127.0.0.1:9864"
-                />
-              </label>
               <div className="contact-list">
                 {contacts.map((contact) => (
                   <div className="contact-row" key={contact.identity}>
@@ -631,9 +736,12 @@ function App() {
                     <button
                       type="button"
                       onClick={() =>
-                        setContacts((current) =>
-                          current.filter((item) => item.identity !== contact.identity)
-                        )
+                        {
+                          setContacts((current) =>
+                            current.filter((item) => item.identity !== contact.identity)
+                          );
+                          setFeed((current) => removeContactFeedItems(current, contact.identity));
+                        }
                       }
                       title="Remove contact"
                     >
@@ -673,9 +781,12 @@ function App() {
             <section className="feed-toolbar">
               <div>
                 <h2>Known Feed</h2>
-                <p>{localPosts} local posts, {contacts.length} contacts</p>
+                <p>
+                  {localPosts} local posts, {contacts.length} contacts
+                  {feedRefreshing ? " - updating..." : ""}
+                </p>
               </div>
-              <button type="button" onClick={refreshFeed} disabled={busy === "feed"} title="Refresh feed">
+              <button type="button" onClick={refreshFeed} disabled={busy === "feed" || feedRefreshing} title="Refresh feed">
                 <RefreshCw size={16} />
               </button>
             </section>
@@ -685,7 +796,7 @@ function App() {
                 <article className="post-card" key={`${item.source}:${item.address}`}>
                   <header>
                     <div>
-                      <strong>{item.post.displayName || item.post.author}</strong>
+                      <strong>{displayNameForFeedItem(item)}</strong>
                       <span>{item.post.author}</span>
                     </div>
                     <time>{new Date(item.post.createdAt).toLocaleString()}</time>
@@ -717,7 +828,7 @@ function App() {
                             [item.address]: event.target.value
                           }))
                         }
-                        placeholder={`Reply to ${item.contact?.displayName || item.post.author}`}
+                        placeholder={`Reply to ${displayNameForFeedItem(item)}`}
                       />
                       <button type="button" onClick={() => sendReply(item)} title="Send encrypted reply">
                         <MessageCircle size={16} />
@@ -751,10 +862,20 @@ function App() {
                           <span>{record.schema_hint || "encrypted object"}</span>
                         </div>
                         <div className="decision-buttons">
-                          <button type="button" onClick={() => acceptIncoming(record)} title="Accept">
+                          <button
+                            type="button"
+                            onClick={() => acceptIncoming(record)}
+                            disabled={busy === `accept:${record.ingress_id}`}
+                            title="Accept"
+                          >
                             <Check size={14} />
                           </button>
-                          <button type="button" onClick={() => rejectIncoming(record)} title="Reject">
+                          <button
+                            type="button"
+                            onClick={() => rejectIncoming(record)}
+                            disabled={busy === `reject:${record.ingress_id}`}
+                            title="Reject"
+                          >
                             <X size={14} />
                           </button>
                         </div>

@@ -12,7 +12,7 @@ import {
   publishJson,
   rejectIngress,
   requestSpokeSession,
-  submitReplyThroughIngress,
+  submitReplyByIdentity,
   type SpokePost,
   type SpokeProfile,
   type SpokeReply
@@ -92,6 +92,7 @@ describe("Spoke daemon API client", () => {
       {
         id: "post_1",
         path: "/spoke/posts/post_1",
+        contentId: "cid_post",
         address: "alice.jolt/spoke/posts/post_1",
         title: "Hello",
         createdAt: "2026-06-06T10:01:00.000Z"
@@ -158,7 +159,7 @@ describe("Spoke daemon API client", () => {
     );
   });
 
-  it("sends encrypted replies through recipient ingress without exposing keys to the app", async () => {
+  it("sends encrypted replies by recipient identity without exposing receiver URLs to the app", async () => {
     const reply: SpokeReply = {
       schema: "spoke.reply.v1",
       id: "reply_1",
@@ -175,12 +176,7 @@ describe("Spoke daemon API client", () => {
       .mockResolvedValueOnce(jsonResponse({ data: [1, 2, 3], content_id: "cid_reply", size: 3 }))
       .mockResolvedValueOnce(jsonResponse({ ingress_id: "ing_1", status: "pending" }));
 
-    await submitReplyThroughIngress(
-      "token-1",
-      "http://127.0.0.1:9864/",
-      "bob.jolt",
-      reply
-    );
+    await submitReplyByIdentity("token-1", "bob.jolt", reply);
 
     expect(fetch).toHaveBeenNthCalledWith(
       1,
@@ -206,16 +202,19 @@ describe("Spoke daemon API client", () => {
         body: JSON.stringify({ target: "cid_reply" })
       })
     );
-    const ingressCall = vi.mocked(fetch).mock.calls[2];
-    expect(ingressCall[0]).toBe("http://127.0.0.1:9864/api/v1/ingress");
-    expect(ingressCall[1]).toEqual(
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      "/jolt-api/ingress/send",
       expect.objectContaining({
         method: "POST",
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          Authorization: "Bearer token-1",
+          "Content-Type": "application/json"
+        }
       })
     );
-    expect(JSON.parse(String(ingressCall[1]?.body))).toEqual({
-      receiver_id: "direct-local",
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[2][1]?.body))).toEqual({
+      recipient: "bob.jolt",
       encrypted_object: [1, 2, 3],
       expires_at: Math.floor(new Date("2026-06-13T10:00:00.000Z").getTime() / 1000)
     });
