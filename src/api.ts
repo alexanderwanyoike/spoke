@@ -125,6 +125,7 @@ export type SpokeFeedIndex = {
   posts: Array<{
     id: string;
     path: string;
+    contentId?: string;
     address?: string | null;
     title: string;
     createdAt: string;
@@ -150,6 +151,7 @@ export const SPOKE_CAPABILITIES = [
   "pin:own:/spoke/*",
   "encrypt:/spoke/*",
   "decrypt:/spoke/*",
+  "ingress:send",
   "ingress:read",
   "ingress:decide"
 ] as const;
@@ -297,6 +299,7 @@ export async function publishPostWithIndex(
       {
         id: post.id,
         path: post.path,
+        contentId: publishedPost.content_id,
         address: publishedPost.address,
         title: post.title,
         createdAt: post.createdAt
@@ -372,27 +375,24 @@ export function rejectIngress(sessionToken: string, ingressId: string) {
   );
 }
 
-export async function submitReplyThroughIngress(
+export async function submitReplyByIdentity(
   sessionToken: string,
-  receiverUrl: string,
   receiverIdentity: string,
   reply: SpokeReply
 ) {
   const outgoingPath = `/spoke/outgoing/${reply.id}`;
   const encrypted = await publishEncryptedJson(sessionToken, outgoingPath, reply, [receiverIdentity]);
   const encryptedBytes = await fetchTarget(sessionToken, encrypted.content_id);
-  const endpoint = `${receiverUrl.replace(/\/$/, "")}/api/v1/ingress`;
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      receiver_id: "direct-local",
+
+  return request<IngressRecord>(
+    "/jolt-api",
+    "/ingress/send",
+    jsonInit(sessionToken, {
+      recipient: receiverIdentity,
       encrypted_object: encryptedBytes.data,
       expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
     })
-  });
-
-  return parseResponse<IngressRecord>(response);
+  );
 }
 
 export function decodeFetchData(result: FetchResult) {
