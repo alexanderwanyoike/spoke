@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SpokeReply } from "./api";
-import { addReplyToPost } from "./thread";
+import { addReplyToPost, displayNameForReply } from "./thread";
 
 function reply(overrides: Partial<SpokeReply>): SpokeReply {
   return {
@@ -35,5 +35,27 @@ describe("Spoke thread helpers", () => {
     const result = addReplyToPost(addReplyToPost({}, original), edited);
 
     expect(result["alice.jolt/spoke/posts/post_1"]).toEqual([edited]);
+  });
+
+  it("uses contact names when rendering reply senders", () => {
+    expect(
+      displayNameForReply(
+        reply({ sender: "bob.jolt" }),
+        [{ identity: "bob.jolt", displayName: "Bob" }],
+        "alice.jolt",
+        "Alice"
+      )
+    ).toBe("Bob");
+  });
+
+  it("uses the local profile name for local replies", () => {
+    expect(
+      displayNameForReply(
+        reply({ sender: "alice.jolt" }),
+        [{ identity: "bob.jolt", displayName: "Bob" }],
+        "alice.jolt",
+        "Alice"
+      )
+    ).toBe("Alice");
   });
 });

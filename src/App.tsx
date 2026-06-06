@@ -56,7 +56,8 @@ import {
   type Contact,
   type FeedItem
 } from "./feed";
-import { addReplyToPost, type RepliesByPost } from "./thread";
+import { isKnownContactIngress, visibleManualIngress } from "./ingress";
+import { addReplyToPost, displayNameForReply, type RepliesByPost } from "./thread";
 type StoredSession = {
   requestId: string;
   token?: string | null;
@@ -133,6 +134,7 @@ function App() {
   const [feedRefreshing, setFeedRefreshing] = useState(false);
   const feedRefreshInFlight = useRef(false);
   const incomingRefreshInFlight = useRef(false);
+  const autoAcceptInFlight = useRef(new Set<string>());
   const feedRefreshGeneration = useRef(0);
 
   const sessionToken = session.token || "";
@@ -524,14 +526,52 @@ function App() {
         createdAt: new Date().toISOString()
       };
       await submitReplyByIdentity(sessionToken, item.contact!.identity, reply);
-      setRepliesByPost((current) => addReplyToPost(current, reply));
       setReplyDrafts((current) => ({ ...current, [item.address]: "" }));
       setNotice("Encrypted reply submitted to recipient ingress.");
+      void refreshFeedSilently();
     });
   }
 
   async function loadIncomingSnapshot() {
-    setIncoming(await listPendingIngress(sessionToken));
+    const records = await listPendingIngress(sessionToken);
+    setIncoming(visibleManualIngress(records, contacts));
+    void autoAcceptKnownIncoming(records, contacts);
+  }
+
+  async function autoAcceptKnownIncoming(records: IngressRecord[], activeContacts: Contact[]) {
+    await Promise.all(
+      records
+        .filter((record) => isKnownContactIngress(record, activeContacts))
+        .filter((record) => !autoAcceptInFlight.current.has(record.ingress_id))
+        .map(async (record) => {
+          autoAcceptInFlight.current.add(record.ingress_id);
+          try {
+            const opened = parseJsonBytes<SpokeReply>(
+              (await openIngress(sessionToken, record.ingress_id)).plaintext
+            );
+            try {
+              await acceptIngress(sessionToken, record.ingress_id);
+            } catch (err) {
+              if (!isAlreadyHandledIngressError(err)) {
+                throw err;
+              }
+            }
+            setRepliesByPost((current) => addReplyToPost(current, opened));
+            await publishJson(sessionToken, makeReplyPath(opened.id), opened);
+            setNotice("Reply from known contact accepted.");
+            void refreshFeedSilently();
+          } catch (err) {
+            setError(`Known-contact reply needs review: ${apiErrorMessage(err)}`);
+            setIncoming((current) =>
+              current.some((item) => item.ingress_id === record.ingress_id)
+                ? current
+                : [record, ...current]
+            );
+          } finally {
+            autoAcceptInFlight.current.delete(record.ingress_id);
+          }
+        })
+    );
   }
 
   async function refreshIncoming() {
@@ -588,6 +628,11 @@ function App() {
         }
       }
       setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
+      setReview((current) => {
+        const next = { ...current };
+        delete next[record.ingress_id];
+        return next;
+      });
       setRepliesByPost((current) => addReplyToPost(current, opened));
       setNotice("Reply accepted. Publishing local copy...");
       void publishAcceptedReply(opened);
@@ -630,7 +675,7 @@ function App() {
     refreshIncomingSilently();
     const timer = window.setInterval(refreshIncomingSilently, INCOMING_REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [canUseApp, sessionToken]);
+  }, [canUseApp, sessionToken, contacts]);
 
   return (
     <main className="app-shell">
@@ -807,7 +852,14 @@ function App() {
                     {(repliesByPost[item.address] || []).map((reply) => (
                       <div className="reply" key={reply.id}>
                         <header>
-                          <strong>{reply.sender}</strong>
+                          <strong>
+                            {displayNameForReply(
+                              reply,
+                              contacts,
+                              localIdentity,
+                              profileDraft.displayName.trim()
+                            )}
+                          </strong>
                           <time>{new Date(reply.createdAt).toLocaleString()}</time>
                         </header>
                         <p>{reply.body}</p>
@@ -822,6 +874,7 @@ function App() {
                       <textarea
                         rows={2}
                         value={replyDrafts[item.address] || ""}
+                        disabled={busy === `reply:${item.address}`}
                         onChange={(event) =>
                           setReplyDrafts((current) => ({
                             ...current,
@@ -830,7 +883,12 @@ function App() {
                         }
                         placeholder={`Reply to ${displayNameForFeedItem(item)}`}
                       />
-                      <button type="button" onClick={() => sendReply(item)} title="Send encrypted reply">
+                      <button
+                        type="button"
+                        onClick={() => sendReply(item)}
+                        disabled={busy === `reply:${item.address}`}
+                        title="Send encrypted reply"
+                      >
                         <MessageCircle size={16} />
                       </button>
                     </div>
@@ -858,7 +916,10 @@ function App() {
                     <article className="incoming-card" key={record.ingress_id}>
                       <header>
                         <div>
-                          <strong>{record.sender_identity}</strong>
+                          <strong>
+                            {contacts.find((contact) => contact.identity === record.sender_identity)?.displayName ||
+                              record.sender_identity}
+                          </strong>
                           <span>{record.schema_hint || "encrypted object"}</span>
                         </div>
                         <div className="decision-buttons">
