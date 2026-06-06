@@ -24,9 +24,18 @@ describe("Spoke ingress policy", () => {
     expect(isKnownContactIngress(ingress({}), contacts)).toBe(true);
   });
 
+  it("recognises bare daemon sender IDs against .jolt contact addresses", () => {
+    expect(
+      isKnownContactIngress(
+        ingress({ sender_identity: "bob" }),
+        [{ identity: "bob.jolt", displayName: "Bob" }]
+      )
+    ).toBe(true);
+  });
+
   it("keeps unknown ingress visible for manual review", () => {
     const unknown = ingress({ ingress_id: "ing_unknown", sender_identity: "mallory.jolt" });
-    const known = ingress({ ingress_id: "ing_known", sender_identity: "bob.jolt" });
+    const known = ingress({ ingress_id: "ing_known", sender_identity: "bob" });
 
     expect(visibleManualIngress([unknown, known], contacts)).toEqual([unknown]);
   });
