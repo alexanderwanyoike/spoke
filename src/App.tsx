@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Inbox,
@@ -15,6 +15,7 @@ import {
   apiErrorMessage,
   decodeFetchData,
   decodePlaintext,
+  decryptEncryptedTarget,
   fetchTarget,
   getCurrentSession,
   getSessionRequestStatus,
@@ -35,13 +36,12 @@ import {
   type AppSessionStatus,
   type IngressRecord,
   type NodeStatus,
-  type PublishedContent,
   type SpokeFeedIndex,
   type SpokePost,
   type SpokeProfile,
   type SpokeReply
 } from "./api";
-
+import { addReplyToPost, type RepliesByPost } from "./thread";
 type StoredSession = {
   requestId: string;
   token?: string | null;
@@ -73,6 +73,8 @@ type ReviewState = {
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
 const PROFILE_KEY = "spoke.profile";
+const FEED_REFRESH_MS = 5000;
+const INCOMING_REFRESH_MS = 2000;
 
 function loadJson<T>(key: string, fallback: T): T {
   try {
@@ -115,13 +117,15 @@ function App() {
   const [postDraft, setPostDraft] = useState({ title: "", body: "" });
   const [feedIndex, setFeedIndex] = useState<SpokeFeedIndex | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [published, setPublished] = useState<PublishedContent[]>([]);
+  const [repliesByPost, setRepliesByPost] = useState<RepliesByPost>({});
   const [incoming, setIncoming] = useState<IngressRecord[]>([]);
   const [review, setReview] = useState<ReviewState>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const feedRefreshInFlight = useRef(false);
+  const incomingRefreshInFlight = useRef(false);
 
   const sessionToken = session.token || "";
   const localIdentity = session.identity || status?.identity_address || "";
@@ -301,50 +305,97 @@ function App() {
     return JSON.parse(decodeFetchData(result)) as SpokePost;
   }
 
+  async function fetchReply(contentId: string) {
+    const result = await fetchTarget(sessionToken, contentId);
+    return JSON.parse(decodeFetchData(result)) as SpokeReply;
+  }
+
+  async function decryptReply(address: string) {
+    const result = await decryptEncryptedTarget(sessionToken, address);
+    return parseJsonBytes<SpokeReply>(result.plaintext);
+  }
+
+  async function loadFeedSnapshot() {
+    const nextItems: FeedItem[] = [];
+    const nextPublished = await listPublished(sessionToken);
+    const spokeObjects = nextPublished.filter((item) => item.path?.startsWith("/spoke/"));
+
+    const localIndex = await loadLocalFeed();
+    for (const item of localIndex?.posts || []) {
+      try {
+        const post = await fetchPost(item.address || item.path, localIdentity);
+        nextItems.push({
+          source: "local",
+          post,
+          address: item.address || `${localIdentity}${item.path}`
+        });
+      } catch {
+        // A stale feed entry should not block the rest of the timeline.
+      }
+    }
+
+    for (const contact of contacts) {
+      try {
+        const index = await fetchIndex(contact.identity);
+        for (const item of index.posts) {
+          try {
+            const post = await fetchPost(item.address || item.path, contact.identity);
+            nextItems.push({
+              source: "contact",
+              contact,
+              post,
+              address: item.address || `${contact.identity}${item.path}`
+            });
+          } catch {
+            // Keep loading the rest of this contact's posts.
+          }
+        }
+      } catch {
+        // Contacts can be offline or unknown.
+      }
+    }
+
+    const nextReplies: RepliesByPost = {};
+    for (const item of spokeObjects.filter((object) => object.path?.startsWith("/spoke/replies/"))) {
+      try {
+        const reply = await fetchReply(item.content_id);
+        Object.assign(nextReplies, addReplyToPost(nextReplies, reply));
+      } catch {
+        // Stale or non-reply objects should not block the conversation view.
+      }
+    }
+    for (const item of spokeObjects.filter((object) => object.path?.startsWith("/spoke/outgoing/"))) {
+      try {
+        const reply = await decryptReply(item.address || `${localIdentity}${item.path}`);
+        Object.assign(nextReplies, addReplyToPost(nextReplies, reply));
+      } catch {
+        // Outgoing encrypted objects may be old or not decryptable with this identity.
+      }
+    }
+
+    setFeed(sortFeed(nextItems));
+    setRepliesByPost(nextReplies);
+  }
+
   async function refreshFeed() {
     await withBusy("feed", async () => {
-      const nextItems: FeedItem[] = [];
-      const nextPublished = await listPublished(sessionToken);
-      setPublished(nextPublished.filter((item) => item.path?.startsWith("/spoke/")));
-
-      const localIndex = await loadLocalFeed();
-      for (const item of localIndex?.posts || []) {
-        try {
-          const post = await fetchPost(item.address || item.path, localIdentity);
-          nextItems.push({
-            source: "local",
-            post,
-            address: item.address || `${localIdentity}${item.path}`
-          });
-        } catch {
-          // A stale feed entry should not block the rest of the timeline.
-        }
-      }
-
-      for (const contact of contacts) {
-        try {
-          const index = await fetchIndex(contact.identity);
-          for (const item of index.posts) {
-            try {
-              const post = await fetchPost(item.address || item.path, contact.identity);
-              nextItems.push({
-                source: "contact",
-                contact,
-                post,
-                address: item.address || `${contact.identity}${item.path}`
-              });
-            } catch {
-              // Keep loading the rest of this contact's posts.
-            }
-          }
-        } catch {
-          // Contacts can be offline or unknown.
-        }
-      }
-
-      setFeed(sortFeed(nextItems));
+      await loadFeedSnapshot();
       setNotice("Feed refreshed.");
     });
+  }
+
+  async function refreshFeedSilently() {
+    if (feedRefreshInFlight.current) {
+      return;
+    }
+    feedRefreshInFlight.current = true;
+    try {
+      await loadFeedSnapshot();
+    } catch {
+      // Silent polling should not interrupt the active workflow.
+    } finally {
+      feedRefreshInFlight.current = false;
+    }
   }
 
   async function sendReply(item: FeedItem) {
@@ -374,16 +425,35 @@ function App() {
         item.contact!.identity,
         reply
       );
+      setRepliesByPost((current) => addReplyToPost(current, reply));
       setReplyDrafts((current) => ({ ...current, [item.address]: "" }));
       setNotice("Encrypted reply submitted to recipient ingress.");
     });
   }
 
+  async function loadIncomingSnapshot() {
+    setIncoming(await listPendingIngress(sessionToken));
+  }
+
   async function refreshIncoming() {
     await withBusy("incoming", async () => {
-      setIncoming(await listPendingIngress(sessionToken));
+      await loadIncomingSnapshot();
       setNotice("Incoming requests refreshed.");
     });
+  }
+
+  async function refreshIncomingSilently() {
+    if (incomingRefreshInFlight.current) {
+      return;
+    }
+    incomingRefreshInFlight.current = true;
+    try {
+      await loadIncomingSnapshot();
+    } catch {
+      // Silent polling should not interrupt the active workflow.
+    } finally {
+      incomingRefreshInFlight.current = false;
+    }
   }
 
   async function openIncoming(record: IngressRecord) {
@@ -414,7 +484,8 @@ function App() {
       await acceptIngress(sessionToken, record.ingress_id);
       await publishJson(sessionToken, makeReplyPath(opened.id), opened);
       setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
-      setNotice("Reply accepted and published under /spoke/replies.");
+      setRepliesByPost((current) => addReplyToPost(current, opened));
+      setNotice("Reply accepted.");
     });
   }
 
@@ -425,6 +496,26 @@ function App() {
       setNotice("Incoming object rejected.");
     });
   }
+
+  useEffect(() => {
+    if (!canUseApp) {
+      return;
+    }
+
+    refreshFeedSilently();
+    const timer = window.setInterval(refreshFeedSilently, FEED_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [canUseApp, sessionToken, localIdentity, contacts]);
+
+  useEffect(() => {
+    if (!canUseApp) {
+      return;
+    }
+
+    refreshIncomingSilently();
+    const timer = window.setInterval(refreshIncomingSilently, INCOMING_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [canUseApp, sessionToken]);
 
   return (
     <main className="app-shell">
@@ -601,6 +692,20 @@ function App() {
                   </header>
                   <h3>{item.post.title}</h3>
                   <p>{item.post.body}</p>
+                  <div className="thread">
+                    {(repliesByPost[item.address] || []).map((reply) => (
+                      <div className="reply" key={reply.id}>
+                        <header>
+                          <strong>{reply.sender}</strong>
+                          <time>{new Date(reply.createdAt).toLocaleString()}</time>
+                        </header>
+                        <p>{reply.body}</p>
+                      </div>
+                    ))}
+                    {(repliesByPost[item.address] || []).length === 0 ? (
+                      <span className="thread-empty">No replies yet.</span>
+                    ) : null}
+                  </div>
                   {item.source === "contact" ? (
                     <div className="reply-box">
                       <textarea
@@ -671,24 +776,6 @@ function App() {
                   );
                 })}
                 {incoming.length === 0 ? <div className="empty-state compact">No pending ingress.</div> : null}
-              </div>
-            </section>
-
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Local Objects</h2>
-                <button type="button" onClick={refreshFeed} title="Refresh objects">
-                  <RefreshCw size={16} />
-                </button>
-              </div>
-              <div className="object-list">
-                {published.map((item) => (
-                  <div key={`${item.path}:${item.content_id}`}>
-                    <strong>{item.path}</strong>
-                    <span>{item.content_id.slice(0, 18)}</span>
-                  </div>
-                ))}
-                {published.length === 0 ? <div className="empty-state compact">No `/spoke/*` objects loaded.</div> : null}
               </div>
             </section>
           </aside>

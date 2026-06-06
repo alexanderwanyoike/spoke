@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   SPOKE_CAPABILITIES,
   acceptIngress,
+  decryptEncryptedTarget,
   fetchTarget,
   listPendingIngress,
   makePostPath,
@@ -129,6 +130,32 @@ describe("Spoke daemon API client", () => {
     );
 
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("decrypts encrypted outgoing objects through the app API", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        content_id: "cid_reply",
+        path: "/spoke/outgoing/reply_1",
+        plaintext: [123, 125],
+        size: 2,
+        content_type: "application/json"
+      })
+    );
+
+    await decryptEncryptedTarget("token-1", "bob.jolt/spoke/outgoing/reply_1");
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/jolt-api/encrypted/decrypt",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          Authorization: "Bearer token-1",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ target: "bob.jolt/spoke/outgoing/reply_1" })
+      })
+    );
   });
 
   it("sends encrypted replies through recipient ingress without exposing keys to the app", async () => {

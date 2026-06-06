@@ -91,6 +91,14 @@ export type DecryptedIngress = {
   content_type: string;
 };
 
+export type DecryptedEncryptedObject = {
+  content_id: string;
+  path: string;
+  plaintext: number[];
+  size: number;
+  content_type: string;
+};
+
 export type SpokeProfile = {
   schema: "spoke.profile.v1";
   identity: string;
@@ -326,6 +334,14 @@ export function resolveAddress(sessionToken: string, address: string) {
 
 export function fetchTarget(sessionToken: string, target: string) {
   return request<FetchResult>("/jolt-api", "/fetch", jsonInit(sessionToken, { target }));
+}
+
+export function decryptEncryptedTarget(sessionToken: string, target: string) {
+  return request<DecryptedEncryptedObject>(
+    "/jolt-api",
+    "/encrypted/decrypt",
+    jsonInit(sessionToken, { target })
+  );
 }
 
 export function listPendingIngress(sessionToken: string) {
