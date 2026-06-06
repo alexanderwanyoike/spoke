@@ -48,6 +48,17 @@ describe("Spoke thread helpers", () => {
     ).toBe("Bob");
   });
 
+  it("uses contact names when reply senders are bare daemon identity IDs", () => {
+    expect(
+      displayNameForReply(
+        reply({ sender: "bob" }),
+        [{ identity: "bob.jolt", displayName: "Bob" }],
+        "alice.jolt",
+        "Alice"
+      )
+    ).toBe("Bob");
+  });
+
   it("uses the local profile name for local replies", () => {
     expect(
       displayNameForReply(

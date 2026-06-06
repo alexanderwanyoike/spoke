@@ -57,6 +57,7 @@ import {
   type FeedItem
 } from "./feed";
 import { isKnownContactIngress, visibleManualIngress } from "./ingress";
+import { sameIdentity } from "./identity";
 import { addReplyToPost, displayNameForReply, type RepliesByPost } from "./thread";
 type StoredSession = {
   requestId: string;
@@ -917,7 +918,7 @@ function App() {
                       <header>
                         <div>
                           <strong>
-                            {contacts.find((contact) => contact.identity === record.sender_identity)?.displayName ||
+                            {contacts.find((contact) => sameIdentity(contact.identity, record.sender_identity))?.displayName ||
                               record.sender_identity}
                           </strong>
                           <span>{record.schema_hint || "encrypted object"}</span>
