@@ -10,8 +10,29 @@ Spoke is a small Jolt social PoC for known identities. It keeps social concepts 
 
 ## Run
 
+Spoke is desktop-first. Run Jolt Console first and let it start the local Jolt
+daemon, then open Spoke and approve Spoke's app session in Console.
+
 ```sh
 npm install
+npm run desktop:dev
+```
+
+Build the Linux AppImage:
+
+```sh
+npm run desktop:build
+```
+
+The AppImage is written to:
+
+```text
+src-tauri/target/release/bundle/appimage/Spoke_0.1.0_amd64.AppImage
+```
+
+For web development:
+
+```sh
 npm run dev
 ```
 
@@ -23,7 +44,7 @@ The Vite dev server listens on `http://127.0.0.1:5178` and proxies the local dae
 2. Open Spoke and request app access.
 3. Approve the Spoke session in Console.
 4. Publish a profile and a post.
-5. Add a known contact by `.jolt` identity and direct receiver URL, for example `http://127.0.0.1:9864`.
+5. Add a known contact by `.jolt` identity.
 6. Refresh the feed and send an encrypted reply to a contact post.
 7. On the recipient Spoke instance, refresh Incoming, open the ingress item, then accept or reject it.
 
