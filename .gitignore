@@ -3,3 +3,4 @@ dist
 .vite
 .env.local
 .DS_Store
+src-tauri/target

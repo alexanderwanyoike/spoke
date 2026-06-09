@@ -1,3 +1,5 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
+
 export type NodeStatus = {
   peer_id: string;
   identity_address: string;
@@ -160,6 +162,12 @@ const SPOKE_APP_ID = "spoke.local";
 const SPOKE_APP_NAME = "Spoke";
 const SPOKE_APP_ORIGIN = "http://127.0.0.1:5178";
 const SPOKE_PATH_PREFIX = "/spoke/";
+const APP_API_BASE = "/app/v1";
+const DAEMON_API_BASE = "/api/v1";
+const WEB_APP_PROXY_BASE = "/jolt-api";
+const WEB_DAEMON_PROXY_BASE = "/jolt-daemon";
+
+type WebProxyBasePath = typeof WEB_APP_PROXY_BASE | typeof WEB_DAEMON_PROXY_BASE;
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") || "";
@@ -180,7 +188,53 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return body as T;
 }
 
-async function request<T>(basePath: "/jolt-api" | "/jolt-daemon", path: string, init?: RequestInit): Promise<T> {
+function isDesktopRuntime() {
+  const internals =
+    typeof window === "undefined"
+      ? null
+      : (window as typeof window & {
+          __TAURI_INTERNALS__?: { invoke?: unknown };
+        }).__TAURI_INTERNALS__;
+  return isTauri() || typeof internals?.invoke === "function";
+}
+
+function authorizationToken(init?: RequestInit) {
+  const headers = init?.headers;
+  if (!headers || headers instanceof Headers || Array.isArray(headers)) {
+    return null;
+  }
+
+  const authorization = headers.Authorization || headers.authorization;
+  return authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : null;
+}
+
+function jsonBody(init?: RequestInit) {
+  return typeof init?.body === "string" ? JSON.parse(init.body) : null;
+}
+
+function desktopBasePath(webBasePath: WebProxyBasePath) {
+  return webBasePath === WEB_DAEMON_PROXY_BASE ? DAEMON_API_BASE : APP_API_BASE;
+}
+
+async function desktopRequest<T>(
+  basePath: WebProxyBasePath,
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  return invoke<T>("daemon_request", {
+    basePath: desktopBasePath(basePath),
+    path,
+    method: init?.method || "GET",
+    body: jsonBody(init),
+    sessionToken: authorizationToken(init)
+  });
+}
+
+async function request<T>(basePath: WebProxyBasePath, path: string, init?: RequestInit): Promise<T> {
+  if (isDesktopRuntime()) {
+    return desktopRequest<T>(basePath, path, init);
+  }
+
   const response = await fetch(`${basePath}${path}`, init);
   return parseResponse<T>(response);
 }
@@ -265,8 +319,18 @@ export function listPublished(sessionToken: string) {
 export function publishJson<T extends object>(sessionToken: string, path: string, body: T) {
   assertSpokePath(path);
 
+  const jsonText = JSON.stringify(body, null, 2);
+
+  if (isDesktopRuntime()) {
+    return invoke<PublishResponse>("daemon_publish_json", {
+      sessionToken,
+      path,
+      jsonText
+    });
+  }
+
   const form = new FormData();
-  const file = new Blob([JSON.stringify(body, null, 2)], { type: "application/json" });
+  const file = new Blob([jsonText], { type: "application/json" });
   form.append("file", file, `${path.split("/").pop() || "spoke"}.json`);
   form.append("path", path);
 

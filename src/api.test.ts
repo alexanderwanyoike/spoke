@@ -1,9 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const invokeMock = vi.hoisted(() => vi.fn());
+const isTauriMock = vi.hoisted(() => vi.fn(() => false));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock,
+  isTauri: isTauriMock
+}));
+
 import {
   SPOKE_CAPABILITIES,
   acceptIngress,
   decryptEncryptedTarget,
   fetchTarget,
+  getStatus,
   listPendingIngress,
   makePostPath,
   openIngress,
@@ -28,11 +38,14 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 
 describe("Spoke daemon API client", () => {
   beforeEach(() => {
+    isTauriMock.mockReturnValue(false);
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ ok: true })));
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    invokeMock.mockReset();
+    isTauriMock.mockReset();
     vi.unstubAllGlobals();
   });
 
@@ -60,6 +73,63 @@ describe("Spoke daemon API client", () => {
         })
       })
     );
+  });
+
+  it("uses Tauri daemon commands for desktop JSON app API requests", async () => {
+    isTauriMock.mockReturnValue(true);
+    invokeMock.mockResolvedValueOnce([]);
+
+    await listPendingIngress("token-1");
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(invokeMock).toHaveBeenCalledWith("daemon_request", {
+      basePath: "/app/v1",
+      path: "/ingress/pending",
+      method: "GET",
+      body: null,
+      sessionToken: "token-1"
+    });
+  });
+
+  it("uses Tauri daemon commands when IPC internals are available", async () => {
+    isTauriMock.mockReturnValue(false);
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: { invoke: vi.fn() } });
+    invokeMock.mockResolvedValueOnce({ identity_address: "alice.jolt" });
+
+    await getStatus();
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(invokeMock).toHaveBeenCalledWith("daemon_request", {
+      basePath: "/api/v1",
+      path: "/status",
+      method: "GET",
+      body: null,
+      sessionToken: null
+    });
+  });
+
+  it("uses a Tauri daemon command for desktop JSON publishing", async () => {
+    isTauriMock.mockReturnValue(true);
+    invokeMock.mockResolvedValueOnce({ content_id: "cid_profile", size: 10 });
+
+    await publishJson("token-1", "/spoke/profile", {
+      schema: "spoke.profile.v1",
+      displayName: "Alice"
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(invokeMock).toHaveBeenCalledWith("daemon_publish_json", {
+      sessionToken: "token-1",
+      path: "/spoke/profile",
+      jsonText: JSON.stringify(
+        {
+          schema: "spoke.profile.v1",
+          displayName: "Alice"
+        },
+        null,
+        2
+      )
+    });
   });
 
   it("publishes profile and posts only under /spoke", async () => {
