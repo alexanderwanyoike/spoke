@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
+  Download,
   Inbox,
   KeyRound,
   MessageCircle,
@@ -57,6 +58,11 @@ import {
   type FeedItem
 } from "./feed";
 import { addReplyToPost, type RepliesByPost } from "./thread";
+import {
+  tauriSpokeUpdateClient,
+  type SpokeUpdateCheck,
+  type SpokeUpdateClient
+} from "./update/client";
 type StoredSession = {
   requestId: string;
   token?: string | null;
@@ -129,11 +135,14 @@ function App() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [updateCheck, setUpdateCheck] = useState<SpokeUpdateCheck | null>(null);
+  const [updateAction, setUpdateAction] = useState<"check" | "install" | null>(null);
   const [sessionValidated, setSessionValidated] = useState(false);
   const [feedRefreshing, setFeedRefreshing] = useState(false);
   const feedRefreshInFlight = useRef(false);
   const incomingRefreshInFlight = useRef(false);
   const feedRefreshGeneration = useRef(0);
+  const updateClient: SpokeUpdateClient = tauriSpokeUpdateClient;
 
   const sessionToken = session.token || "";
   const localIdentity = session.identity || status?.identity_address || "";
@@ -219,6 +228,36 @@ function App() {
       setError(apiErrorMessage(err));
     } finally {
       setBusy("");
+    }
+  }
+
+  async function checkSpokeUpdate() {
+    setUpdateAction("check");
+    setError("");
+    try {
+      const nextUpdateCheck = await updateClient.check();
+      setUpdateCheck(nextUpdateCheck);
+      setNotice(
+        nextUpdateCheck.available
+          ? `Update available: ${nextUpdateCheck.version}`
+          : "Spoke is up to date."
+      );
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setUpdateAction(null);
+    }
+  }
+
+  async function installSpokeUpdate() {
+    setUpdateAction("install");
+    setError("");
+    try {
+      await updateClient.installAndRelaunch();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setUpdateAction(null);
     }
   }
 
@@ -642,6 +681,25 @@ function App() {
         <div className="status-strip">
           <span>{displayIdentity(localIdentity)}</span>
           <span>{session.status}</span>
+          {updateCheck?.available ? (
+            <button
+              type="button"
+              onClick={installSpokeUpdate}
+              disabled={updateAction === "install"}
+              title="Install signed Spoke update"
+            >
+              <Download size={16} />
+              Update available
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={checkSpokeUpdate}
+            disabled={updateAction === "check" || updateAction === "install"}
+            title="Check for Spoke updates"
+          >
+            <RefreshCw size={16} />
+          </button>
           <button type="button" onClick={refreshSession} disabled={!sessionToken || busy === "session"} title="Refresh session">
             <RefreshCw size={16} />
           </button>
