@@ -27,5 +27,13 @@
     "active": true,
     "targets": ["appimage"],
     "icon": ["icons/icon.png"]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg3N0RENEU3M0Q2MzFFMjcKUldRbkhtTTk1OVI5aDQ2OFBLZncreUZXb0RtZXJoS0FidlBVK1h3SE9YYjBsTnF2RkZYWHJkWisK",
+      "endpoints": [
+        "https://github.com/alexanderwanyoike/spoke/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

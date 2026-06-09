@@ -13,6 +13,43 @@ Spoke is a small Jolt social PoC for known identities. It keeps social concepts 
 Spoke is desktop-first. Run Jolt Console first and let it start the local Jolt
 daemon, then open Spoke and approve Spoke's app session in Console.
 
+Install or update Spoke from tagged Linux releases:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/spoke/main/scripts/install-spoke.sh | bash
+```
+
+The installer downloads `spoke-x86_64.AppImage` to:
+
+```text
+~/.local/bin/spoke
+```
+
+Check whether a newer release exists:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/spoke/main/scripts/install-spoke.sh | bash -s -- --check
+```
+
+Install a specific version:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/alexanderwanyoike/spoke/main/scripts/install-spoke.sh | SPOKE_VERSION=v0.1.0 bash
+```
+
+Check the installed AppImage:
+
+```sh
+spoke --appimage-help
+```
+
+Packaged Spoke builds also check GitHub Releases for signed in-app updates.
+When a newer signed release is available, Spoke shows an update action in the
+top bar. Installing the update verifies the updater signature, applies the
+AppImage update, and relaunches Spoke.
+
+## Desktop Development
+
 ```sh
 npm install
 npm run desktop:dev
@@ -37,6 +74,21 @@ npm run dev
 ```
 
 The Vite dev server listens on `http://127.0.0.1:5178` and proxies the local daemon from `VITE_JOLT_DAEMON_URL` or `http://127.0.0.1:9862`.
+
+## Release Packaging
+
+CI builds Linux AppImage artifacts for pull requests and publishes release
+assets for tags:
+
+```text
+spoke-x86_64.AppImage
+spoke-x86_64.AppImage.sha256
+spoke-x86_64.AppImage.sig
+latest.json
+```
+
+Packaged Spoke updates are signed and verified before installation. Spoke uses
+its own updater key, separate from Jolt Console and Pastey.
 
 ## Local demo shape
 
