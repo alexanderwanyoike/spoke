@@ -280,16 +280,140 @@ No new capabilities needed. The existing Spoke capabilities already cover:
 - Direct messaging or friend requests (separate card).
 - Changing the Jolt daemon app API boundary.
 
-## Open Questions
+## Design Decisions
 
-- Should the ingress notification be the full reply object or a lightweight
-  envelope? Full reply means the post author can republish it if the replier
-  goes offline. Lightweight means less ingress bandwidth but less redundancy.
-- Should the thread manifest include reply counts or just participant lists?
-  Counts are convenient but can go stale. Starting with participants only.
-- Should the post author automatically add all known contacts to the manifest
-  at publish time, or only add participants when they actually reply?
-  Starting with add-on-reply to keep manifests minimal.
+These must be resolved before the AFK implementation phase.
+
+### D1: How do readers discover thread manifests?
+
+Two options:
+
+- **By convention:** clients always try to fetch
+  `/spoke/posts/{postId}/thread` for any post they render. No protocol
+  support needed, but clients must know the convention and handle 404
+  gracefully (no thread manifest = no replies yet).
+- **Post field reference:** the post body includes a `threadManifestPath`
+  or `threadManifestCid` field pointing to the manifest. Explicit but
+  couples the post schema to the threading model and requires a post
+  republish when the manifest is first created.
+
+Convention is simpler and avoids republishing the post. The risk is that
+clients that do not know the convention cannot discover threads. For Spoke
+this is acceptable because Spoke is the only client of these schemas. For
+third-party clients it would need documentation.
+
+### D2: What happens when the post author is offline?
+
+The manifest is the single gathering point for thread participants. If
+Alice (post author) goes offline:
+
+- Bob can still publish his reply under his own identity, but Alice cannot
+  update the manifest.
+- Carol, reading the thread, fetches the stale manifest and does not see
+  Bob as a participant, so she never fetches Bob's reply.
+- When Alice comes back online, she processes pending ingress, adds Bob to
+  the manifest, and the thread becomes visible to everyone on next refresh.
+
+This means conversations stall when the post author is unreachable. Options:
+
+- **Accept it for v1.** The post author is the thread anchor. If they are
+  offline, the thread is stale. Relay-pinned manifests and future
+  store-and-forward designs address this.
+- **Per-participant reply index.** Each participant publishes a local
+  `/spoke/my-replies` or `/spoke/replies-by-post/{postId}` index under
+  their own identity. Readers check the manifest first, then opportunistically
+  check known contacts' reply indexes for posts they might have replied to.
+  More resilient but more network calls and more client complexity.
+- **Hybrid:** manifest for fast path, contact reply index as fallback when
+  the manifest is stale or the author is unreachable.
+
+For v1, accepting the staleness is pragmatic. The per-participant index is
+a good follow-up if the offline-author problem hurts the demo.
+
+### D3: Binary publish for image attachments
+
+Current Spoke publishing goes through `publishJson` which sends JSON to
+`/app/v1/publish` as multipart form data. Image attachments are binary blobs
+that need to be published as separate content-addressed objects before the
+post can reference their CIDs.
+
+The daemon's `/app/v1/publish` endpoint already accepts arbitrary file
+uploads via multipart form data. The plan is:
+
+1. Client reads the image file as a `Blob` / `ArrayBuffer`.
+2. Client calls the existing `/app/v1/publish` endpoint with the binary
+   payload and a path like `/spoke/media/{mediaId}`.
+3. Daemon returns the `content_id` (CID) for the uploaded binary.
+4. Client constructs the post body with an attachment referencing that CID.
+5. Client publishes the post JSON as normal.
+
+No new daemon API is needed. The question is whether the media path
+convention (`/spoke/media/{id}`) is the right namespace, or whether
+attachments should live under the post path
+(`/spoke/posts/{postId}/media/{mediaId}`). Keeping them flat under
+`/spoke/media/` is simpler and avoids path depth. Nesting under the post
+makes cleanup and inventory easier but means the path encodes a
+relationship the daemon does not enforce.
+
+### D4: Ingress notification shape
+
+When Bob replies to Alice's post, he sends a notification to Alice via
+ingress so Alice can update the manifest. Two shapes:
+
+- **Full reply object:** the ingress payload is the complete `spoke.reply.v2`
+  JSON that Bob already published under his own identity. Alice receives it,
+  knows who replied and what they said, and can update the manifest
+  immediately without fetching from Bob. Downside: larger ingress payload,
+  and Alice now has a plaintext copy of Bob's reply in her ingress store.
+- **Lightweight envelope:** the ingress payload is a minimal notification
+  like `{ "schema": "spoke.thread-notify.v1", "postId": "...",
+  "replyPath": "/spoke/replies/{postId}/{replyId}",
+  "replyIdentity": "bob.jolt" }`. Alice receives it, fetches the actual
+  reply from Bob's identity, then updates the manifest. Downside: requires
+  Bob to be reachable for Alice to see the reply content, but the manifest
+  can still be updated from the notification alone.
+
+Full reply object is recommended for v1 because:
+
+- replies are small (text), so payload size is not a concern;
+- Alice can display Bob's reply even if Bob goes offline immediately after;
+- Alice has everything she needs to update the manifest in one step.
+
+If ingress payloads become a concern later, a lightweight envelope can be
+added as an optimization.
+
+### D5: Thread manifest content - participants only vs participants plus metadata
+
+The manifest could include:
+
+- **Participants only** (proposed): just the list of identities who have
+  replied. Minimal, always accurate, easy to merge.
+- **Participants plus reply counts**: convenient for UI ("3 replies") but
+  can go stale if participants publish replies without updating the
+  manifest. Requires the manifest to be a more active document.
+- **Participants plus last-reply timestamps**: useful for sorting threads
+  by activity, same staleness risk as reply counts.
+
+Participants only is recommended for v1. Reply counts and activity
+timestamps can be computed client-side from the assembled tree.
+
+### D6: Auto-add contacts to manifest at publish time vs add-on-reply
+
+When Alice publishes a post:
+
+- **Add known contacts immediately:** all of Alice's contacts appear in the
+  initial manifest. Bob and Carol can start replying right away without
+  waiting for Alice to process ingress. Downside: manifests include people
+  who may never reply, and the manifest grows with the contact list.
+- **Add on reply only** (proposed): the manifest starts with just Alice.
+  Participants are added when they send their first reply via ingress.
+  Minimal manifests, but new participants cannot see other replies until
+  Alice processes their ingress and updates the manifest.
+
+Add-on-reply is recommended for v1 because it keeps manifests minimal and
+avoids exposing the full contact list in every thread. The latency cost
+(one round-trip before a new participant sees the full thread) is acceptable
+for an eventually-consistent system.
 
 ## Notes
 
@@ -299,8 +423,7 @@ No new capabilities needed. The existing Spoke capabilities already cover:
   content is pinned/cached). If a participant is unreachable, their replies
   are missing from the tree but other replies still render.
 - The manifest is a single point of freshness: if the post author is offline,
-  new participants cannot be added. This is acceptable for v1 and can be
-  improved later with relay-pinned manifests.
+  new participants cannot be added. D2 discusses mitigations.
 
 ## Verification
 
