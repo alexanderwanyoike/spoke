@@ -9,6 +9,8 @@ on:
       - "src/**"
       - "src-tauri/**"
       - "scripts/package-spoke.sh"
+      - "scripts/normalize-spoke-artifacts.sh"
+      - "scripts/assemble-spoke-release.sh"
       - "scripts/install-spoke.sh"
       - "scripts/verify-distribution.mjs"
       - "scripts/write-spoke-update-manifest.mjs"
@@ -26,9 +28,32 @@ permissions:
   contents: write
 
 jobs:
-  appimage:
-    name: Linux AppImage
-    runs-on: ubuntu-22.04
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux AppImage
+            runner: ubuntu-22.04
+            bundle: appimage
+            artifact_name: spoke-linux-x86_64
+            console_asset: spoke-x86_64.AppImage
+            updater_asset: spoke-x86_64.AppImage
+          - name: macOS DMG
+            runner: macos-latest
+            bundle: dmg
+            artifact_name: spoke-macos-aarch64
+            console_asset: spoke-aarch64.dmg
+            updater_asset: spoke-aarch64.app.tar.gz
+          - name: Windows NSIS
+            runner: windows-latest
+            bundle: nsis
+            artifact_name: spoke-windows-x86_64
+            console_asset: spoke-x86_64-setup.exe
+            updater_asset: spoke-x86_64-setup.exe
 
     steps:
       - name: Checkout
@@ -53,6 +78,7 @@ jobs:
         run: node scripts/verify-distribution.mjs
 
       - name: Install Linux desktop packaging dependencies
+        if: matrix.bundle == 'appimage'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -62,38 +88,64 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: Build AppImage
+      - name: Build native package
+        shell: bash
         env:
+          SPOKE_BUNDLE_KIND: ${{ matrix.bundle }}
           SPOKE_CREATE_UPDATER_ARTIFACTS: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '0' }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: scripts/package-spoke.sh
+        run: scripts/package-spoke.sh --bundle "${{ matrix.bundle }}"
 
       - name: Normalize artifact names
+        shell: bash
+        env:
+          SPOKE_REQUIRE_UPDATER_ARTIFACTS: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '0' }}
         run: |
-          mkdir -p dist/spoke-linux
-          cp src-tauri/target/release/bundle/appimage/*.AppImage dist/spoke-linux/spoke-x86_64.AppImage
-          (cd dist/spoke-linux && sha256sum spoke-x86_64.AppImage > spoke-x86_64.AppImage.sha256)
-          if compgen -G "src-tauri/target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
-            cp src-tauri/target/release/bundle/appimage/*.AppImage.sig dist/spoke-linux/spoke-x86_64.AppImage.sig
-          fi
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            test -f dist/spoke-linux/spoke-x86_64.AppImage.sig
-            node scripts/write-spoke-update-manifest.mjs \
-              "${GITHUB_REF_NAME}" \
-              dist/spoke-linux/spoke-x86_64.AppImage.sig \
-              dist/spoke-linux/latest.json
-          fi
+          scripts/normalize-spoke-artifacts.sh \
+            --bundle "${{ matrix.bundle }}" \
+            --dist-dir "dist/${{ matrix.artifact_name }}" \
+            --console-asset "${{ matrix.console_asset }}" \
+            --updater-asset "${{ matrix.updater_asset }}"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: spoke-linux-x86_64
-          path: dist/spoke-linux/*
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release assets
+    runs-on: ubuntu-22.04
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Assemble release assets
+        run: scripts/assemble-spoke-release.sh --tag "$GITHUB_REF_NAME"
+
+      - name: Upload combined release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spoke-release-assets
+          path: release/*
           if-no-files-found: error
 
       - name: Publish release assets for tags
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/spoke-linux/*
+          files: release/*

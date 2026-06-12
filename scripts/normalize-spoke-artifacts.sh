@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Normalize Spoke package artifacts to stable release names.
+
+Usage:
+  scripts/normalize-spoke-artifacts.sh \
+    --bundle KIND \
+    --dist-dir DIR \
+    --console-asset NAME \
+    --updater-asset NAME
+
+Bundle kinds:
+  appimage  Linux AppImage bundle
+  dmg       macOS DMG bundle plus .app.tar.gz updater payload
+  nsis      Windows NSIS setup bundle
+
+Environment:
+  SPOKE_REQUIRE_UPDATER_ARTIFACTS  Set to 1 to fail if updater artifacts are missing.
+USAGE
+}
+
+BUNDLE_KIND=""
+DIST_DIR=""
+CONSOLE_ASSET=""
+UPDATER_ASSET=""
+REQUIRE_UPDATER_ARTIFACTS="${SPOKE_REQUIRE_UPDATER_ARTIFACTS:-0}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --bundle)
+      BUNDLE_KIND="${2:-}"
+      shift 2
+      ;;
+    --dist-dir)
+      DIST_DIR="${2:-}"
+      shift 2
+      ;;
+    --console-asset)
+      CONSOLE_ASSET="${2:-}"
+      shift 2
+      ;;
+    --updater-asset)
+      UPDATER_ASSET="${2:-}"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+for required in BUNDLE_KIND DIST_DIR CONSOLE_ASSET UPDATER_ASSET; do
+  if [[ -z "${!required}" ]]; then
+    echo "Missing required option: $required" >&2
+    usage >&2
+    exit 2
+  fi
+done
+
+hash_file() {
+  local file="$1"
+  local dir
+  local base
+  dir="$(dirname "$file")"
+  base="$(basename "$file")"
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$dir" && sha256sum "$base" > "$base.sha256")
+  else
+    (cd "$dir" && shasum -a 256 "$base" > "$base.sha256")
+  fi
+}
+
+mkdir -p "$DIST_DIR"
+
+case "$BUNDLE_KIND" in
+  appimage)
+    cp src-tauri/target/release/bundle/appimage/*.AppImage "$DIST_DIR/$CONSOLE_ASSET"
+    if compgen -G "src-tauri/target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
+      cp src-tauri/target/release/bundle/appimage/*.AppImage.sig "$DIST_DIR/$UPDATER_ASSET.sig"
+    fi
+    ;;
+  dmg)
+    cp src-tauri/target/release/bundle/dmg/*.dmg "$DIST_DIR/$CONSOLE_ASSET"
+    if compgen -G "src-tauri/target/release/bundle/macos/*.app.tar.gz" > /dev/null; then
+      cp src-tauri/target/release/bundle/macos/*.app.tar.gz "$DIST_DIR/$UPDATER_ASSET"
+    fi
+    if compgen -G "src-tauri/target/release/bundle/macos/*.app.tar.gz.sig" > /dev/null; then
+      cp src-tauri/target/release/bundle/macos/*.app.tar.gz.sig "$DIST_DIR/$UPDATER_ASSET.sig"
+    fi
+    ;;
+  nsis)
+    cp src-tauri/target/release/bundle/nsis/*-setup.exe "$DIST_DIR/$CONSOLE_ASSET"
+    if compgen -G "src-tauri/target/release/bundle/nsis/*-setup.exe.sig" > /dev/null; then
+      cp src-tauri/target/release/bundle/nsis/*-setup.exe.sig "$DIST_DIR/$UPDATER_ASSET.sig"
+    fi
+    ;;
+  *)
+    echo "Unsupported bundle kind: $BUNDLE_KIND" >&2
+    exit 2
+    ;;
+esac
+
+if [[ "$REQUIRE_UPDATER_ARTIFACTS" == "1" ]]; then
+  if [[ "$UPDATER_ASSET" != "$CONSOLE_ASSET" && ! -f "$DIST_DIR/$UPDATER_ASSET" ]]; then
+    echo "Missing updater payload: $DIST_DIR/$UPDATER_ASSET" >&2
+    exit 1
+  fi
+  if [[ ! -f "$DIST_DIR/$UPDATER_ASSET.sig" ]]; then
+    echo "Missing updater signature: $DIST_DIR/$UPDATER_ASSET.sig" >&2
+    exit 1
+  fi
+fi
+
+hash_file "$DIST_DIR/$CONSOLE_ASSET"
+if [[ -f "$DIST_DIR/$UPDATER_ASSET" && "$UPDATER_ASSET" != "$CONSOLE_ASSET" ]]; then
+  hash_file "$DIST_DIR/$UPDATER_ASSET"
+fi
