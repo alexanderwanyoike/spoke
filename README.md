@@ -43,10 +43,26 @@ Check the installed AppImage:
 spoke --appimage-help
 ```
 
+macOS and Windows builds are distributed as release assets:
+
+```text
+spoke-aarch64.dmg
+spoke-x86_64-setup.exe
+```
+
+Download the DMG or Windows installer from the latest GitHub Release. The macOS
+DMG currently is not Apple-signed or notarized. If macOS says Spoke is damaged
+and cannot be opened after copying it to Applications, clear the quarantine
+attribute:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Spoke.app"
+```
+
 Packaged Spoke builds also check GitHub Releases for signed in-app updates.
 When a newer signed release is available, Spoke shows an update action in the
 top bar. Installing the update verifies the updater signature, applies the
-AppImage update, and relaunches Spoke.
+platform update payload, and relaunches Spoke.
 
 ## Desktop Development
 
@@ -77,13 +93,21 @@ The Vite dev server listens on `http://127.0.0.1:5178` and proxies the local dae
 
 ## Release Packaging
 
-CI builds Linux AppImage artifacts for pull requests and publishes release
-assets for tags:
+CI builds Linux AppImage, macOS DMG, and Windows NSIS artifacts for pull
+requests and publishes release assets for tags:
 
 ```text
 spoke-x86_64.AppImage
 spoke-x86_64.AppImage.sha256
 spoke-x86_64.AppImage.sig
+spoke-aarch64.dmg
+spoke-aarch64.dmg.sha256
+spoke-aarch64.app.tar.gz
+spoke-aarch64.app.tar.gz.sha256
+spoke-aarch64.app.tar.gz.sig
+spoke-x86_64-setup.exe
+spoke-x86_64-setup.exe.sha256
+spoke-x86_64-setup.exe.sig
 latest.json
 ```
 
