@@ -64,10 +64,12 @@ import {
 import {
   acceptedContactFromRequest,
   applyFollowResponse,
+  hasAcceptedContactForIdentity,
   hasRequestedContactForResponse,
   isSpokeFollowRequest,
   isSpokeFollowResponse,
   requestContactFromDraft,
+  sameIdentity,
   upsertContact,
   type SpokeFollowRequest,
   type SpokeFollowResponse
@@ -204,6 +206,12 @@ function App() {
     [feed]
   );
   const activeContactCount = useMemo(() => activeContacts(contacts).length, [contacts]);
+  const displayNameForIdentity = (identity: string) => {
+    if (sameIdentity(identity, localIdentity)) {
+      return profileDraft.displayName.trim() || localIdentity;
+    }
+    return contacts.find((contact) => sameIdentity(contact.identity, identity))?.displayName || identity;
+  };
 
   useEffect(() => {
     getStatus()
@@ -671,7 +679,11 @@ function App() {
     const visibleRecords: IngressRecord[] = [];
 
     for (const record of records) {
-      if (record.schema_hint && record.schema_hint !== "spoke.follow_response.v1") {
+      if (
+        record.schema_hint &&
+        record.schema_hint !== "spoke.follow_response.v1" &&
+        record.schema_hint !== "spoke.reply.v1"
+      ) {
         visibleRecords.push(record);
         continue;
       }
@@ -683,6 +695,13 @@ function App() {
           await acceptPendingIngress(record.ingress_id);
           nextContacts = applyFollowResponse(nextContacts, payload);
           contactsChanged = true;
+          autoHandledIngressIds.push(record.ingress_id);
+          continue;
+        }
+        if (isSpokeReply(payload) && hasAcceptedContactForIdentity(nextContacts, payload.sender)) {
+          await acceptPendingIngress(record.ingress_id);
+          setRepliesByPost((current) => addReplyToPost(current, payload));
+          await publishAcceptedReply(payload, { silent: true });
           autoHandledIngressIds.push(record.ingress_id);
           continue;
         }
@@ -799,10 +818,12 @@ function App() {
     await submitFollowResponseByIdentity(sessionToken, request.sender, response);
   }
 
-  async function publishAcceptedReply(reply: SpokeReply) {
+  async function publishAcceptedReply(reply: SpokeReply, options: { silent?: boolean } = {}) {
     try {
       await publishJson(sessionToken, makeReplyPath(reply.id), reply);
-      setNotice("Reply accepted and published locally.");
+      if (!options.silent) {
+        setNotice("Reply accepted and published locally.");
+      }
       void refreshFeedSilently();
     } catch (err) {
       setError(`Reply accepted, but local publish failed: ${apiErrorMessage(err)}`);
@@ -1061,7 +1082,7 @@ function App() {
                     {(repliesByPost[item.address] || []).map((reply) => (
                       <div className="reply" key={reply.id}>
                         <header>
-                          <strong>{reply.sender}</strong>
+                          <strong>{displayNameForIdentity(reply.sender)}</strong>
                           <time>{new Date(reply.createdAt).toLocaleString()}</time>
                         </header>
                         <p>{reply.body}</p>
