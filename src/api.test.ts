@@ -22,11 +22,15 @@ import {
   publishJson,
   rejectIngress,
   requestSpokeSession,
+  submitFollowRequestByIdentity,
+  submitFollowResponseByIdentity,
   submitReplyByIdentity,
+  type IngressRecord,
   type SpokePost,
   type SpokeProfile,
   type SpokeReply
 } from "./api";
+import type { SpokeFollowRequest, SpokeFollowResponse } from "./follow";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -288,6 +292,81 @@ describe("Spoke daemon API client", () => {
       encrypted_object: [1, 2, 3],
       expires_at: Math.floor(new Date("2026-06-13T10:00:00.000Z").getTime() / 1000)
     });
+  });
+
+  it("sends encrypted follow requests through recipient ingress", async () => {
+    const request: SpokeFollowRequest = {
+      schema: "spoke.follow_request.v1",
+      id: "follow_req_1",
+      sender: "alice.jolt",
+      recipient: "bob.jolt",
+      displayName: "Alice",
+      message: "Can I follow?",
+      createdAt: "2026-06-15T10:00:00.000Z"
+    };
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-15T10:00:00.000Z"));
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse({ content_id: "cid_follow", size: 400, recipient_count: 1 }))
+      .mockResolvedValueOnce(jsonResponse({ data: [1, 2, 3], content_id: "cid_follow", size: 3 }))
+      .mockResolvedValueOnce(jsonResponse({ ingress_id: "ing_follow", status: "pending" } satisfies Partial<IngressRecord>));
+
+    await submitFollowRequestByIdentity("token-1", "bob.jolt", request);
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "/jolt-api/encrypted/publish",
+      expect.objectContaining({
+        body: JSON.stringify({
+          path: "/spoke/outgoing/follow_req_1",
+          plaintext: Array.from(new TextEncoder().encode(JSON.stringify(request))),
+          content_type: "application/json",
+          recipients: ["bob.jolt"]
+        })
+      })
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      "/jolt-api/ingress/send",
+      expect.objectContaining({
+        body: JSON.stringify({
+          recipient: "bob.jolt",
+          encrypted_object: [1, 2, 3],
+          expires_at: Math.floor(new Date("2026-06-22T10:00:00.000Z").getTime() / 1000)
+        })
+      })
+    );
+  });
+
+  it("sends encrypted follow responses through recipient ingress", async () => {
+    const response: SpokeFollowResponse = {
+      schema: "spoke.follow_response.v1",
+      id: "follow_resp_1",
+      requestId: "follow_req_1",
+      sender: "bob.jolt",
+      recipient: "alice.jolt",
+      decision: "accepted",
+      createdAt: "2026-06-15T10:01:00.000Z"
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse({ content_id: "cid_response", size: 400, recipient_count: 1 }))
+      .mockResolvedValueOnce(jsonResponse({ data: [4, 5, 6], content_id: "cid_response", size: 3 }))
+      .mockResolvedValueOnce(jsonResponse({ ingress_id: "ing_response", status: "pending" } satisfies Partial<IngressRecord>));
+
+    await submitFollowResponseByIdentity("token-1", "alice.jolt", response);
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "/jolt-api/encrypted/publish",
+      expect.objectContaining({
+        body: JSON.stringify({
+          path: "/spoke/outgoing/follow_resp_1",
+          plaintext: Array.from(new TextEncoder().encode(JSON.stringify(response))),
+          content_type: "application/json",
+          recipients: ["alice.jolt"]
+        })
+      })
+    );
   });
 
   it("reviews and decides local ingress with app capabilities", async () => {

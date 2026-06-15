@@ -8,6 +8,7 @@ import {
   Plus,
   RefreshCw,
   Send,
+  UserCheck,
   UserPlus,
   X
 } from "lucide-react";
@@ -34,6 +35,8 @@ import {
   publishProfile,
   rejectIngress,
   requestSpokeSession,
+  submitFollowRequestByIdentity,
+  submitFollowResponseByIdentity,
   submitReplyByIdentity,
   type AppSessionStatus,
   type IngressRecord,
@@ -54,9 +57,20 @@ import {
   mergeLocalFeedSnapshot,
   removeContactFeedItems,
   withLocalContentIds,
+  activeContacts,
   type Contact,
   type FeedItem
 } from "./feed";
+import {
+  acceptedContactFromRequest,
+  applyFollowResponse,
+  isSpokeFollowRequest,
+  isSpokeFollowResponse,
+  requestContactFromDraft,
+  upsertContact,
+  type SpokeFollowRequest,
+  type SpokeFollowResponse
+} from "./follow";
 import { addReplyToPost, type RepliesByPost } from "./thread";
 import {
   tauriSpokeUpdateClient,
@@ -73,10 +87,12 @@ type StoredSession = {
 type ReviewState = {
   [ingressId: string]: {
     loading: boolean;
-    opened?: SpokeReply;
+    opened?: SpokeIncomingPayload;
     error?: string;
   };
 };
+
+type SpokeIncomingPayload = SpokeReply | SpokeFollowRequest | SpokeFollowResponse;
 
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
@@ -109,6 +125,38 @@ function isAlreadyHandledIngressError(err: unknown) {
   return err instanceof Error && err.message.includes("ingress envelope is not pending");
 }
 
+function isSpokeReply(value: unknown): value is SpokeReply {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { schema?: unknown }).schema === "spoke.reply.v1"
+  );
+}
+
+function incomingKind(payload: SpokeIncomingPayload) {
+  if (isSpokeFollowRequest(payload)) return "follow request";
+  if (isSpokeFollowResponse(payload)) return "follow response";
+  return "reply";
+}
+
+function incomingPreview(payload: SpokeIncomingPayload) {
+  if (isSpokeFollowRequest(payload)) {
+    return payload.message || `${payload.sender} wants to follow you.`;
+  }
+  if (isSpokeFollowResponse(payload)) {
+    return `${payload.sender} ${payload.decision} your follow request.`;
+  }
+  return payload.body;
+}
+
+function parseIncomingPayload(bytes: number[]) {
+  const payload = parseJsonBytes<unknown>(bytes);
+  if (isSpokeReply(payload) || isSpokeFollowRequest(payload) || isSpokeFollowResponse(payload)) {
+    return payload;
+  }
+  throw new Error("Unsupported Spoke incoming object.");
+}
+
 function App() {
   const [status, setStatus] = useState<NodeStatus | null>(null);
   const [session, setSession] = useState<StoredSession>(() =>
@@ -125,6 +173,7 @@ function App() {
     identity: "",
     displayName: ""
   });
+  const [followMessageDraft, setFollowMessageDraft] = useState("");
   const [postDraft, setPostDraft] = useState({ title: "", body: "" });
   const [feedIndex, setFeedIndex] = useState<SpokeFeedIndex | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
@@ -152,6 +201,7 @@ function App() {
     () => feed.filter((item) => item.source === "local").length,
     [feed]
   );
+  const activeContactCount = useMemo(() => activeContacts(contacts).length, [contacts]);
 
   useEffect(() => {
     getStatus()
@@ -374,12 +424,10 @@ function App() {
     }
     const nextContact: Contact = {
       identity,
-      displayName: contactDraft.displayName.trim() || identity
+      displayName: contactDraft.displayName.trim() || identity,
+      relationship: "local"
     };
-    const nextContacts = [
-      nextContact,
-      ...contacts.filter((contact) => contact.identity !== identity)
-    ];
+    const nextContacts = upsertContact(contacts, nextContact);
     setContacts(nextContacts);
     setFeed((current) =>
       current.map((item) =>
@@ -393,6 +441,38 @@ function App() {
       displayName: ""
     });
     void loadFeedSnapshot(nextContacts);
+  }
+
+  async function sendFollowRequest() {
+    const identity = contactDraft.identity.trim();
+    if (!identity) {
+      setError("Contact identity is required.");
+      return;
+    }
+
+    await withBusy("follow", async () => {
+      const request: SpokeFollowRequest = {
+        schema: "spoke.follow_request.v1",
+        id: makeId("follow_req"),
+        sender: localIdentity,
+        recipient: identity,
+        displayName: profileDraft.displayName.trim() || localIdentity,
+        message: followMessageDraft.trim(),
+        createdAt: new Date().toISOString()
+      };
+      await submitFollowRequestByIdentity(sessionToken, identity, request);
+      const nextContacts = upsertContact(
+        contacts,
+        requestContactFromDraft(identity, contactDraft.displayName)
+      );
+      setContacts(nextContacts);
+      setContactDraft({
+        identity: "",
+        displayName: ""
+      });
+      setFollowMessageDraft("");
+      setNotice("Follow request sent through encrypted ingress.");
+    });
   }
 
   async function fetchIndex(identity: string) {
@@ -418,7 +498,8 @@ function App() {
     return parseJsonBytes<SpokeReply>(result.plaintext);
   }
 
-  async function loadFeedSnapshot(activeContacts = contacts) {
+  async function loadFeedSnapshot(nextContacts = contacts) {
+    const feedContacts = activeContacts(nextContacts);
     const generation = ++feedRefreshGeneration.current;
     setFeedRefreshing(true);
     const nextPublished = await listPublished(sessionToken).catch(() => []);
@@ -449,7 +530,7 @@ function App() {
     }
 
     const contactItemGroups: Array<Array<FeedItem | null>> = await Promise.all(
-      activeContacts.map(async (contact) => {
+      feedContacts.map(async (contact) => {
         try {
           const index = await fetchIndex(contact.identity);
           return Promise.all(
@@ -601,10 +682,10 @@ function App() {
     }));
     try {
       const opened = await openIngress(sessionToken, record.ingress_id);
-      const reply = parseJsonBytes<SpokeReply>(opened.plaintext);
+      const payload = parseIncomingPayload(opened.plaintext);
       setReview((current) => ({
         ...current,
-        [record.ingress_id]: { loading: false, opened: reply }
+        [record.ingress_id]: { loading: false, opened: payload }
       }));
     } catch (err) {
       setReview((current) => ({
@@ -616,9 +697,9 @@ function App() {
 
   async function acceptIncoming(record: IngressRecord) {
     await withBusy(`accept:${record.ingress_id}`, async () => {
-      const opened = review[record.ingress_id]?.opened || parseJsonBytes<SpokeReply>(
-        (await openIngress(sessionToken, record.ingress_id)).plaintext
-      );
+      const opened =
+        review[record.ingress_id]?.opened ||
+        parseIncomingPayload((await openIngress(sessionToken, record.ingress_id)).plaintext);
       try {
         await acceptIngress(sessionToken, record.ingress_id);
       } catch (err) {
@@ -627,10 +708,45 @@ function App() {
         }
       }
       setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
+      if (isSpokeFollowRequest(opened)) {
+        const nextContacts = upsertContact(contacts, acceptedContactFromRequest(opened));
+        setContacts(nextContacts);
+        await sendFollowResponse(opened, "accepted");
+        setNotice("Follow request accepted.");
+        void loadFeedSnapshot(nextContacts);
+        return;
+      }
+      if (isSpokeFollowResponse(opened)) {
+        const nextContacts = applyFollowResponse(contacts, opened);
+        setContacts(nextContacts);
+        setNotice(
+          opened.decision === "accepted"
+            ? "Follow request accepted by recipient."
+            : "Follow request rejected by recipient."
+        );
+        void loadFeedSnapshot(nextContacts);
+        return;
+      }
       setRepliesByPost((current) => addReplyToPost(current, opened));
       setNotice("Reply accepted. Publishing local copy...");
       void publishAcceptedReply(opened);
     });
+  }
+
+  async function sendFollowResponse(
+    request: SpokeFollowRequest,
+    decision: SpokeFollowResponse["decision"]
+  ) {
+    const response: SpokeFollowResponse = {
+      schema: "spoke.follow_response.v1",
+      id: makeId("follow_resp"),
+      requestId: request.id,
+      sender: localIdentity,
+      recipient: request.sender,
+      decision,
+      createdAt: new Date().toISOString()
+    };
+    await submitFollowResponseByIdentity(sessionToken, request.sender, response);
   }
 
   async function publishAcceptedReply(reply: SpokeReply) {
@@ -645,7 +761,18 @@ function App() {
 
   async function rejectIncoming(record: IngressRecord) {
     await withBusy(`reject:${record.ingress_id}`, async () => {
+      let opened = review[record.ingress_id]?.opened;
+      if (!opened) {
+        try {
+          opened = parseIncomingPayload((await openIngress(sessionToken, record.ingress_id)).plaintext);
+        } catch {
+          opened = undefined;
+        }
+      }
       await rejectIngress(sessionToken, record.ingress_id);
+      if (opened && isSpokeFollowRequest(opened)) {
+        await sendFollowResponse(opened, "rejected");
+      }
       setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
       setNotice("Incoming object rejected.");
     });
@@ -761,7 +888,7 @@ function App() {
               <div className="panel-heading">
                 <h2>Contacts</h2>
                 <button type="button" onClick={addContact} title="Add contact">
-                  <UserPlus size={16} />
+                  <UserCheck size={16} />
                 </button>
               </div>
               <label>
@@ -784,12 +911,31 @@ function App() {
                   placeholder="Bob"
                 />
               </label>
+              <label>
+                Request note
+                <textarea
+                  rows={2}
+                  value={followMessageDraft}
+                  onChange={(event) => setFollowMessageDraft(event.target.value)}
+                  placeholder="Optional intro"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={sendFollowRequest}
+                disabled={busy === "follow"}
+                title="Send follow request"
+              >
+                <UserPlus size={16} />
+                Request follow
+              </button>
               <div className="contact-list">
                 {contacts.map((contact) => (
                   <div className="contact-row" key={contact.identity}>
                     <div>
                       <strong>{contact.displayName}</strong>
                       <span>{contact.identity}</span>
+                      <span className="contact-status">{contact.relationship || "accepted"}</span>
                     </div>
                     <button
                       type="button"
@@ -840,7 +986,7 @@ function App() {
               <div>
                 <h2>Known Feed</h2>
                 <p>
-                  {localPosts} local posts, {contacts.length} contacts
+                  {localPosts} local posts, {activeContactCount} active contacts
                   {feedRefreshing ? " - updating..." : ""}
                 </p>
               </div>
@@ -917,7 +1063,7 @@ function App() {
                       <header>
                         <div>
                           <strong>{record.sender_identity}</strong>
-                          <span>{record.schema_hint || "encrypted object"}</span>
+                          <span>{opened ? incomingKind(opened) : record.schema_hint || "encrypted object"}</span>
                         </div>
                         <div className="decision-buttons">
                           <button
@@ -940,8 +1086,8 @@ function App() {
                       </header>
                       {opened ? (
                         <div className="opened-reply">
-                          <span>{opened.postAddress}</span>
-                          <p>{opened.body}</p>
+                          <span>{incomingKind(opened)}</span>
+                          <p>{incomingPreview(opened)}</p>
                         </div>
                       ) : (
                         <button type="button" onClick={() => openIncoming(record)} title="Open">

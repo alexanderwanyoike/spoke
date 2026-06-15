@@ -3,6 +3,7 @@ import type { PublishedContent, SpokeFeedIndex, SpokePost } from "./api";
 export type Contact = {
   identity: string;
   displayName: string;
+  relationship?: "local" | "requested" | "accepted";
 };
 
 export type FeedItem = {
@@ -32,6 +33,10 @@ export function displayNameForFeedItem(item: FeedItem) {
   }
 
   return item.post.displayName || item.post.author;
+}
+
+export function activeContacts(contacts: Contact[]) {
+  return contacts.filter((contact) => contact.relationship !== "requested");
 }
 
 export function removeContactFeedItems(items: FeedItem[], identity: string) {

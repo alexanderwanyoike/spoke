@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SpokePost } from "./api";
 import {
   addOptimisticLocalPost,
+  activeContacts,
   displayNameForFeedItem,
   latestPublishedByPath,
   localPostReferences,
@@ -64,6 +65,15 @@ describe("Spoke feed helpers", () => {
     ];
 
     expect(removeContactFeedItems(items, "alice.jolt")).toEqual([items[1]]);
+  });
+
+  it("does not load feeds for contacts waiting on follow acceptance", () => {
+    expect(
+      activeContacts([
+        contact({ identity: "alice.jolt", displayName: "Alice", relationship: "accepted" }),
+        contact({ identity: "bob.jolt", displayName: "Bob", relationship: "requested" })
+      ]).map((item) => item.identity)
+    ).toEqual(["alice.jolt"]);
   });
 
   it("adds a newly published local post without waiting for a network refresh", () => {

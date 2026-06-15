@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import type { SpokeFollowRequest, SpokeFollowResponse } from "./follow";
 
 export type NodeStatus = {
   peer_id: string;
@@ -444,8 +445,33 @@ export async function submitReplyByIdentity(
   receiverIdentity: string,
   reply: SpokeReply
 ) {
-  const outgoingPath = `/spoke/outgoing/${reply.id}`;
-  const encrypted = await publishEncryptedJson(sessionToken, outgoingPath, reply, [receiverIdentity]);
+  return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, reply.id, reply);
+}
+
+export function submitFollowRequestByIdentity(
+  sessionToken: string,
+  receiverIdentity: string,
+  request: SpokeFollowRequest
+) {
+  return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, request.id, request);
+}
+
+export function submitFollowResponseByIdentity(
+  sessionToken: string,
+  receiverIdentity: string,
+  response: SpokeFollowResponse
+) {
+  return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, response.id, response);
+}
+
+async function submitSpokeObjectByIdentity(
+  sessionToken: string,
+  receiverIdentity: string,
+  objectId: string,
+  body: object
+) {
+  const outgoingPath = `/spoke/outgoing/${objectId}`;
+  const encrypted = await publishEncryptedJson(sessionToken, outgoingPath, body, [receiverIdentity]);
   const encryptedBytes = await fetchTarget(sessionToken, encrypted.content_id);
 
   return request<IngressRecord>(

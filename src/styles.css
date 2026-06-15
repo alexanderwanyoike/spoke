@@ -248,6 +248,19 @@ time {
   overflow-wrap: anywhere;
 }
 
+.contact-status {
+  align-self: start;
+  background: #edf2eb;
+  border: 1px solid #d7e0d4;
+  border-radius: 999px;
+  color: #425047;
+  display: inline-flex;
+  font-size: 11px;
+  justify-self: start;
+  padding: 2px 7px;
+  text-transform: capitalize;
+}
+
 .composer {
   padding: 14px;
 }
