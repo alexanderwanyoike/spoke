@@ -64,6 +64,7 @@ import {
 import {
   acceptedContactFromRequest,
   applyFollowResponse,
+  hasRequestedContactForResponse,
   isSpokeFollowRequest,
   isSpokeFollowResponse,
   requestContactFromDraft,
@@ -191,6 +192,7 @@ function App() {
   const feedRefreshInFlight = useRef(false);
   const incomingRefreshInFlight = useRef(false);
   const feedRefreshGeneration = useRef(0);
+  const contactsRef = useRef<Contact[]>(contacts);
   const updateClient: SpokeUpdateClient = tauriSpokeUpdateClient;
 
   const sessionToken = session.token || "";
@@ -210,6 +212,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    contactsRef.current = contacts;
     saveJson(CONTACTS_KEY, contacts);
   }, [contacts]);
 
@@ -650,8 +653,61 @@ function App() {
     });
   }
 
+  async function acceptPendingIngress(ingressId: string) {
+    try {
+      await acceptIngress(sessionToken, ingressId);
+    } catch (err) {
+      if (!isAlreadyHandledIngressError(err)) {
+        throw err;
+      }
+    }
+  }
+
   async function loadIncomingSnapshot() {
-    setIncoming(await listPendingIngress(sessionToken));
+    const records = await listPendingIngress(sessionToken);
+    let nextContacts = contactsRef.current;
+    let contactsChanged = false;
+    const autoHandledIngressIds: string[] = [];
+    const visibleRecords: IngressRecord[] = [];
+
+    for (const record of records) {
+      if (record.schema_hint && record.schema_hint !== "spoke.follow_response.v1") {
+        visibleRecords.push(record);
+        continue;
+      }
+
+      try {
+        const opened = await openIngress(sessionToken, record.ingress_id);
+        const payload = parseIncomingPayload(opened.plaintext);
+        if (isSpokeFollowResponse(payload) && hasRequestedContactForResponse(nextContacts, payload)) {
+          await acceptPendingIngress(record.ingress_id);
+          nextContacts = applyFollowResponse(nextContacts, payload);
+          contactsChanged = true;
+          autoHandledIngressIds.push(record.ingress_id);
+          continue;
+        }
+      } catch {
+        // Keep anything we cannot auto-classify in the manual review queue.
+      }
+
+      visibleRecords.push(record);
+    }
+
+    setIncoming(visibleRecords);
+    if (autoHandledIngressIds.length > 0) {
+      setReview((current) => {
+        const next = { ...current };
+        for (const ingressId of autoHandledIngressIds) {
+          delete next[ingressId];
+        }
+        return next;
+      });
+    }
+    if (contactsChanged) {
+      contactsRef.current = nextContacts;
+      setContacts(nextContacts);
+      void loadFeedSnapshot(nextContacts);
+    }
   }
 
   async function refreshIncoming() {
@@ -700,13 +756,7 @@ function App() {
       const opened =
         review[record.ingress_id]?.opened ||
         parseIncomingPayload((await openIngress(sessionToken, record.ingress_id)).plaintext);
-      try {
-        await acceptIngress(sessionToken, record.ingress_id);
-      } catch (err) {
-        if (!isAlreadyHandledIngressError(err)) {
-          throw err;
-        }
-      }
+      await acceptPendingIngress(record.ingress_id);
       setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
       if (isSpokeFollowRequest(opened)) {
         const nextContacts = upsertContact(contacts, acceptedContactFromRequest(opened));

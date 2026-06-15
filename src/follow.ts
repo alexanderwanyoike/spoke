@@ -71,6 +71,16 @@ export function applyFollowResponse(contacts: Contact[], response: SpokeFollowRe
   );
 }
 
+export function hasRequestedContactForResponse(
+  contacts: Contact[],
+  response: SpokeFollowResponse
+) {
+  return contacts.some(
+    (contact) =>
+      contact.relationship === "requested" && sameIdentity(contact.identity, response.sender)
+  );
+}
+
 export function isSpokeFollowRequest(value: unknown): value is SpokeFollowRequest {
   return (
     typeof value === "object" &&

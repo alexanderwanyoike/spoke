@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   acceptedContactFromRequest,
   applyFollowResponse,
+  hasRequestedContactForResponse,
   requestContactFromDraft,
   sameIdentity,
   upsertContact,
@@ -81,6 +82,17 @@ describe("Spoke follow helpers", () => {
     expect(applyFollowResponse(contacts, response({ decision: "accepted" }))).toEqual([
       { identity: "bob.jolt", displayName: "Bob", relationship: "accepted" }
     ]);
+  });
+
+  it("only auto-applies follow responses for locally requested contacts", () => {
+    const contacts: Contact[] = [
+      { identity: "bob.jolt", displayName: "Bob", relationship: "requested" },
+      { identity: "carol.jolt", displayName: "Carol", relationship: "accepted" }
+    ];
+
+    expect(hasRequestedContactForResponse(contacts, response({ sender: "bob.jolt" }))).toBe(true);
+    expect(hasRequestedContactForResponse(contacts, response({ sender: "carol.jolt" }))).toBe(false);
+    expect(hasRequestedContactForResponse(contacts, response({ sender: "dave.jolt" }))).toBe(false);
   });
 
   it("removes a requested contact when a response is rejected", () => {
