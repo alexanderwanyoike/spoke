@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { SpokeFollowRequest, SpokeFollowResponse } from "./follow";
+import type { SpokeAttachment } from "./media";
 import type { SpokeMessage } from "./message";
 
 export type NodeStatus = {
@@ -112,7 +113,7 @@ export type SpokeProfile = {
 };
 
 export type SpokePost = {
-  schema: "spoke.post.v1";
+  schema: "spoke.post.v1" | "spoke.post.v2";
   id: string;
   author: string;
   displayName?: string;
@@ -121,6 +122,7 @@ export type SpokePost = {
   createdAt: string;
   path: string;
   threadPath?: string;
+  attachments?: SpokeAttachment[];
 };
 
 export type SpokeFeedIndex = {
@@ -364,6 +366,38 @@ export function publishJson<T extends object>(sessionToken: string, path: string
   );
 }
 
+export async function publishBinary(
+  sessionToken: string,
+  path: string,
+  file: File | Blob,
+  options: { fileName: string; mimeType: string }
+) {
+  assertSpokePath(path);
+
+  if (isDesktopRuntime()) {
+    return invoke<PublishResponse>("daemon_publish_bytes", {
+      sessionToken,
+      path,
+      bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
+      fileName: options.fileName,
+      mimeType: options.mimeType
+    });
+  }
+
+  const form = new FormData();
+  form.append("file", file, options.fileName);
+  form.append("path", path);
+
+  return request<PublishResponse>(
+    "/jolt-api",
+    "/publish",
+    bearerInit(sessionToken, {
+      method: "POST",
+      body: form
+    })
+  );
+}
+
 export function publishProfile(sessionToken: string, profile: SpokeProfile) {
   return publishJson(sessionToken, "/spoke/profile", profile);
 }
@@ -401,6 +435,22 @@ export function publishEncryptedJson(
   body: object,
   recipients: string[]
 ) {
+  return publishEncryptedBytes(
+    sessionToken,
+    path,
+    Array.from(new TextEncoder().encode(JSON.stringify(body))),
+    "application/json",
+    recipients
+  );
+}
+
+export function publishEncryptedBytes(
+  sessionToken: string,
+  path: string,
+  plaintext: number[],
+  contentType: string,
+  recipients: string[]
+) {
   assertSpokePath(path);
 
   return request<EncryptedPublishResponse>(
@@ -408,10 +458,25 @@ export function publishEncryptedJson(
     "/encrypted/publish",
     jsonInit(sessionToken, {
       path,
-      plaintext: Array.from(new TextEncoder().encode(JSON.stringify(body))),
-      content_type: "application/json",
+      plaintext,
+      content_type: contentType,
       recipients: recipients.map((recipient) => recipient.trim()).filter(Boolean)
     })
+  );
+}
+
+export async function publishEncryptedBinary(
+  sessionToken: string,
+  path: string,
+  file: File | Blob,
+  options: { mimeType: string; recipients: string[] }
+) {
+  return publishEncryptedBytes(
+    sessionToken,
+    path,
+    Array.from(new Uint8Array(await file.arrayBuffer())),
+    options.mimeType,
+    options.recipients
   );
 }
 

@@ -1,14 +1,23 @@
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import {
   ArrowLeft,
   Check,
   Download,
+  ImagePlus,
   Inbox,
   KeyRound,
   MessageCircle,
   Plus,
   RefreshCw,
   Send,
+  Trash2,
   UserCheck,
   UserPlus,
   X
@@ -32,6 +41,8 @@ import {
   makeThreadPath,
   openIngress,
   parseJsonBytes,
+  publishBinary,
+  publishEncryptedBinary,
   publishJson,
   publishPostWithIndex,
   publishProfile,
@@ -96,6 +107,18 @@ import {
   type SpokeMessage
 } from "./message";
 import {
+  attachmentFetchTarget,
+  createEncryptedImageAttachmentReference,
+  createImageAttachmentReference,
+  isSupportedImageMimeType,
+  mediaPath,
+  messageMediaPath,
+  validateImageAttachment,
+  type ImageAttachmentMimeType,
+  type SpokeAttachment,
+  type SpokeMessageAttachment
+} from "./media";
+import {
   tauriSpokeUpdateClient,
   type SpokeUpdateCheck,
   type SpokeUpdateClient
@@ -127,6 +150,16 @@ type MessageThread = {
   lastMessageAt?: string;
 };
 
+type PendingImageAttachment = {
+  id: string;
+  file: File;
+  previewUrl: string;
+  mimeType: ImageAttachmentMimeType;
+  width?: number;
+  height?: number;
+  alt: string;
+};
+
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
 const PROFILE_KEY = "spoke.profile";
@@ -149,6 +182,21 @@ function saveJson<T>(key: string, value: T) {
 
 function displayIdentity(identity?: string | null) {
   return identity || "No identity";
+}
+
+function attachmentKey(attachment: SpokeAttachment) {
+  return attachment.contentId || attachment.address || attachment.id;
+}
+
+function messageAttachmentKey(messageId: string, attachment: SpokeMessageAttachment) {
+  return `${messageId}:${attachmentKey(attachment)}`;
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function hasRequiredCapabilities(granted: string[]) {
@@ -182,9 +230,23 @@ function incomingPreview(payload: SpokeIncomingPayload) {
     return `${payload.sender} ${payload.decision} your follow request.`;
   }
   if (isSpokeMessage(payload)) {
-    return payload.body;
+    return messagePreview(payload);
   }
   return payload.body;
+}
+
+function messagePreview(message: SpokeMessage) {
+  if (message.body.trim()) {
+    return message.body;
+  }
+  const imageCount = message.attachments?.filter((attachment) => attachment.kind === "image").length || 0;
+  if (imageCount === 1) {
+    return "Image";
+  }
+  if (imageCount > 1) {
+    return `${imageCount} images`;
+  }
+  return "";
 }
 
 function parseIncomingPayload(bytes: number[]) {
@@ -222,6 +284,9 @@ function App() {
   });
   const [followMessageDraft, setFollowMessageDraft] = useState("");
   const [postDraft, setPostDraft] = useState({ title: "", body: "" });
+  const [postAttachments, setPostAttachments] = useState<PendingImageAttachment[]>([]);
+  const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
+  const [attachmentErrors, setAttachmentErrors] = useState<Record<string, string>>({});
   const [feedIndex, setFeedIndex] = useState<SpokeFeedIndex | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [repliesByPost, setRepliesByPost] = useState<RepliesByPost>({});
@@ -232,6 +297,9 @@ function App() {
   const [review, setReview] = useState<ReviewState>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
+  const [messageAttachments, setMessageAttachments] = useState<Record<string, PendingImageAttachment[]>>({});
+  const [messageAttachmentUrls, setMessageAttachmentUrls] = useState<Record<string, string>>({});
+  const [messageAttachmentErrors, setMessageAttachmentErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -244,6 +312,11 @@ function App() {
   const conversationRefreshInFlight = useRef(false);
   const feedRefreshGeneration = useRef(0);
   const contactsRef = useRef<Contact[]>(contacts);
+  const pendingAttachmentUrlsRef = useRef<string[]>([]);
+  const fetchedAttachmentUrlsRef = useRef<Set<string>>(new Set());
+  const fetchingAttachmentKeysRef = useRef<Set<string>>(new Set());
+  const messageAttachmentUrlsRef = useRef<Set<string>>(new Set());
+  const fetchingMessageAttachmentKeysRef = useRef<Set<string>>(new Set());
   const updateClient: SpokeUpdateClient = tauriSpokeUpdateClient;
 
   const sessionToken = session.token || "";
@@ -317,11 +390,41 @@ function App() {
     return messageThreads.find((thread) => thread.id === activeThreadId) || messageThreads[0] || null;
   }, [messageThreads, activeThreadId]);
   const activeThreadMessages = activeThread?.conversation?.messages || [];
+  const feedAttachments = useMemo(
+    () => feed.flatMap((item) => item.post.attachments || []),
+    [feed]
+  );
+  const conversationAttachments = useMemo(
+    () =>
+      Object.values(conversations).flatMap((conversation) =>
+        conversation.messages.flatMap((item) =>
+          (item.message.attachments || []).map((attachment) => ({
+            messageId: item.message.id,
+            attachment
+          }))
+        )
+      ),
+    [conversations]
+  );
 
   useEffect(() => {
     getStatus()
       .then(setStatus)
       .catch((err) => setError(apiErrorMessage(err)));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      for (const url of pendingAttachmentUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      for (const url of fetchedAttachmentUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      for (const url of messageAttachmentUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -349,6 +452,100 @@ function App() {
   useEffect(() => {
     saveJson(SESSION_KEY, session);
   }, [session]);
+
+  useEffect(() => {
+    if (!canUseApp || !sessionToken || feedAttachments.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    for (const attachment of feedAttachments) {
+      const key = attachmentKey(attachment);
+      const target = attachmentFetchTarget(attachment);
+      if (
+        !target ||
+        attachmentUrls[key] ||
+        attachmentErrors[key] ||
+        fetchingAttachmentKeysRef.current.has(key)
+      ) {
+        continue;
+      }
+
+      fetchingAttachmentKeysRef.current.add(key);
+      fetchTarget(sessionToken, target)
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+          const blob = new Blob([new Uint8Array(result.data)], { type: attachment.mimeType });
+          const url = URL.createObjectURL(blob);
+          fetchedAttachmentUrlsRef.current.add(url);
+          setAttachmentUrls((current) => ({ ...current, [key]: url }));
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setAttachmentErrors((current) => ({ ...current, [key]: apiErrorMessage(err) }));
+          }
+        })
+        .finally(() => {
+          fetchingAttachmentKeysRef.current.delete(key);
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [attachmentErrors, attachmentUrls, canUseApp, feedAttachments, sessionToken]);
+
+  useEffect(() => {
+    if (!canUseApp || !sessionToken || conversationAttachments.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    for (const { messageId, attachment } of conversationAttachments) {
+      const key = messageAttachmentKey(messageId, attachment);
+      const target = attachmentFetchTarget(attachment);
+      if (
+        !target ||
+        messageAttachmentUrls[key] ||
+        messageAttachmentErrors[key] ||
+        fetchingMessageAttachmentKeysRef.current.has(key)
+      ) {
+        continue;
+      }
+
+      fetchingMessageAttachmentKeysRef.current.add(key);
+      decryptEncryptedTarget(sessionToken, target)
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+          const blob = new Blob([new Uint8Array(result.plaintext)], { type: attachment.mimeType });
+          const url = URL.createObjectURL(blob);
+          messageAttachmentUrlsRef.current.add(url);
+          setMessageAttachmentUrls((current) => ({ ...current, [key]: url }));
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setMessageAttachmentErrors((current) => ({ ...current, [key]: apiErrorMessage(err) }));
+          }
+        })
+        .finally(() => {
+          fetchingMessageAttachmentKeysRef.current.delete(key);
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canUseApp,
+    conversationAttachments,
+    messageAttachmentErrors,
+    messageAttachmentUrls,
+    sessionToken
+  ]);
 
   useEffect(() => {
     if (!sessionToken || session.status !== "active") {
@@ -491,6 +688,132 @@ function App() {
     return JSON.parse(decodeFetchData(result)) as T;
   }
 
+  function readImageDimensions(url: string) {
+    return new Promise<{ width: number; height: number }>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+      image.onerror = () => reject(new Error("Image attachment could not be read."));
+      image.src = url;
+    });
+  }
+
+  async function prepareImageAttachments(files: File[]) {
+    const nextAttachments: PendingImageAttachment[] = [];
+    try {
+      for (const file of files) {
+        validateImageAttachment(file);
+        if (!isSupportedImageMimeType(file.type)) {
+          throw new Error("Images must be JPEG, PNG, or WebP.");
+        }
+        const previewUrl = URL.createObjectURL(file);
+        try {
+          const dimensions = await readImageDimensions(previewUrl);
+          pendingAttachmentUrlsRef.current.push(previewUrl);
+          nextAttachments.push({
+            id: makeId("media"),
+            file,
+            previewUrl,
+            mimeType: file.type,
+            width: dimensions.width,
+            height: dimensions.height,
+            alt: ""
+          });
+        } catch (err) {
+          URL.revokeObjectURL(previewUrl);
+          throw err;
+        }
+      }
+      return nextAttachments;
+    } catch (err) {
+      for (const attachment of nextAttachments) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+      throw err;
+    }
+  }
+
+  async function addPostAttachments(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = "";
+    if (files.length === 0) {
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    let nextAttachments: PendingImageAttachment[] = [];
+    try {
+      nextAttachments = await prepareImageAttachments(files);
+    } catch (err) {
+      setError(apiErrorMessage(err));
+      return;
+    }
+
+    setPostAttachments((current) => [...current, ...nextAttachments]);
+  }
+
+  async function addMessageAttachments(identity: string, event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = "";
+    if (files.length === 0) {
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    let nextAttachments: PendingImageAttachment[] = [];
+    try {
+      nextAttachments = await prepareImageAttachments(files);
+    } catch (err) {
+      setError(apiErrorMessage(err));
+      return;
+    }
+
+    setMessageAttachments((current) => ({
+      ...current,
+      [identity]: [...(current[identity] || []), ...nextAttachments]
+    }));
+  }
+
+  function removePostAttachment(id: string) {
+    setPostAttachments((current) => {
+      const attachment = current.find((item) => item.id === id);
+      if (attachment) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+      return current.filter((item) => item.id !== id);
+    });
+  }
+
+  function updatePostAttachmentAlt(id: string, alt: string) {
+    setPostAttachments((current) =>
+      current.map((attachment) => attachment.id === id ? { ...attachment, alt } : attachment)
+    );
+  }
+
+  function removeMessageAttachment(identity: string, id: string) {
+    setMessageAttachments((current) => {
+      const attachments = current[identity] || [];
+      const attachment = attachments.find((item) => item.id === id);
+      if (attachment) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+      return {
+        ...current,
+        [identity]: attachments.filter((item) => item.id !== id)
+      };
+    });
+  }
+
+  function updateMessageAttachmentAlt(identity: string, id: string, alt: string) {
+    setMessageAttachments((current) => ({
+      ...current,
+      [identity]: (current[identity] || []).map((attachment) =>
+        attachment.id === id ? { ...attachment, alt } : attachment
+      )
+    }));
+  }
+
   async function loadLocalFeed(published?: PublishedContent[]) {
     let index: SpokeFeedIndex | null = null;
     try {
@@ -518,8 +841,24 @@ function App() {
       }
 
       const id = makeId("post");
+      const attachments = await Promise.all(
+        postAttachments.map(async (attachment) => {
+          const published = await publishBinary(sessionToken, mediaPath(attachment.id), attachment.file, {
+            fileName: attachment.file.name || `${attachment.id}.image`,
+            mimeType: attachment.mimeType
+          });
+          return createImageAttachmentReference({
+            id: attachment.id,
+            published,
+            mimeType: attachment.mimeType,
+            width: attachment.width,
+            height: attachment.height,
+            alt: attachment.alt.trim() || undefined
+          });
+        })
+      );
       const post: SpokePost = {
-        schema: "spoke.post.v1",
+        schema: attachments.length > 0 ? "spoke.post.v2" : "spoke.post.v1",
         id,
         author: localIdentity,
         displayName: profileDraft.displayName.trim() || localIdentity,
@@ -527,12 +866,21 @@ function App() {
         body,
         createdAt: new Date().toISOString(),
         path: makePostPath(id),
-        threadPath: makeThreadPath(id)
+        threadPath: makeThreadPath(id),
+        ...(attachments.length > 0 ? { attachments } : {})
       };
       const index = await loadLocalFeed();
       const publishedResult = await publishPostWithIndex(sessionToken, post, index);
       setFeedIndex(publishedResult.feedIndex);
       feedRefreshGeneration.current += 1;
+      for (const attachment of attachments) {
+        const pendingAttachment = postAttachments.find((item) => item.id === attachment.id);
+        if (pendingAttachment) {
+          const url = URL.createObjectURL(pendingAttachment.file);
+          fetchedAttachmentUrlsRef.current.add(url);
+          setAttachmentUrls((current) => ({ ...current, [attachmentKey(attachment)]: url }));
+        }
+      }
       setFeed((current) =>
         addOptimisticLocalPost(
           current,
@@ -541,7 +889,15 @@ function App() {
         )
       );
       setPostDraft({ title: "", body: "" });
-      setNotice("Post published and local feed index updated.");
+      for (const attachment of postAttachments) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+      setPostAttachments([]);
+      setNotice(
+        attachments.length > 0
+          ? "Post and media attachments published."
+          : "Post published and local feed index updated."
+      );
       void refreshFeedSilently();
     });
   }
@@ -894,28 +1250,71 @@ function App() {
 
   async function sendMessage(contact: Contact) {
     const body = (messageDrafts[contact.identity] || "").trim();
-    if (!body) {
-      setError("Message body is required.");
+    const pendingAttachments = messageAttachments[contact.identity] || [];
+    if (!body && pendingAttachments.length === 0) {
+      setError("Message body or image is required.");
       return;
     }
 
     await withBusy(`message:${contact.identity}`, async () => {
+      const messageId = makeId("msg");
+      const attachments = await Promise.all(
+        pendingAttachments.map(async (attachment) => {
+          const published = await publishEncryptedBinary(
+            sessionToken,
+            messageMediaPath(messageId, attachment.id),
+            attachment.file,
+            {
+              mimeType: attachment.mimeType,
+              recipients: [contact.identity, localIdentity]
+            }
+          );
+          return createEncryptedImageAttachmentReference({
+            id: attachment.id,
+            published,
+            mimeType: attachment.mimeType,
+            width: attachment.width,
+            height: attachment.height,
+            alt: attachment.alt.trim() || undefined
+          });
+        })
+      );
       const message: SpokeMessage = {
-        schema: "spoke.message.v1",
-        id: makeId("msg"),
+        schema: attachments.length > 0 ? "spoke.message.v2" : "spoke.message.v1",
+        id: messageId,
         conversationId: conversationIdForParticipants([localIdentity, contact.identity]),
         sender: localIdentity,
         recipients: [contact.identity],
         body,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        ...(attachments.length > 0 ? { attachments } : {})
       };
       if (!messageBelongsToConversation(message)) {
         throw new Error("Message participants do not match its conversation.");
       }
       await submitMessageByIdentity(sessionToken, contact.identity, message);
+      for (const attachment of attachments) {
+        const pendingAttachment = pendingAttachments.find((item) => item.id === attachment.id);
+        if (pendingAttachment) {
+          const url = URL.createObjectURL(pendingAttachment.file);
+          messageAttachmentUrlsRef.current.add(url);
+          setMessageAttachmentUrls((current) => ({
+            ...current,
+            [messageAttachmentKey(message.id, attachment)]: url
+          }));
+        }
+      }
       setConversations((current) => upsertConversationMessage(current, message, "sent"));
       setMessageDrafts((current) => ({ ...current, [contact.identity]: "" }));
-      setNotice("Encrypted message submitted to recipient ingress.");
+      for (const attachment of pendingAttachments) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+      setMessageAttachments((current) => ({ ...current, [contact.identity]: [] }));
+      setNotice(
+        attachments.length > 0
+          ? "Encrypted message and images submitted to recipient ingress."
+          : "Encrypted message submitted to recipient ingress."
+      );
     });
   }
 
@@ -964,7 +1363,8 @@ function App() {
         record.schema_hint &&
         record.schema_hint !== "spoke.follow_response.v1" &&
         record.schema_hint !== "spoke.reply.v1" &&
-        record.schema_hint !== "spoke.message.v1"
+        record.schema_hint !== "spoke.message.v1" &&
+        record.schema_hint !== "spoke.message.v2"
       ) {
         visibleRecords.push(record);
         continue;
@@ -1385,6 +1785,49 @@ function App() {
                   rows={4}
                   placeholder="Write a note for known contacts"
                 />
+                <div className="attachment-toolbar">
+                  <label className="file-button">
+                    <ImagePlus size={16} />
+                    Add images
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      onChange={addPostAttachments}
+                    />
+                  </label>
+                  <span>JPEG, PNG, or WebP up to 5 MB each</span>
+                </div>
+                {postAttachments.length > 0 ? (
+                  <div className="pending-media-grid">
+                    {postAttachments.map((attachment) => (
+                      <div className="pending-media-card" key={attachment.id}>
+                        <img src={attachment.previewUrl} alt={attachment.file.name} />
+                        <div>
+                          <strong>{attachment.file.name || "Image attachment"}</strong>
+                          <span>
+                            {formatBytes(attachment.file.size)}
+                            {attachment.width && attachment.height
+                              ? ` - ${attachment.width}x${attachment.height}`
+                              : ""}
+                          </span>
+                          <input
+                            value={attachment.alt}
+                            onChange={(event) => updatePostAttachmentAlt(attachment.id, event.target.value)}
+                            placeholder="Alt text"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removePostAttachment(attachment.id)}
+                          title="Remove image"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <button className="primary" type="button" onClick={publishPost} disabled={busy === "post"}>
                 <Plus size={16} />
@@ -1417,6 +1860,28 @@ function App() {
                   </header>
                   <h3>{item.post.title}</h3>
                   <p>{item.post.body}</p>
+                  {item.post.attachments?.length ? (
+                    <div className="post-media-grid">
+                      {item.post.attachments.map((attachment) => {
+                        const key = attachmentKey(attachment);
+                        return (
+                          <figure className="post-media" key={key}>
+                            {attachmentUrls[key] ? (
+                              <img
+                                src={attachmentUrls[key]}
+                                alt={attachment.alt || `${item.post.title} image`}
+                              />
+                            ) : attachmentErrors[key] ? (
+                              <div className="media-placeholder">Image unavailable</div>
+                            ) : (
+                              <div className="media-placeholder">Loading image...</div>
+                            )}
+                            {attachment.alt ? <figcaption>{attachment.alt}</figcaption> : null}
+                          </figure>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                   <div className="thread">
                     {(repliesByPost[item.address] || []).map((reply) => (
                       <div className="reply" key={reply.id}>
@@ -1548,7 +2013,7 @@ function App() {
                         <strong>{thread.contact.displayName}</strong>
                         <span>
                           {lastMessage
-                            ? lastMessage.message.body
+                            ? messagePreview(lastMessage.message)
                             : `Start a private thread with ${thread.contact.displayName}`}
                         </span>
                       </span>
@@ -1585,7 +2050,29 @@ function App() {
                       <div className={`thread-message ${item.direction}`} key={item.message.id}>
                         <div>
                           <span>{displayNameForIdentity(item.message.sender)}</span>
-                          <p>{item.message.body}</p>
+                          {item.message.body ? <p>{item.message.body}</p> : null}
+                          {item.message.attachments?.length ? (
+                            <div className="message-media-grid">
+                              {item.message.attachments.map((attachment) => {
+                                const key = messageAttachmentKey(item.message.id, attachment);
+                                return (
+                                  <figure className="message-media" key={key}>
+                                    {messageAttachmentUrls[key] ? (
+                                      <img
+                                        src={messageAttachmentUrls[key]}
+                                        alt={attachment.alt || "Message image"}
+                                      />
+                                    ) : messageAttachmentErrors[key] ? (
+                                      <div className="message-media-placeholder">Image unavailable</div>
+                                    ) : (
+                                      <div className="message-media-placeholder">Loading image...</div>
+                                    )}
+                                    {attachment.alt ? <figcaption>{attachment.alt}</figcaption> : null}
+                                  </figure>
+                                );
+                              })}
+                            </div>
+                          ) : null}
                           <time>{new Date(item.message.createdAt).toLocaleString()}</time>
                         </div>
                       </div>
@@ -1600,18 +2087,70 @@ function App() {
                   </div>
 
                   <div className="thread-composer">
-                    <textarea
-                      rows={2}
-                      value={messageDrafts[activeThread.contact.identity] || ""}
-                      onChange={(event) =>
-                        setMessageDrafts((current) => ({
-                          ...current,
-                          [activeThread.contact.identity]: event.target.value
-                        }))
-                      }
-                      onKeyDown={(event) => handleMessageKeyDown(event, activeThread.contact)}
-                      placeholder={`Message ${activeThread.contact.displayName}`}
-                    />
+                    <div className="message-composer-main">
+                      <textarea
+                        rows={2}
+                        value={messageDrafts[activeThread.contact.identity] || ""}
+                        onChange={(event) =>
+                          setMessageDrafts((current) => ({
+                            ...current,
+                            [activeThread.contact.identity]: event.target.value
+                          }))
+                        }
+                        onKeyDown={(event) => handleMessageKeyDown(event, activeThread.contact)}
+                        placeholder={`Message ${activeThread.contact.displayName}`}
+                      />
+                      <div className="attachment-toolbar compact-toolbar">
+                        <label className="file-button icon-only" title="Attach images">
+                          <ImagePlus size={16} />
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            multiple
+                            onChange={(event) => addMessageAttachments(activeThread.contact.identity, event)}
+                          />
+                        </label>
+                        <span>Images are encrypted with the message thread</span>
+                      </div>
+                      {(messageAttachments[activeThread.contact.identity] || []).length > 0 ? (
+                        <div className="pending-media-grid message-pending-media">
+                          {(messageAttachments[activeThread.contact.identity] || []).map((attachment) => (
+                            <div className="pending-media-card" key={attachment.id}>
+                              <img src={attachment.previewUrl} alt={attachment.file.name} />
+                              <div>
+                                <strong>{attachment.file.name || "Image attachment"}</strong>
+                                <span>
+                                  {formatBytes(attachment.file.size)}
+                                  {attachment.width && attachment.height
+                                    ? ` - ${attachment.width}x${attachment.height}`
+                                    : ""}
+                                </span>
+                                <input
+                                  value={attachment.alt}
+                                  onChange={(event) =>
+                                    updateMessageAttachmentAlt(
+                                      activeThread.contact.identity,
+                                      attachment.id,
+                                      event.target.value
+                                    )
+                                  }
+                                  placeholder="Alt text"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  removeMessageAttachment(activeThread.contact.identity, attachment.id)
+                                }
+                                title="Remove image"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                     <button
                       className="primary"
                       type="button"
