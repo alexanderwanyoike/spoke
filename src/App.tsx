@@ -7,7 +7,6 @@ import {
   useState
 } from "react";
 import {
-  ArrowLeft,
   AtSign,
   Bell,
   Check,
@@ -16,7 +15,6 @@ import {
   ExternalLink,
   Home,
   ImagePlus,
-  ImageOff,
   Inbox,
   KeyRound,
   Link as LinkIcon,
@@ -38,6 +36,12 @@ import {
   Users,
   X
 } from "lucide-react";
+import { AttachmentDraftRow } from "@/components/spoke/attachment-draft-row";
+import { EmptyState } from "@/components/spoke/empty-state";
+import { MediaFrame } from "@/components/spoke/media-frame";
+import { MessagesView } from "@/components/spoke/messages-view";
+import { PersonRow } from "@/components/spoke/person-row";
+import type { MessageThread, PendingImageAttachment } from "@/components/spoke/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,7 +63,6 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import {
   Sidebar,
@@ -160,6 +163,7 @@ import {
   conversationIdForParticipants,
   conversationsFromMessages,
   isSpokeMessage,
+  messagePreview,
   messageBelongsToConversation,
   otherParticipants,
   upsertConversationMessage,
@@ -175,7 +179,6 @@ import {
   mediaPath,
   messageMediaPath,
   validateImageAttachment,
-  type ImageAttachmentMimeType,
   type SpokeAttachment,
   type SpokeMessageAttachment
 } from "./media";
@@ -221,23 +224,6 @@ type ReviewState = {
 };
 
 type SpokeIncomingPayload = SpokeReply | SpokeFollowRequest | SpokeFollowResponse | SpokeMessage;
-
-type MessageThread = {
-  id: string;
-  contact: Contact;
-  conversation?: Conversation;
-  lastMessageAt?: string;
-};
-
-type PendingImageAttachment = {
-  id: string;
-  file: File;
-  previewUrl: string;
-  mimeType: ImageAttachmentMimeType;
-  width?: number;
-  height?: number;
-  alt: string;
-};
 
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
@@ -323,20 +309,6 @@ function incomingPreview(payload: SpokeIncomingPayload) {
     return messagePreview(payload);
   }
   return payload.body;
-}
-
-function messagePreview(message: SpokeMessage) {
-  if (message.body.trim()) {
-    return message.body;
-  }
-  const imageCount = message.attachments?.filter((attachment) => attachment.kind === "image").length || 0;
-  if (imageCount === 1) {
-    return "Image";
-  }
-  if (imageCount > 1) {
-    return `${imageCount} images`;
-  }
-  return "";
 }
 
 function parseIncomingPayload(bytes: number[]) {
@@ -2496,27 +2468,15 @@ function App() {
             {item.post.attachments.map((attachment) => {
               const key = attachmentKey(attachment);
               return (
-                <figure className="overflow-hidden rounded-lg border spoke-border bg-muted/30 shadow-inner" key={key}>
-                  {attachmentUrls[key] ? (
-                    <img
-                      className="max-h-[520px] w-full object-cover"
-                      src={attachmentUrls[key]}
-                      alt={attachment.alt || `${item.post.title} image`}
-                      onError={() => markAttachmentImageFailed(key)}
-                    />
-                  ) : attachmentErrors[key] ? (
-                    <div className="grid min-h-48 place-items-center gap-2 bg-muted/50 text-sm text-muted-foreground">
-                      <ImageOff className="size-6" />
-                      Image unavailable
-                    </div>
-                  ) : (
-                    <div className="grid min-h-48 place-items-center gap-2 bg-muted/40 text-sm text-muted-foreground">
-                      <Loader2 className="size-5 animate-spin" />
-                      Loading image
-                    </div>
-                  )}
-                  {attachment.alt ? <figcaption className="bg-background/70 px-3 py-2 text-xs text-muted-foreground">{attachment.alt}</figcaption> : null}
-                </figure>
+                <MediaFrame
+                  imageClassName="max-h-[520px]"
+                  key={key}
+                  src={attachmentUrls[key]}
+                  error={attachmentErrors[key]}
+                  alt={attachment.alt || `${item.post.title} image`}
+                  caption={attachment.alt}
+                  onError={() => markAttachmentImageFailed(key)}
+                />
               );
             })}
           </div>
@@ -2604,26 +2564,13 @@ function App() {
           {postAttachments.length > 0 ? (
             <div className="grid gap-2">
               {postAttachments.map((attachment) => (
-                <div className="grid gap-3 rounded-lg border spoke-border bg-muted/35 p-2 sm:grid-cols-[72px_1fr_auto]" key={attachment.id}>
-                  <img className="size-18 rounded-md object-cover shadow-sm" src={attachment.previewUrl} alt={attachment.file.name} />
-                  <div className="grid gap-2">
-                    <strong className="truncate text-sm">{attachment.file.name || "Image attachment"}</strong>
-                    <span className="text-xs text-muted-foreground">
-                      {formatBytes(attachment.file.size)}
-                      {attachment.width && attachment.height
-                        ? ` - ${attachment.width}x${attachment.height}`
-                        : ""}
-                    </span>
-                    <Input
-                      value={attachment.alt}
-                      onChange={(event) => updatePostAttachmentAlt(attachment.id, event.target.value)}
-                      placeholder="Alt text"
-                    />
-                  </div>
-                  <Button type="button" variant="ghost" size="icon" onClick={() => removePostAttachment(attachment.id)} title="Remove image">
-                    <Trash2 className="size-4" />
-                  </Button>
-                </div>
+                <AttachmentDraftRow
+                  attachment={attachment}
+                  formatBytes={formatBytes}
+                  key={attachment.id}
+                  onAltChange={(alt) => updatePostAttachmentAlt(attachment.id, alt)}
+                  onRemove={() => removePostAttachment(attachment.id)}
+                />
               ))}
             </div>
           ) : null}
@@ -2736,36 +2683,19 @@ function App() {
             <TabsContent value={group.value} className="max-h-56 overflow-y-auto pr-1" key={group.value}>
               <div className="grid gap-2">
               {group.people.map((contact) => (
-                <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-lg border spoke-border bg-background/85 p-3 shadow-sm shadow-foreground/5" key={contact.identity}>
-                  <Button
-                    variant="ghost"
-                    className="size-auto p-0 hover:bg-transparent"
-                    type="button"
-                    onClick={() => openProfile(contact.identity)}
-                    title={`View ${contactDisplayName(contact)}`}
-                  >
-                    {renderAvatar(contact.identity)}
-                  </Button>
-                  <div className="min-w-0">
-                    <strong className="block truncate text-sm">{contactDisplayName(contact)}</strong>
-                    <span className="block truncate text-xs text-muted-foreground">{contact.identity}</span>
-                    <Badge className="mt-1" variant={contact.relationship === "accepted" || !contact.relationship ? "secondary" : "outline"}>
-                      {contact.relationship || "accepted"}
-                    </Badge>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      setContacts((current) => current.filter((item) => item.identity !== contact.identity));
-                      setFeed((current) => removeContactFeedItems(current, contact.identity));
-                    }}
-                    title="Remove contact"
-                  >
-                    <X className="size-4" />
-                  </Button>
-                </div>
+                <PersonRow
+                  badge={contact.relationship || "accepted"}
+                  badgeVariant={contact.relationship === "accepted" || !contact.relationship ? "secondary" : "outline"}
+                  displayName={contactDisplayName(contact)}
+                  identity={contact.identity}
+                  key={contact.identity}
+                  renderAvatar={renderAvatar}
+                  onOpen={() => openProfile(contact.identity)}
+                  onRemove={() => {
+                    setContacts((current) => current.filter((item) => item.identity !== contact.identity));
+                    setFeed((current) => removeContactFeedItems(current, contact.identity));
+                  }}
+                />
               ))}
               {group.people.length === 0 ? (
                 <div className="rounded-lg border spoke-border bg-muted/35 p-4 text-sm text-muted-foreground">{group.empty}</div>
@@ -2922,249 +2852,6 @@ function App() {
           </div>
         </CardContent>
       </Card>
-    );
-  }
-
-  function renderMessagesView() {
-    return (
-      <section className="grid min-h-[calc(100vh-11rem)] overflow-hidden rounded-xl border spoke-border bg-card shadow-sm shadow-foreground/5 lg:grid-cols-[320px_1fr]">
-        <aside className="bg-muted/20" aria-label="Conversations">
-          <div className="space-y-3 p-4">
-            <div className="flex items-start justify-between gap-3">
-            <div>
-                <h2 className="font-semibold">Messages</h2>
-                <p className="text-sm text-muted-foreground">{messageThreads.length} conversation threads</p>
-            </div>
-              <Button type="button" variant="outline" size="icon" onClick={refreshIncoming} disabled={busy === "incoming"} title="Refresh incoming">
-                <RefreshCw className="size-4" />
-              </Button>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                value={threadSearch}
-                onChange={(event) => setThreadSearch(event.target.value)}
-                placeholder="Search threads"
-              />
-            </div>
-          </div>
-
-          <ScrollArea className="h-[280px] lg:h-[calc(100vh-18rem)]">
-            <div className="grid gap-1 p-2">
-            {visibleMessageThreads.map((thread) => {
-              const lastMessage = thread.conversation?.messages[
-                thread.conversation.messages.length - 1
-              ];
-              return (
-                <Button
-                  type="button"
-                  variant={activeThread?.id === thread.id ? "secondary" : "ghost"}
-                  className="h-auto justify-start gap-3 p-3 text-left"
-                  key={thread.id}
-                  onClick={() => setActiveThreadId(thread.id)}
-                >
-                  {renderAvatar(thread.contact.identity)}
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{thread.contact.displayName}</span>
-                    <span className="line-clamp-1 text-xs text-muted-foreground">
-                      {lastMessage
-                        ? messagePreview(lastMessage.message)
-                        : `Start a private thread with ${thread.contact.displayName}`}
-                    </span>
-                  </span>
-                  {thread.lastMessageAt ? (
-                    <time className="text-xs text-muted-foreground">{new Date(thread.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
-                  ) : null}
-                </Button>
-              );
-            })}
-            {visibleMessageThreads.length === 0 ? (
-              <div className="rounded-lg border spoke-border bg-muted/40 p-4 text-sm text-muted-foreground">
-                {messageThreads.length === 0 ? "Accept a contact before starting messages." : "No threads match your search."}
-              </div>
-            ) : null}
-            </div>
-          </ScrollArea>
-        </aside>
-
-        <section className="flex min-h-0 flex-col">
-          {activeThread ? (
-            <>
-              <header className="flex items-center gap-3 border-b spoke-border bg-card/80 p-4 shadow-sm shadow-foreground/5">
-                <Button variant="ghost" size="icon" type="button" onClick={() => setActiveView("feed")} title="Back to feed">
-                  <ArrowLeft className="size-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="size-auto p-0 hover:bg-transparent"
-                  type="button"
-                  onClick={() => openProfile(activeThread.contact.identity)}
-                  title={`View ${activeThread.contact.displayName}`}
-                >
-                  {renderAvatar(activeThread.contact.identity, "large")}
-                </Button>
-                <div className="min-w-0">
-                  <h2 className="truncate font-semibold">{activeThread.contact.displayName}</h2>
-                  <p className="truncate text-sm text-muted-foreground">{activeThread.contact.identity}</p>
-                </div>
-              </header>
-
-              <ScrollArea className="flex-1">
-                <div className="grid gap-4 p-4" aria-live="polite">
-                {activeThreadMessages.map((item) => (
-                  <div className={cn("flex", item.direction === "sent" ? "justify-end" : "justify-start")} key={item.message.id}>
-                    <div className={cn("max-w-[78%] rounded-xl border p-3 shadow-sm shadow-foreground/5", item.direction === "sent" ? "spoke-border-on-primary bg-primary text-primary-foreground" : "spoke-border bg-background")}>
-                      <Button
-                        variant="ghost"
-                        className={cn("mb-2 h-auto gap-2 p-0 hover:bg-transparent", item.direction === "sent" ? "text-primary-foreground hover:text-primary-foreground" : "")}
-                        type="button"
-                        onClick={() => openProfile(item.message.sender)}
-                        title={`View ${displayNameForIdentity(item.message.sender)}`}
-                      >
-                        {renderAvatar(item.message.sender)}
-                        <span className="text-xs font-medium">{displayNameForIdentity(item.message.sender)}</span>
-                      </Button>
-                      {item.message.body ? <p className="whitespace-pre-wrap text-sm leading-6">{item.message.body}</p> : null}
-                      {item.message.attachments?.length ? (
-                        <div className="mt-3 grid gap-2">
-                          {item.message.attachments.map((attachment) => {
-                            const key = messageAttachmentKey(item.message.id, attachment);
-                            return (
-                              <figure className="overflow-hidden rounded-lg border spoke-border bg-background/85 text-foreground shadow-inner" key={key}>
-                                {messageAttachmentUrls[key] ? (
-                                  <img
-                                    className="max-h-72 w-full object-cover"
-                                    src={messageAttachmentUrls[key]}
-                                    alt={attachment.alt || "Message image"}
-                                    onError={() => markMessageImageFailed(key)}
-                                  />
-                                ) : messageAttachmentErrors[key] ? (
-                                  <div className="grid min-h-32 place-items-center bg-muted/50 p-4 text-sm text-muted-foreground">
-                                    <ImageOff className="mb-2 size-5" />
-                                    Image unavailable
-                                  </div>
-                                ) : (
-                                  <div className="grid min-h-32 place-items-center bg-muted/40 p-4 text-sm text-muted-foreground">
-                                    <Loader2 className="mb-2 size-5 animate-spin" />
-                                    Loading image
-                                  </div>
-                                )}
-                                {attachment.alt ? <figcaption className="bg-background/70 px-3 py-2 text-xs text-muted-foreground">{attachment.alt}</figcaption> : null}
-                              </figure>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                      <time className={cn("mt-2 block text-xs", item.direction === "sent" ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                        {new Date(item.message.createdAt).toLocaleString()}
-                      </time>
-                    </div>
-                  </div>
-                ))}
-                {activeThreadMessages.length === 0 ? (
-                  <div className="mx-auto mt-16 grid max-w-sm place-items-center rounded-xl border spoke-border bg-muted/35 p-8 text-center">
-                    <MessageCircle className="mb-3 size-8 text-muted-foreground" />
-                    <h3 className="font-semibold">{activeThread.contact.displayName}</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">Start the encrypted one-to-one conversation.</p>
-                  </div>
-                ) : null}
-                </div>
-              </ScrollArea>
-              <div className="border-t spoke-border bg-card p-4 shadow-[0_-1px_8px_color-mix(in_oklch,var(--foreground),transparent_94%)]">
-                <div className="grid gap-3">
-                  <Textarea
-                    className="min-h-16"
-                    rows={2}
-                    value={messageDrafts[activeThread.contact.identity] || ""}
-                    onChange={(event) =>
-                      setMessageDrafts((current) => ({
-                        ...current,
-                        [activeThread.contact.identity]: event.target.value
-                      }))
-                    }
-                    onKeyDown={(event) => handleMessageKeyDown(event, activeThread.contact)}
-                    placeholder={`Message ${activeThread.contact.displayName}`}
-                  />
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Button asChild variant="outline" size="icon" title="Attach images">
-                        <label>
-                          <ImagePlus className="size-4" />
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            multiple
-                            onChange={(event) => addMessageAttachments(activeThread.contact.identity, event)}
-                          />
-                        </label>
-                      </Button>
-                      <span className="text-xs text-muted-foreground">Images are encrypted with the message thread</span>
-                    </div>
-                    <Button
-                      type="button"
-                      onClick={() => sendMessage(activeThread.contact)}
-                      disabled={busy === `message:${activeThread.contact.identity}`}
-                      title="Send encrypted message"
-                    >
-                      <Send className="size-4" />
-                      Send
-                    </Button>
-                  </div>
-                  {(messageAttachments[activeThread.contact.identity] || []).length > 0 ? (
-                    <div className="grid gap-2">
-                      {(messageAttachments[activeThread.contact.identity] || []).map((attachment) => (
-                        <div className="grid gap-3 rounded-lg border spoke-border bg-muted/35 p-2 sm:grid-cols-[64px_1fr_auto]" key={attachment.id}>
-                          <img className="size-16 rounded-md object-cover shadow-sm" src={attachment.previewUrl} alt={attachment.file.name} />
-                          <div className="grid gap-2">
-                            <strong className="truncate text-sm">{attachment.file.name || "Image attachment"}</strong>
-                            <span className="text-xs text-muted-foreground">
-                              {formatBytes(attachment.file.size)}
-                              {attachment.width && attachment.height
-                                ? ` - ${attachment.width}x${attachment.height}`
-                                : ""}
-                            </span>
-                            <Input
-                              value={attachment.alt}
-                              onChange={(event) =>
-                                updateMessageAttachmentAlt(
-                                  activeThread.contact.identity,
-                                  attachment.id,
-                                  event.target.value
-                                )
-                              }
-                              placeholder="Alt text"
-                            />
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() =>
-                              removeMessageAttachment(activeThread.contact.identity, attachment.id)
-                            }
-                            title="Remove image"
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="grid flex-1 place-items-center p-8 text-center">
-              <div>
-              <MessageCircle className="mx-auto mb-3 size-10 text-muted-foreground" />
-              <h2 className="text-lg font-semibold">No message threads</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Accept a contact, then start a private conversation here.</p>
-              </div>
-            </div>
-          )}
-        </section>
-      </section>
     );
   }
 
@@ -3344,7 +3031,7 @@ function App() {
               </div>
             </header>
 
-            <main className="mx-auto grid w-full max-w-5xl gap-5 p-4 lg:p-8">
+            <main className={cn("mx-auto grid w-full gap-5 p-4 lg:p-8", activeView === "messages" ? "max-w-7xl" : "max-w-5xl")}>
             {error ? <div className="rounded-lg border spoke-border-error bg-destructive/10 px-3 py-2 text-sm text-destructive shadow-sm shadow-destructive/5">{error}</div> : null}
             {notice ? <div className="rounded-lg border spoke-border-notice bg-primary/10 px-3 py-2 text-sm text-primary shadow-sm shadow-primary/5">{notice}</div> : null}
 
@@ -3367,9 +3054,7 @@ function App() {
                 <div className="grid gap-4">
                   {feed.map((item) => renderPostCard(item))}
                   {feed.length === 0 ? (
-                    <Card className="bg-muted/30 shadow-none">
-                      <CardContent className="pt-4 text-sm text-muted-foreground">Publish a post or add a known identity to build the feed.</CardContent>
-                    </Card>
+                    <EmptyState>Publish a post or add a known identity to build the feed.</EmptyState>
                   ) : null}
                 </div>
               </section>
@@ -3405,15 +3090,44 @@ function App() {
                 <div className="grid gap-4">
                   {localFeedItems.map((item) => renderPostCard(item))}
                   {localFeedItems.length === 0 ? (
-                    <Card className="bg-muted/30 shadow-none">
-                      <CardContent className="pt-4 text-sm text-muted-foreground">Your posts will appear here.</CardContent>
-                    </Card>
+                    <EmptyState>Your posts will appear here.</EmptyState>
                   ) : null}
                 </div>
               </section>
             ) : null}
 
-            {activeView === "messages" ? renderMessagesView() : null}
+            {activeView === "messages" ? (
+              <MessagesView
+                activeThread={activeThread}
+                activeThreadMessages={activeThreadMessages}
+                busy={busy}
+                displayNameForIdentity={displayNameForIdentity}
+                formatBytes={formatBytes}
+                messageAttachmentErrors={messageAttachmentErrors}
+                messageAttachmentKey={messageAttachmentKey}
+                messageAttachmentUrls={messageAttachmentUrls}
+                messageAttachments={messageAttachments}
+                messageDrafts={messageDrafts}
+                messageThreads={messageThreads}
+                renderAvatar={renderAvatar}
+                threadSearch={threadSearch}
+                visibleMessageThreads={visibleMessageThreads}
+                onAddMessageAttachments={addMessageAttachments}
+                onBackToFeed={() => setActiveView("feed")}
+                onMessageDraftChange={(identity, value) =>
+                  setMessageDrafts((current) => ({ ...current, [identity]: value }))
+                }
+                onMessageImageFailed={markMessageImageFailed}
+                onMessageKeyDown={handleMessageKeyDown}
+                onOpenProfile={openProfile}
+                onRefreshIncoming={refreshIncoming}
+                onRemoveMessageAttachment={removeMessageAttachment}
+                onSelectThread={setActiveThreadId}
+                onSendMessage={sendMessage}
+                onThreadSearchChange={setThreadSearch}
+                onUpdateMessageAttachmentAlt={updateMessageAttachmentAlt}
+              />
+            ) : null}
 
             {activeView === "notifications" ? (
               <section className="grid gap-5">
@@ -3470,9 +3184,7 @@ function App() {
                     </section>
                   ))}
                   {filteredNotificationGroups.length === 0 ? (
-                    <Card className="bg-muted/30 shadow-none">
-                      <CardContent className="pt-4 text-sm text-muted-foreground">No pending notifications.</CardContent>
-                    </Card>
+                    <EmptyState>No pending notifications.</EmptyState>
                   ) : null}
                 </div>
               </section>

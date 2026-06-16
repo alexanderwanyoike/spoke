@@ -60,6 +60,20 @@ export function isSpokeMessage(value: unknown): value is SpokeMessage {
   return schema === "spoke.message.v1" || schema === "spoke.message.v2";
 }
 
+export function messagePreview(message: SpokeMessage) {
+  if (message.body.trim()) {
+    return message.body;
+  }
+  const imageCount = message.attachments?.filter((attachment) => attachment.kind === "image").length || 0;
+  if (imageCount === 1) {
+    return "Image";
+  }
+  if (imageCount > 1) {
+    return `${imageCount} images`;
+  }
+  return "";
+}
+
 export function sortConversationMessages(messages: ConversationMessage[]) {
   return [...messages].sort((a, b) => {
     const byTime = a.message.createdAt.localeCompare(b.message.createdAt);
