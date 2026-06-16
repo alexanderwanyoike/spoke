@@ -7,27 +7,84 @@ import {
   useState
 } from "react";
 import {
-  ArrowLeft,
+  AtSign,
   Bell,
   Check,
+  Clock,
   Download,
   ExternalLink,
   Home,
   ImagePlus,
+  Inbox,
   KeyRound,
+  Link as LinkIcon,
+  Loader2,
+  MapPin,
   MessageCircle,
   Moon,
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Send,
+  ShieldCheck,
   Sun,
   Trash2,
   User,
   UserCheck,
   UserPlus,
+  Users,
   X
 } from "lucide-react";
+import { AttachmentDraftRow } from "@/components/spoke/attachment-draft-row";
+import { EmptyState } from "@/components/spoke/empty-state";
+import { MediaFrame } from "@/components/spoke/media-frame";
+import { MessagesView } from "@/components/spoke/messages-view";
+import { PersonRow } from "@/components/spoke/person-row";
+import type { MessageThread, PendingImageAttachment } from "@/components/spoke/types";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarSeparator,
+  SidebarTrigger
+} from "@/components/ui/sidebar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import {
   SPOKE_CAPABILITIES,
   acceptIngress,
@@ -106,6 +163,7 @@ import {
   conversationIdForParticipants,
   conversationsFromMessages,
   isSpokeMessage,
+  messagePreview,
   messageBelongsToConversation,
   otherParticipants,
   upsertConversationMessage,
@@ -121,7 +179,6 @@ import {
   mediaPath,
   messageMediaPath,
   validateImageAttachment,
-  type ImageAttachmentMimeType,
   type SpokeAttachment,
   type SpokeMessageAttachment
 } from "./media";
@@ -141,6 +198,15 @@ import {
 
 type AppView = "feed" | "profile" | "messages" | "notifications";
 type ThemeMode = "light" | "dark";
+type NotificationFilter = "all" | "follows" | "replies" | "messages";
+type ContactProfilePreviewState = "idle" | "loading" | "found" | "missing";
+type HandledNotification = {
+  id: string;
+  sender: string;
+  kind: string;
+  status: "accepted" | "rejected";
+  at: string;
+};
 
 type StoredSession = {
   requestId: string;
@@ -159,23 +225,6 @@ type ReviewState = {
 
 type SpokeIncomingPayload = SpokeReply | SpokeFollowRequest | SpokeFollowResponse | SpokeMessage;
 
-type MessageThread = {
-  id: string;
-  contact: Contact;
-  conversation?: Conversation;
-  lastMessageAt?: string;
-};
-
-type PendingImageAttachment = {
-  id: string;
-  file: File;
-  previewUrl: string;
-  mimeType: ImageAttachmentMimeType;
-  width?: number;
-  height?: number;
-  alt: string;
-};
-
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
 const PROFILE_KEY = "spoke.profile";
@@ -184,6 +233,7 @@ const THEME_KEY = "spoke.theme";
 const FEED_REFRESH_MS = 2000;
 const INCOMING_REFRESH_MS = 2000;
 const CONVERSATION_REFRESH_MS = 3000;
+const MEDIA_RETRY_MS = 5000;
 
 function loadJson<T>(key: string, fallback: T): T {
   try {
@@ -261,20 +311,6 @@ function incomingPreview(payload: SpokeIncomingPayload) {
   return payload.body;
 }
 
-function messagePreview(message: SpokeMessage) {
-  if (message.body.trim()) {
-    return message.body;
-  }
-  const imageCount = message.attachments?.filter((attachment) => attachment.kind === "image").length || 0;
-  if (imageCount === 1) {
-    return "Image";
-  }
-  if (imageCount > 1) {
-    return `${imageCount} images`;
-  }
-  return "";
-}
-
 function parseIncomingPayload(bytes: number[]) {
   const payload = parseJsonBytes<unknown>(bytes);
   if (
@@ -290,6 +326,38 @@ function parseIncomingPayload(bytes: number[]) {
 
 function messageTargetsIdentity(message: SpokeMessage, identity: string) {
   return message.recipients.some((recipient) => sameIdentity(recipient, identity));
+}
+
+function notificationFilterForPayload(payload?: SpokeIncomingPayload | null): NotificationFilter {
+  if (!payload) return "all";
+  if (isSpokeFollowRequest(payload) || isSpokeFollowResponse(payload)) return "follows";
+  if (isSpokeMessage(payload)) return "messages";
+  return "replies";
+}
+
+function notificationFilterForRecord(record: IngressRecord, payload?: SpokeIncomingPayload | null): NotificationFilter {
+  const payloadFilter = notificationFilterForPayload(payload);
+  if (payloadFilter !== "all") {
+    return payloadFilter;
+  }
+  if (record.schema_hint?.includes("follow")) return "follows";
+  if (record.schema_hint?.includes("message")) return "messages";
+  if (record.schema_hint?.includes("reply")) return "replies";
+  return "all";
+}
+
+function notificationGroupLabel(receivedAt: number) {
+  const date = new Date(receivedAt * 1000);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return "Today";
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return "Yesterday";
+  }
+  return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 }
 
 function App() {
@@ -333,12 +401,18 @@ function App() {
   const [activeView, setActiveView] = useState<AppView>("feed");
   const [activeThreadId, setActiveThreadId] = useState("");
   const [incoming, setIncoming] = useState<IngressRecord[]>([]);
+  const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>("all");
+  const [handledNotifications, setHandledNotifications] = useState<HandledNotification[]>([]);
   const [review, setReview] = useState<ReviewState>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
+  const [threadSearch, setThreadSearch] = useState("");
   const [messageAttachments, setMessageAttachments] = useState<Record<string, PendingImageAttachment[]>>({});
   const [messageAttachmentUrls, setMessageAttachmentUrls] = useState<Record<string, string>>({});
   const [messageAttachmentErrors, setMessageAttachmentErrors] = useState<Record<string, string>>({});
+  const [contactProfilePreview, setContactProfilePreview] = useState<SpokeProfile | null>(null);
+  const [contactProfilePreviewState, setContactProfilePreviewState] =
+    useState<ContactProfilePreviewState>("idle");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -346,6 +420,7 @@ function App() {
   const [updateAction, setUpdateAction] = useState<"check" | "install" | null>(null);
   const [sessionValidated, setSessionValidated] = useState(false);
   const [feedRefreshing, setFeedRefreshing] = useState(false);
+  const [mediaRetryTick, setMediaRetryTick] = useState(0);
   const feedRefreshInFlight = useRef(false);
   const incomingRefreshInFlight = useRef(false);
   const conversationRefreshInFlight = useRef(false);
@@ -354,10 +429,15 @@ function App() {
   const pendingAttachmentUrlsRef = useRef<string[]>([]);
   const fetchedAttachmentUrlsRef = useRef<Set<string>>(new Set());
   const fetchingAttachmentKeysRef = useRef<Set<string>>(new Set());
+  const attachmentRetryAfterRef = useRef<Record<string, number>>({});
   const messageAttachmentUrlsRef = useRef<Set<string>>(new Set());
   const fetchingMessageAttachmentKeysRef = useRef<Set<string>>(new Set());
+  const messageAttachmentRetryAfterRef = useRef<Record<string, number>>({});
   const profileAvatarUrlsRef = useRef<Set<string>>(new Set());
   const fetchingProfileAvatarKeysRef = useRef<Set<string>>(new Set());
+  const profileAvatarRetryAfterRef = useRef<Record<string, number>>({});
+  const fetchingProfileKeysRef = useRef<Set<string>>(new Set());
+  const profileRetryAfterRef = useRef<Record<string, number>>({});
   const updateClient: SpokeUpdateClient = tauriSpokeUpdateClient;
 
   const sessionToken = session.token || "";
@@ -457,7 +537,40 @@ function App() {
   const activeThread = useMemo(() => {
     return messageThreads.find((thread) => thread.id === activeThreadId) || messageThreads[0] || null;
   }, [messageThreads, activeThreadId]);
+  const visibleMessageThreads = useMemo(() => {
+    const query = threadSearch.trim().toLowerCase();
+    if (!query) {
+      return messageThreads;
+    }
+    return messageThreads.filter((thread) => {
+      const lastMessage = thread.conversation?.messages[thread.conversation.messages.length - 1];
+      return (
+        thread.contact.displayName.toLowerCase().includes(query) ||
+        thread.contact.identity.toLowerCase().includes(query) ||
+        (lastMessage ? messagePreview(lastMessage.message).toLowerCase().includes(query) : false)
+      );
+    });
+  }, [messageThreads, threadSearch]);
   const activeThreadMessages = activeThread?.conversation?.messages || [];
+  const filteredNotificationGroups = useMemo(() => {
+    const filtered = incoming.filter((record) => {
+      const recordFilter = notificationFilterForRecord(record, review[record.ingress_id]?.opened);
+      return notificationFilter === "all" || recordFilter === notificationFilter;
+    });
+
+    return filtered
+      .sort((a, b) => b.received_at - a.received_at)
+      .reduce<Array<{ label: string; records: IngressRecord[] }>>((groups, record) => {
+        const label = notificationGroupLabel(record.received_at);
+        const existing = groups.find((group) => group.label === label);
+        if (existing) {
+          existing.records.push(record);
+        } else {
+          groups.push({ label, records: [record] });
+        }
+        return groups;
+      }, []);
+  }, [incoming, notificationFilter, review]);
   const feedAttachments = useMemo(
     () => feed.flatMap((item) => item.post.attachments || []),
     [feed]
@@ -489,6 +602,33 @@ function App() {
     },
     [localIdentity, profileCache, profileDraft.avatar]
   );
+  const visibleProfileIdentities = useMemo(() => {
+    const seen = new Set<string>();
+    const identities: string[] = [];
+    const addIdentity = (identity?: string | null) => {
+      if (!identity || sameIdentity(identity, localIdentity)) {
+        return;
+      }
+      const key = profileCacheKey(identity);
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      identities.push(identity);
+    };
+
+    for (const contact of contacts) addIdentity(contact.identity);
+    for (const thread of messageThreads) addIdentity(thread.contact.identity);
+    for (const item of feed) {
+      addIdentity(item.post.author);
+      for (const reply of repliesByPost[item.address] || []) {
+        addIdentity(reply.sender);
+      }
+    }
+    for (const record of incoming) addIdentity(record.sender_identity);
+    addIdentity(activeProfileIdentity);
+    return identities;
+  }, [activeProfileIdentity, contacts, feed, incoming, localIdentity, messageThreads, repliesByPost]);
 
   useEffect(() => {
     getStatus()
@@ -540,7 +680,7 @@ function App() {
   }, [profileCache]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    document.documentElement.classList.toggle("dark", theme === "dark");
     saveJson(THEME_KEY, theme);
   }, [theme]);
 
@@ -549,18 +689,72 @@ function App() {
   }, [session]);
 
   useEffect(() => {
+    if (!canUseApp) {
+      return;
+    }
+    const timer = window.setInterval(() => setMediaRetryTick((current) => current + 1), MEDIA_RETRY_MS);
+    return () => window.clearInterval(timer);
+  }, [canUseApp]);
+
+  useEffect(() => {
+    if (!canUseApp || !sessionToken || visibleProfileIdentities.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const now = Date.now();
+    for (const identity of visibleProfileIdentities) {
+      const key = profileCacheKey(identity);
+      if (
+        profileCache[key] ||
+        (profileRetryAfterRef.current[key] || 0) > now ||
+        fetchingProfileKeysRef.current.has(key)
+      ) {
+        continue;
+      }
+
+      fetchingProfileKeysRef.current.add(key);
+      fetchProfile(identity)
+        .then((profile) => {
+          if (cancelled) {
+            return;
+          }
+          delete profileRetryAfterRef.current[key];
+          setProfileCache((current) => ({
+            ...current,
+            [key]: profile,
+            [profileCacheKey(profile.identity)]: profile
+          }));
+        })
+        .catch(() => {
+          if (!cancelled) {
+            profileRetryAfterRef.current[key] = Date.now() + MEDIA_RETRY_MS;
+          }
+        })
+        .finally(() => {
+          fetchingProfileKeysRef.current.delete(key);
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canUseApp, mediaRetryTick, profileCache, sessionToken, visibleProfileIdentities]);
+
+  useEffect(() => {
     if (!canUseApp || !sessionToken || feedAttachments.length === 0) {
       return;
     }
 
     let cancelled = false;
+    const now = Date.now();
     for (const attachment of feedAttachments) {
       const key = attachmentKey(attachment);
       const target = attachmentFetchTarget(attachment);
       if (
         !target ||
         attachmentUrls[key] ||
-        attachmentErrors[key] ||
+        (attachmentRetryAfterRef.current[key] || 0) > now ||
         fetchingAttachmentKeysRef.current.has(key)
       ) {
         continue;
@@ -576,9 +770,17 @@ function App() {
           const url = URL.createObjectURL(blob);
           fetchedAttachmentUrlsRef.current.add(url);
           setAttachmentUrls((current) => ({ ...current, [key]: url }));
+          delete attachmentRetryAfterRef.current[key];
+          setAttachmentErrors((current) => {
+            if (!current[key]) return current;
+            const next = { ...current };
+            delete next[key];
+            return next;
+          });
         })
         .catch((err) => {
           if (!cancelled) {
+            attachmentRetryAfterRef.current[key] = Date.now() + MEDIA_RETRY_MS;
             setAttachmentErrors((current) => ({ ...current, [key]: apiErrorMessage(err) }));
           }
         })
@@ -590,7 +792,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [attachmentErrors, attachmentUrls, canUseApp, feedAttachments, sessionToken]);
+  }, [attachmentUrls, canUseApp, feedAttachments, mediaRetryTick, sessionToken]);
 
   useEffect(() => {
     if (!canUseApp || !sessionToken || conversationAttachments.length === 0) {
@@ -598,13 +800,14 @@ function App() {
     }
 
     let cancelled = false;
+    const now = Date.now();
     for (const { messageId, attachment } of conversationAttachments) {
       const key = messageAttachmentKey(messageId, attachment);
       const target = attachmentFetchTarget(attachment);
       if (
         !target ||
         messageAttachmentUrls[key] ||
-        messageAttachmentErrors[key] ||
+        (messageAttachmentRetryAfterRef.current[key] || 0) > now ||
         fetchingMessageAttachmentKeysRef.current.has(key)
       ) {
         continue;
@@ -620,9 +823,17 @@ function App() {
           const url = URL.createObjectURL(blob);
           messageAttachmentUrlsRef.current.add(url);
           setMessageAttachmentUrls((current) => ({ ...current, [key]: url }));
+          delete messageAttachmentRetryAfterRef.current[key];
+          setMessageAttachmentErrors((current) => {
+            if (!current[key]) return current;
+            const next = { ...current };
+            delete next[key];
+            return next;
+          });
         })
         .catch((err) => {
           if (!cancelled) {
+            messageAttachmentRetryAfterRef.current[key] = Date.now() + MEDIA_RETRY_MS;
             setMessageAttachmentErrors((current) => ({ ...current, [key]: apiErrorMessage(err) }));
           }
         })
@@ -637,8 +848,8 @@ function App() {
   }, [
     canUseApp,
     conversationAttachments,
-    messageAttachmentErrors,
     messageAttachmentUrls,
+    mediaRetryTick,
     sessionToken
   ]);
 
@@ -648,13 +859,14 @@ function App() {
     }
 
     let cancelled = false;
+    const now = Date.now();
     for (const { identity, attachment } of profileAvatarEntries) {
       const key = profileCacheKey(identity);
       const target = attachmentFetchTarget(attachment);
       if (
         !target ||
         profileAvatarUrls[key] ||
-        profileAvatarErrors[key] ||
+        (profileAvatarRetryAfterRef.current[key] || 0) > now ||
         fetchingProfileAvatarKeysRef.current.has(key)
       ) {
         continue;
@@ -670,9 +882,17 @@ function App() {
           const url = URL.createObjectURL(blob);
           profileAvatarUrlsRef.current.add(url);
           setProfileAvatarUrls((current) => ({ ...current, [key]: url }));
+          delete profileAvatarRetryAfterRef.current[key];
+          setProfileAvatarErrors((current) => {
+            if (!current[key]) return current;
+            const next = { ...current };
+            delete next[key];
+            return next;
+          });
         })
         .catch((err) => {
           if (!cancelled) {
+            profileAvatarRetryAfterRef.current[key] = Date.now() + MEDIA_RETRY_MS;
             setProfileAvatarErrors((current) => ({ ...current, [key]: apiErrorMessage(err) }));
           }
         })
@@ -687,8 +907,8 @@ function App() {
   }, [
     canUseApp,
     profileAvatarEntries,
-    profileAvatarErrors,
     profileAvatarUrls,
+    mediaRetryTick,
     sessionToken
   ]);
 
@@ -1257,6 +1477,48 @@ function App() {
     return profile;
   }
 
+  useEffect(() => {
+    if (!showContactsModal || !canUseApp || !sessionToken) {
+      setContactProfilePreview(null);
+      setContactProfilePreviewState("idle");
+      return;
+    }
+
+    const identity = contactDraft.identity.trim();
+    if (!identity) {
+      setContactProfilePreview(null);
+      setContactProfilePreviewState("idle");
+      return;
+    }
+
+    let cancelled = false;
+    setContactProfilePreview(null);
+    setContactProfilePreviewState("loading");
+    const timer = window.setTimeout(() => {
+      fetchProfile(identity)
+        .then((profile) => {
+          if (cancelled) return;
+          setContactProfilePreview(profile);
+          setProfileCache((current) => ({
+            ...current,
+            [profileCacheKey(identity)]: profile,
+            [profileCacheKey(profile.identity)]: profile
+          }));
+          setContactProfilePreviewState("found");
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setContactProfilePreview(null);
+          setContactProfilePreviewState("missing");
+        });
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [showContactsModal, canUseApp, sessionToken, contactDraft.identity]);
+
   async function fetchPost(addressOrPath: string, owner: string) {
     const target = addressOrPath.startsWith("/spoke/")
       ? `${owner}${addressOrPath}`
@@ -1792,6 +2054,23 @@ function App() {
     }
   }
 
+  function recordHandledNotification(
+    record: IngressRecord,
+    status: HandledNotification["status"],
+    opened?: SpokeIncomingPayload
+  ) {
+    setHandledNotifications((current) => [
+      {
+        id: record.ingress_id,
+        sender: record.sender_identity,
+        kind: opened ? incomingKind(opened) : record.schema_hint || "encrypted object",
+        status,
+        at: new Date().toISOString()
+      },
+      ...current.filter((item) => item.id !== record.ingress_id)
+    ].slice(0, 6));
+  }
+
   async function acceptIncoming(record: IngressRecord) {
     await withBusy(`accept:${record.ingress_id}`, async () => {
       const opened =
@@ -1799,6 +2078,7 @@ function App() {
         parseIncomingPayload((await openIngress(sessionToken, record.ingress_id)).plaintext);
       await acceptPendingIngress(record.ingress_id);
       setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
+      recordHandledNotification(record, "accepted", opened);
       if (isSpokeFollowRequest(opened)) {
         const nextContacts = upsertContact(contacts, acceptedContactFromRequest(opened));
         setContacts(nextContacts);
@@ -1881,6 +2161,7 @@ function App() {
         await sendFollowResponse(opened, "rejected");
       }
       setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
+      recordHandledNotification(record, "rejected", opened);
       setNotice("Incoming object rejected.");
     });
   }
@@ -1891,6 +2172,55 @@ function App() {
 
   function avatarInitial(identity: string) {
     return displayNameForIdentity(identity).slice(0, 1).toUpperCase() || "?";
+  }
+
+  function markAttachmentImageFailed(key: string) {
+    const url = attachmentUrls[key];
+    if (url) {
+      URL.revokeObjectURL(url);
+      fetchedAttachmentUrlsRef.current.delete(url);
+    }
+    attachmentRetryAfterRef.current[key] = Date.now() + MEDIA_RETRY_MS;
+    setAttachmentUrls((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setAttachmentErrors((current) => ({ ...current, [key]: "Image could not be rendered." }));
+  }
+
+  function markMessageImageFailed(key: string) {
+    const url = messageAttachmentUrls[key];
+    if (url) {
+      URL.revokeObjectURL(url);
+      messageAttachmentUrlsRef.current.delete(url);
+    }
+    messageAttachmentRetryAfterRef.current[key] = Date.now() + MEDIA_RETRY_MS;
+    setMessageAttachmentUrls((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setMessageAttachmentErrors((current) => ({ ...current, [key]: "Image could not be rendered." }));
+  }
+
+  function markAvatarImageFailed(identity: string) {
+    const key = profileCacheKey(identity);
+    const url = profileAvatarUrls[key];
+    if (url) {
+      URL.revokeObjectURL(url);
+      profileAvatarUrlsRef.current.delete(url);
+    }
+    profileAvatarRetryAfterRef.current[key] = Date.now() + MEDIA_RETRY_MS;
+    setProfileAvatarUrls((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setProfileAvatarErrors((current) => ({ ...current, [key]: "Avatar could not be rendered." }));
   }
 
   function profileForIdentity(identity: string) {
@@ -1906,11 +2236,13 @@ function App() {
 
   function renderAvatar(identity: string, size: "small" | "large" = "small") {
     const url = avatarUrlForIdentity(identity);
-    const className = `profile-avatar ${size}`;
     return (
-      <span className={className} aria-hidden="true">
-        {url ? <img src={url} alt="" /> : avatarInitial(identity)}
-      </span>
+      <Avatar className={cn(size === "large" ? "size-16 text-lg" : "size-9")}>
+        {url ? <AvatarImage src={url} alt="" onError={() => markAvatarImageFailed(identity)} /> : null}
+        <AvatarFallback className="bg-gradient-to-br from-primary/20 to-accent font-semibold text-primary">
+          {avatarInitial(identity)}
+        </AvatarFallback>
+      </Avatar>
     );
   }
 
@@ -1948,22 +2280,43 @@ function App() {
   function renderProfileDetails(identity: string) {
     const profile = profileForDisplay(identity);
     return (
-      <div className="profile-summary profile-summary-wide">
-        {renderAvatar(identity, "large")}
-        <div>
-          <strong>{displayNameForIdentity(identity)}</strong>
-          <span>{identity}</span>
+      <div className="grid gap-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          {renderAvatar(identity, "large")}
+          <div className="min-w-0 space-y-2">
+            <div>
+              <h2 className="truncate text-2xl font-semibold tracking-tight">
+                {displayNameForIdentity(identity)}
+              </h2>
+              <p className="break-all text-sm text-muted-foreground">{identity}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {profile?.pronouns ? <Badge variant="secondary">{profile.pronouns}</Badge> : null}
+              {profile?.location ? (
+                <Badge variant="outline" className="gap-1">
+                  <MapPin className="size-3" />
+                  {profile.location}
+                </Badge>
+              ) : null}
+            </div>
+          </div>
         </div>
-        <div className="profile-chip-row">
-          {profile?.pronouns ? <span className="profile-chip">{profile.pronouns}</span> : null}
-          {profile?.location ? <span className="profile-chip">{profile.location}</span> : null}
-        </div>
-        {profile?.bio ? <p>{profile.bio}</p> : <p className="muted">No published profile details yet.</p>}
+        {profile?.bio ? (
+          <p className="max-w-2xl whitespace-pre-wrap text-sm leading-6 text-foreground/85">{profile.bio}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">No published profile details yet.</p>
+        )}
         {profile?.links?.length ? (
-          <div className="profile-links">
+          <div className="flex flex-wrap gap-2">
             {profile.links.map((link) => (
-              <a href={link.url} key={`${link.label}:${link.url}`} target="_blank" rel="noreferrer">
-                <ExternalLink size={14} />
+              <a
+                className="inline-flex h-8 items-center gap-2 rounded-md bg-muted px-3 text-sm hover:bg-muted/80"
+                href={link.url}
+                key={`${link.label}:${link.url}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <ExternalLink className="size-3.5" />
                 {link.label}
               </a>
             ))}
@@ -1975,37 +2328,45 @@ function App() {
 
   function renderProfileEditorForm() {
     return (
-      <div className="profile-editor-form">
-        <div className="profile-editor-avatar">
-          <span className="profile-avatar large" aria-hidden="true">
-            {profileAvatar ? (
-              <img src={profileAvatar.previewUrl} alt="" />
-            ) : avatarUrlForIdentity(localIdentity) ? (
-              <img src={avatarUrlForIdentity(localIdentity)} alt="" />
-            ) : (
-              avatarInitial(localIdentity)
-            )}
-          </span>
-          <div>
-            <label className="file-button">
-              <ImagePlus size={16} />
-              Avatar
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={addProfileAvatar}
-              />
-            </label>
-            {(profileAvatar || profileDraft.avatar) ? (
-              <button type="button" onClick={removeProfileAvatar} title="Remove avatar">
-                <Trash2 size={14} />
-              </button>
-            ) : null}
+      <div className="grid gap-5 px-5 py-5">
+        <div className="grid gap-4 rounded-lg border spoke-border bg-muted/25 p-4 sm:grid-cols-[auto_1fr] sm:items-center">
+          <div className="relative size-20">
+            <Avatar className="size-20 text-xl">
+              {profileAvatar ? (
+                <AvatarImage src={profileAvatar.previewUrl} alt="" />
+              ) : avatarUrlForIdentity(localIdentity) ? (
+                <AvatarImage src={avatarUrlForIdentity(localIdentity)} alt="" onError={() => markAvatarImageFailed(localIdentity)} />
+              ) : null}
+              <AvatarFallback className="bg-gradient-to-br from-primary/20 to-accent font-semibold text-primary">
+                {avatarInitial(localIdentity)}
+              </AvatarFallback>
+            </Avatar>
+          </div>
+          <div className="grid gap-2">
+            <div>
+              <p className="text-sm font-medium">Profile picture</p>
+              <p className="text-xs text-muted-foreground">Use a square JPEG, PNG, or WebP image.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline" size="sm">
+                <label>
+                  <ImagePlus className="size-4" />
+                  Choose avatar
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={addProfileAvatar} />
+                </label>
+              </Button>
+              {(profileAvatar || profileDraft.avatar) ? (
+                <Button type="button" variant="ghost" size="sm" onClick={removeProfileAvatar}>
+                  <Trash2 className="size-4" />
+                  Remove
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
-        <label>
+        <label className="grid gap-2 text-sm font-medium">
           Display name
-          <input
+          <Input
             value={profileDraft.displayName}
             onChange={(event) =>
               setProfileDraft((current) => ({ ...current, displayName: event.target.value }))
@@ -2013,9 +2374,9 @@ function App() {
             placeholder="Alex"
           />
         </label>
-        <label>
+        <label className="grid gap-2 text-sm font-medium">
           Bio
-          <textarea
+          <Textarea
             rows={3}
             value={profileDraft.bio}
             onChange={(event) =>
@@ -2024,10 +2385,10 @@ function App() {
             placeholder="Short note for known contacts"
           />
         </label>
-        <div className="field-row">
-          <label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-2 text-sm font-medium">
             Pronouns
-            <input
+            <Input
               value={profileDraft.pronouns}
               onChange={(event) =>
                 setProfileDraft((current) => ({ ...current, pronouns: event.target.value }))
@@ -2035,9 +2396,9 @@ function App() {
               placeholder="they/them"
             />
           </label>
-          <label>
+          <label className="grid gap-2 text-sm font-medium">
             Location
-            <input
+            <Input
               value={profileDraft.location}
               onChange={(event) =>
                 setProfileDraft((current) => ({ ...current, location: event.target.value }))
@@ -2046,28 +2407,29 @@ function App() {
             />
           </label>
         </div>
-        <div className="profile-links-editor">
-          <div className="panel-heading compact-heading">
-            <h3>Links</h3>
-            <button type="button" onClick={addProfileLink} title="Add profile link">
-              <Plus size={14} />
-            </button>
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Links</h3>
+            <Button type="button" variant="outline" size="sm" onClick={addProfileLink}>
+              <Plus className="size-4" />
+              Add
+            </Button>
           </div>
           {profileDraft.links.map((link, index) => (
-            <div className="profile-link-edit" key={index}>
-              <input
+            <div className="grid gap-2 rounded-lg border spoke-border bg-muted/35 p-2 sm:grid-cols-[1fr_1.4fr_auto]" key={index}>
+              <Input
                 value={link.label}
                 onChange={(event) => updateProfileLink(index, "label", event.target.value)}
                 placeholder="Label"
               />
-              <input
+              <Input
                 value={link.url}
                 onChange={(event) => updateProfileLink(index, "url", event.target.value)}
                 placeholder="https://example.com"
               />
-              <button type="button" onClick={() => removeProfileLink(index)} title="Remove link">
-                <X size={14} />
-              </button>
+              <Button type="button" variant="ghost" size="icon" onClick={() => removeProfileLink(index)} title="Remove link">
+                <X className="size-4" />
+              </Button>
             </div>
           ))}
         </div>
@@ -2077,68 +2439,77 @@ function App() {
 
   function renderPostCard(item: FeedItem) {
     return (
-      <article className="post-card" key={`${item.source}:${item.address}`}>
-        <header>
-          <button
-            className="post-author"
+      <Card className="overflow-hidden" key={`${item.source}:${item.address}`}>
+        <CardHeader className="bg-muted/20">
+          <Button
+            variant="ghost"
+            className="h-auto justify-start gap-3 p-0 hover:bg-transparent"
             type="button"
             onClick={() => openProfile(item.post.author)}
             title={`View ${displayNameForIdentity(item.post.author)}`}
           >
             {renderAvatar(item.post.author)}
-            <span>
-              <strong>{displayNameForIdentity(item.post.author)}</strong>
-              <span>{item.post.author}</span>
+            <span className="min-w-0 text-left">
+              <span className="block truncate font-semibold">{displayNameForIdentity(item.post.author)}</span>
+              <span className="block truncate text-xs text-muted-foreground">{item.post.author}</span>
             </span>
-          </button>
-          <time>{new Date(item.post.createdAt).toLocaleString()}</time>
-        </header>
-        <h3>{item.post.title}</h3>
-        <p>{item.post.body}</p>
+          </Button>
+          <CardAction>
+            <time className="text-xs text-muted-foreground">{new Date(item.post.createdAt).toLocaleString()}</time>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="grid gap-4 pt-4">
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold tracking-tight">{item.post.title}</h3>
+            <p className="whitespace-pre-wrap text-sm leading-6 text-foreground/85">{item.post.body}</p>
+          </div>
         {item.post.attachments?.length ? (
-          <div className="post-media-grid">
+          <div className={cn("grid gap-2", item.post.attachments.length > 1 ? "sm:grid-cols-2" : "")}>
             {item.post.attachments.map((attachment) => {
               const key = attachmentKey(attachment);
               return (
-                <figure className="post-media" key={key}>
-                  {attachmentUrls[key] ? (
-                    <img src={attachmentUrls[key]} alt={attachment.alt || `${item.post.title} image`} />
-                  ) : attachmentErrors[key] ? (
-                    <div className="media-placeholder">Image unavailable</div>
-                  ) : (
-                    <div className="media-placeholder">Loading image...</div>
-                  )}
-                  {attachment.alt ? <figcaption>{attachment.alt}</figcaption> : null}
-                </figure>
+                <MediaFrame
+                  imageClassName="max-h-[520px]"
+                  key={key}
+                  src={attachmentUrls[key]}
+                  error={attachmentErrors[key]}
+                  alt={attachment.alt || `${item.post.title} image`}
+                  caption={attachment.alt}
+                  onError={() => markAttachmentImageFailed(key)}
+                />
               );
             })}
           </div>
         ) : null}
-        <div className="thread">
+        </CardContent>
+        <CardFooter className="block space-y-3">
+        <div className="grid gap-2">
           {(repliesByPost[item.address] || []).map((reply) => (
-            <div className="reply" key={reply.id}>
-              <header>
-                <button
-                  className="reply-author"
+            <div className="rounded-lg border spoke-border bg-background/80 p-3 shadow-sm shadow-foreground/5" key={reply.id}>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <Button
+                  variant="ghost"
+                  className="h-auto gap-2 p-0 hover:bg-transparent"
                   type="button"
                   onClick={() => openProfile(reply.sender)}
                   title={`View ${displayNameForIdentity(reply.sender)}`}
                 >
                   {renderAvatar(reply.sender)}
-                  <strong>{displayNameForIdentity(reply.sender)}</strong>
-                </button>
-                <time>{new Date(reply.createdAt).toLocaleString()}</time>
-              </header>
-              <p>{reply.body}</p>
+                  <span className="font-medium">{displayNameForIdentity(reply.sender)}</span>
+                </Button>
+                <time className="text-xs text-muted-foreground">{new Date(reply.createdAt).toLocaleString()}</time>
+              </div>
+              <p className="whitespace-pre-wrap text-sm">{reply.body}</p>
             </div>
           ))}
           {(repliesByPost[item.address] || []).length === 0 ? (
-            <span className="thread-empty">No replies yet.</span>
+            <span className="text-sm text-muted-foreground">No replies yet.</span>
           ) : null}
         </div>
         {item.source === "contact" ? (
-          <div className="reply-box">
-            <textarea
+          <div className="flex gap-2">
+            <Textarea
+              className="min-h-12"
               rows={2}
               value={replyDrafts[item.address] || ""}
               onChange={(event) =>
@@ -2146,27 +2517,33 @@ function App() {
               }
               placeholder={`Reply to ${displayNameForFeedItem(item)}`}
             />
-            <button type="button" onClick={() => sendReply(item)} title="Send encrypted reply">
-              <MessageCircle size={16} />
-            </button>
+            <Button type="button" size="icon-lg" onClick={() => sendReply(item)} title="Send encrypted reply">
+              <MessageCircle className="size-4" />
+            </Button>
           </div>
         ) : null}
-      </article>
+        </CardFooter>
+      </Card>
     );
   }
 
   function renderComposer() {
     return (
-      <section className="composer">
-        <div className="composer-fields">
-          <input
+      <Card>
+        <CardHeader>
+          <CardTitle>New post</CardTitle>
+          <CardDescription>Publish to your accepted contacts.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          <Input
             value={postDraft.title}
             onChange={(event) =>
               setPostDraft((current) => ({ ...current, title: event.target.value }))
             }
             placeholder="Post title"
           />
-          <textarea
+          <Textarea
+            className="min-h-28"
             value={postDraft.body}
             onChange={(event) =>
               setPostDraft((current) => ({ ...current, body: event.target.value }))
@@ -2174,448 +2551,307 @@ function App() {
             rows={4}
             placeholder="Write a note for known contacts"
           />
-          <div className="attachment-toolbar">
-            <label className="file-button">
-              <ImagePlus size={16} />
-              Add images
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                multiple
-                onChange={addPostAttachments}
-              />
-            </label>
-            <span>JPEG, PNG, or WebP up to 5 MB each</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button asChild variant="outline" size="sm">
+              <label>
+                <ImagePlus className="size-4" />
+                Add images
+                <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={addPostAttachments} />
+              </label>
+            </Button>
+            <span className="text-xs text-muted-foreground">JPEG, PNG, or WebP up to 5 MB each</span>
           </div>
           {postAttachments.length > 0 ? (
-            <div className="pending-media-grid">
+            <div className="grid gap-2">
               {postAttachments.map((attachment) => (
-                <div className="pending-media-card" key={attachment.id}>
-                  <img src={attachment.previewUrl} alt={attachment.file.name} />
-                  <div>
-                    <strong>{attachment.file.name || "Image attachment"}</strong>
-                    <span>
-                      {formatBytes(attachment.file.size)}
-                      {attachment.width && attachment.height
-                        ? ` - ${attachment.width}x${attachment.height}`
-                        : ""}
-                    </span>
-                    <input
-                      value={attachment.alt}
-                      onChange={(event) => updatePostAttachmentAlt(attachment.id, event.target.value)}
-                      placeholder="Alt text"
-                    />
-                  </div>
-                  <button type="button" onClick={() => removePostAttachment(attachment.id)} title="Remove image">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+                <AttachmentDraftRow
+                  attachment={attachment}
+                  formatBytes={formatBytes}
+                  key={attachment.id}
+                  onAltChange={(alt) => updatePostAttachmentAlt(attachment.id, alt)}
+                  onRemove={() => removePostAttachment(attachment.id)}
+                />
               ))}
             </div>
           ) : null}
-        </div>
-        <button className="primary" type="button" onClick={publishPost} disabled={busy === "post"}>
-          <Plus size={16} />
+        </CardContent>
+        <CardFooter className="justify-end">
+        <Button type="button" onClick={publishPost} disabled={busy === "post"}>
+          <Plus className="size-4" />
           Publish
-        </button>
-      </section>
+        </Button>
+        </CardFooter>
+      </Card>
     );
   }
 
-  function renderContactsPanel(onClose?: () => void) {
+  function renderContactsPanel() {
+    const acceptedPeople = contacts.filter((contact) => contact.relationship === "accepted" || !contact.relationship);
+    const pendingPeople = contacts.filter((contact) => contact.relationship && contact.relationship !== "accepted");
     return (
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Known people</h2>
-          <div className="panel-actions">
-            <button type="button" onClick={addContact} title="Add contact">
-              <UserCheck size={16} />
-            </button>
-            {onClose ? (
-              <button type="button" onClick={onClose} title="Close">
-                <X size={16} />
-              </button>
-            ) : null}
+      <section className="grid gap-5 px-5 py-5">
+        <div className="grid gap-4 rounded-lg border spoke-border bg-muted/25 p-4">
+          <label className="grid gap-2 text-sm font-medium">
+            Jolt identity
+            <div className="relative">
+              <AtSign className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                value={contactDraft.identity}
+                onChange={(event) =>
+                  setContactDraft((current) => ({ ...current, identity: event.target.value }))
+                }
+                placeholder="bob.jolt"
+              />
+            </div>
+          </label>
+          <div className="rounded-lg border spoke-border bg-background/80 p-3 shadow-sm shadow-foreground/5">
+            {contactProfilePreviewState === "loading" ? (
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Looking for a published Spoke profile...
+              </div>
+            ) : contactProfilePreview ? (
+              <div className="flex gap-3">
+                {renderAvatar(contactProfilePreview.identity)}
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <strong className="truncate">{contactProfilePreview.displayName}</strong>
+                    <Badge variant="secondary">Profile found</Badge>
+                  </div>
+                  <p className="break-all text-xs text-muted-foreground">{contactProfilePreview.identity}</p>
+                  {contactProfilePreview.bio ? (
+                    <p className="line-clamp-2 text-sm text-foreground/80">{contactProfilePreview.bio}</p>
+                  ) : null}
+                </div>
+              </div>
+            ) : contactProfilePreviewState === "missing" ? (
+              <div className="flex items-start gap-3 text-sm">
+                <Inbox className="mt-0.5 size-4 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">No public Spoke profile found.</p>
+                  <p className="text-muted-foreground">You can still send an encrypted follow request.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <Search className="size-4" />
+                Enter an identity to preview their public profile.
+              </div>
+            )}
+          </div>
+          <label className="grid gap-2 text-sm font-medium">
+            Local nickname
+            <Input
+              value={contactDraft.displayName}
+              onChange={(event) =>
+                setContactDraft((current) => ({ ...current, displayName: event.target.value }))
+              }
+              placeholder={contactProfilePreview?.displayName || "Bob"}
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-medium">
+            Request note
+            <Textarea
+              rows={2}
+              value={followMessageDraft}
+              onChange={(event) => setFollowMessageDraft(event.target.value)}
+              placeholder="Optional intro"
+            />
+          </label>
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <Button type="button" variant="outline" onClick={addContact}>
+              <UserCheck className="size-4" />
+              Save locally
+            </Button>
+            <Button type="button" onClick={sendFollowRequest} disabled={busy === "follow"}>
+              <UserPlus className="size-4" />
+              Request follow
+            </Button>
           </div>
         </div>
-        <label>
-          Identity
-          <input
-            value={contactDraft.identity}
-            onChange={(event) =>
-              setContactDraft((current) => ({ ...current, identity: event.target.value }))
-            }
-            placeholder="bob.jolt"
-          />
-        </label>
-        <label>
-          Nickname
-          <input
-            value={contactDraft.displayName}
-            onChange={(event) =>
-              setContactDraft((current) => ({ ...current, displayName: event.target.value }))
-            }
-            placeholder="Bob"
-          />
-        </label>
-        <label>
-          Request note
-          <textarea
-            rows={2}
-            value={followMessageDraft}
-            onChange={(event) => setFollowMessageDraft(event.target.value)}
-            placeholder="Optional intro"
-          />
-        </label>
-        <button type="button" onClick={sendFollowRequest} disabled={busy === "follow"} title="Send follow request">
-          <UserPlus size={16} />
-          Request follow
-        </button>
-        <div className="contact-list">
-          {contacts.map((contact) => (
-            <div className="contact-row" key={contact.identity}>
-              <button
-                className="identity-button"
-                type="button"
-                onClick={() => openProfile(contact.identity)}
-                title={`View ${contactDisplayName(contact)}`}
-              >
-                {renderAvatar(contact.identity)}
-              </button>
-              <div>
-                <strong>{contactDisplayName(contact)}</strong>
-                <span>{contact.identity}</span>
-                <span className="contact-status">{contact.relationship || "accepted"}</span>
+
+        <Tabs defaultValue="accepted" className="gap-3">
+          <TabsList className="w-full justify-start">
+            <TabsTrigger value="accepted">Accepted friends</TabsTrigger>
+            <TabsTrigger value="pending">Pending sent</TabsTrigger>
+          </TabsList>
+          {[
+            { value: "accepted", people: acceptedPeople, empty: "No accepted friends yet." },
+            { value: "pending", people: pendingPeople, empty: "No pending requests." }
+          ].map((group) => (
+            <TabsContent value={group.value} className="max-h-56 overflow-y-auto pr-1" key={group.value}>
+              <div className="grid gap-2">
+              {group.people.map((contact) => (
+                <PersonRow
+                  badge={contact.relationship || "accepted"}
+                  badgeVariant={contact.relationship === "accepted" || !contact.relationship ? "secondary" : "outline"}
+                  displayName={contactDisplayName(contact)}
+                  identity={contact.identity}
+                  key={contact.identity}
+                  renderAvatar={renderAvatar}
+                  onOpen={() => openProfile(contact.identity)}
+                  onRemove={() => {
+                    setContacts((current) => current.filter((item) => item.identity !== contact.identity));
+                    setFeed((current) => removeContactFeedItems(current, contact.identity));
+                  }}
+                />
+              ))}
+              {group.people.length === 0 ? (
+                <div className="rounded-lg border spoke-border bg-muted/35 p-4 text-sm text-muted-foreground">{group.empty}</div>
+              ) : null}
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setContacts((current) => current.filter((item) => item.identity !== contact.identity));
-                  setFeed((current) => removeContactFeedItems(current, contact.identity));
-                }}
-                title="Remove contact"
-              >
-                <X size={14} />
-              </button>
-            </div>
+            </TabsContent>
           ))}
-          {contacts.length === 0 ? <div className="empty-state compact">No known people yet.</div> : null}
-        </div>
+        </Tabs>
       </section>
     );
   }
 
   function renderContactsModal() {
-    if (!showContactsModal) {
-      return null;
-    }
     return (
-      <div className="modal-backdrop" role="presentation">
-        <section className="modal-panel contacts-modal" role="dialog" aria-modal="true" aria-label="Known people">
-          {renderContactsPanel(() => setShowContactsModal(false))}
-        </section>
-      </div>
+      <Dialog open={showContactsModal} onOpenChange={setShowContactsModal}>
+        <DialogContent className="max-h-[90vh] max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Find people</DialogTitle>
+            <DialogDescription>
+              Preview a public Spoke profile, save a local nickname, and send a follow request.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[calc(90vh-9rem)] overflow-y-auto">
+            {renderContactsPanel()}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setShowContactsModal(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     );
   }
 
   function renderProfileEditModal() {
-    if (!showProfileEditor) {
-      return null;
-    }
     return (
-      <div className="modal-backdrop" role="presentation">
-        <section className="modal-panel profile-edit-modal" role="dialog" aria-modal="true" aria-label="Edit profile">
-          <div className="panel-heading">
-            <h2>Edit Profile</h2>
-            <button type="button" onClick={() => setShowProfileEditor(false)} title="Close">
-              <X size={16} />
-            </button>
+      <Dialog open={showProfileEditor} onOpenChange={setShowProfileEditor}>
+        <DialogContent className="max-h-[90vh] max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit profile</DialogTitle>
+            <DialogDescription>Publish profile details that known contacts can recognise.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[calc(90vh-9rem)] overflow-y-auto">
+            {renderProfileEditorForm()}
           </div>
-          {renderProfileEditorForm()}
-          <div className="modal-actions">
-            <button type="button" onClick={() => setShowProfileEditor(false)}>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setShowProfileEditor(false)}>
               Cancel
-            </button>
-            <button className="primary" type="button" onClick={publishProfileFromDraft} disabled={busy === "profile"}>
-              <Send size={16} />
+            </Button>
+            <Button type="button" onClick={publishProfileFromDraft} disabled={busy === "profile"}>
+              <Send className="size-4" />
               Save profile
-            </button>
-          </div>
-        </section>
-      </div>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     );
   }
 
   function renderProfileModal() {
-    if (!activeProfileIdentity) {
-      return null;
-    }
     return (
-      <div className="modal-backdrop" role="presentation">
-        <section className="modal-panel compact-modal" role="dialog" aria-modal="true" aria-label="Profile">
-          <div className="panel-heading">
-            <h2>Profile</h2>
-            <button type="button" onClick={() => setActiveProfileIdentity("")} title="Close profile">
-              <X size={16} />
-            </button>
-          </div>
-          {renderProfileDetails(activeProfileIdentity)}
-        </section>
-      </div>
+      <Dialog open={Boolean(activeProfileIdentity)} onOpenChange={(open) => !open && setActiveProfileIdentity("")}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Public profile</DialogTitle>
+          </DialogHeader>
+          {activeProfileIdentity ? renderProfileDetails(activeProfileIdentity) : null}
+        </DialogContent>
+      </Dialog>
     );
   }
 
   function renderNotificationCard(record: IngressRecord) {
     const opened = review[record.ingress_id]?.opened;
     const profile = profileForIdentity(record.sender_identity);
+    const kind = opened ? incomingKind(opened) : record.schema_hint || "encrypted object";
+    const notificationFilter = notificationFilterForRecord(record, opened);
     return (
-      <article className="notification-card" key={record.ingress_id}>
-        {renderAvatar(record.sender_identity)}
-        <div className="notification-main">
-          <header>
-            <strong>{displayNameForIdentity(record.sender_identity)}</strong>
-            <span>{opened ? incomingKind(opened) : record.schema_hint || "encrypted object"}</span>
-          </header>
-          <span>{record.sender_identity}</span>
-          {profile?.bio ? <p>{profile.bio}</p> : null}
+      <Card size="sm" className="overflow-hidden" key={record.ingress_id}>
+        <CardContent className="grid gap-4 pt-3 sm:grid-cols-[auto_1fr_auto]">
+          <Button
+            variant="ghost"
+            className="size-auto self-start p-0 hover:bg-transparent"
+            type="button"
+            onClick={() => openProfile(record.sender_identity)}
+            title={`View ${displayNameForIdentity(record.sender_identity)}`}
+          >
+            {renderAvatar(record.sender_identity)}
+          </Button>
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <strong className="truncate">{displayNameForIdentity(record.sender_identity)}</strong>
+              <Badge variant={notificationFilter === "follows" ? "default" : "secondary"}>
+                {kind}
+              </Badge>
+              <Badge variant="outline" className="gap-1">
+                <Clock className="size-3" />
+                {new Date(record.received_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </Badge>
+            </div>
+            <p className="break-all text-xs text-muted-foreground">{record.sender_identity}</p>
+            {profile?.bio ? <p className="line-clamp-2 text-sm text-foreground/80">{profile.bio}</p> : null}
+            {profile?.links?.length ? (
+              <div className="flex flex-wrap gap-2">
+                {profile.links.slice(0, 2).map((link) => (
+                  <a
+                    className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs hover:bg-muted/80"
+                    href={link.url}
+                    key={`${link.label}:${link.url}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <LinkIcon className="size-3" />
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            ) : null}
           {opened ? (
-            <div className="opened-reply">
-              <span>{incomingKind(opened)}</span>
-              <p>{incomingPreview(opened)}</p>
+            <div className="rounded-lg border spoke-border bg-muted/35 p-3">
+              <p className="text-xs font-medium uppercase text-muted-foreground">{incomingKind(opened)}</p>
+              <p className="mt-1 whitespace-pre-wrap text-sm">{incomingPreview(opened)}</p>
             </div>
           ) : (
-            <button type="button" onClick={() => openIncoming(record)} title="Open">
+            <Button type="button" variant="outline" size="sm" onClick={() => openIncoming(record)} title="Open">
               Open
-            </button>
+            </Button>
           )}
           {review[record.ingress_id]?.error ? (
-            <p className="inline-error">{review[record.ingress_id]?.error}</p>
+            <p className="text-sm text-destructive">{review[record.ingress_id]?.error}</p>
           ) : null}
-        </div>
-        <div className="decision-buttons">
-          <button
+          </div>
+          <div className="flex items-start gap-2 sm:flex-col">
+          <Button
             type="button"
+            size="icon"
             onClick={() => acceptIncoming(record)}
             disabled={busy === `accept:${record.ingress_id}`}
             title="Accept"
           >
-            <Check size={14} />
-          </button>
-          <button
+            <Check className="size-4" />
+          </Button>
+          <Button
             type="button"
+            variant="outline"
+            size="icon"
             onClick={() => rejectIncoming(record)}
             disabled={busy === `reject:${record.ingress_id}`}
             title="Reject"
           >
-            <X size={14} />
-          </button>
-        </div>
-      </article>
-    );
-  }
-
-  function renderMessagesView() {
-    return (
-      <section className="messages-view">
-        <aside className="messages-sidebar" aria-label="Conversations">
-          <div className="messages-sidebar-header">
-            <div>
-              <h2>Messages</h2>
-              <p>{messageThreads.length} conversation threads</p>
-            </div>
-            <button type="button" onClick={refreshIncoming} disabled={busy === "incoming"} title="Refresh incoming">
-              <RefreshCw size={16} />
-            </button>
+            <X className="size-4" />
+          </Button>
           </div>
-
-          <div className="thread-list">
-            {messageThreads.map((thread) => {
-              const lastMessage = thread.conversation?.messages[
-                thread.conversation.messages.length - 1
-              ];
-              return (
-                <button
-                  type="button"
-                  className={`thread-row ${activeThread?.id === thread.id ? "active" : ""}`}
-                  key={thread.id}
-                  onClick={() => setActiveThreadId(thread.id)}
-                >
-                  {renderAvatar(thread.contact.identity)}
-                  <span className="thread-summary">
-                    <strong>{thread.contact.displayName}</strong>
-                    <span>
-                      {lastMessage
-                        ? messagePreview(lastMessage.message)
-                        : `Start a private thread with ${thread.contact.displayName}`}
-                    </span>
-                  </span>
-                  {thread.lastMessageAt ? (
-                    <time>{new Date(thread.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
-                  ) : null}
-                </button>
-              );
-            })}
-            {messageThreads.length === 0 ? (
-              <div className="empty-state compact">Accept a contact before starting messages.</div>
-            ) : null}
-          </div>
-        </aside>
-
-        <section className="message-thread-shell">
-          {activeThread ? (
-            <>
-              <header className="message-thread-header">
-                <button className="mobile-back" type="button" onClick={() => setActiveView("feed")} title="Back to feed">
-                  <ArrowLeft size={16} />
-                </button>
-                <button
-                  className="identity-button"
-                  type="button"
-                  onClick={() => openProfile(activeThread.contact.identity)}
-                  title={`View ${activeThread.contact.displayName}`}
-                >
-                  {renderAvatar(activeThread.contact.identity, "large")}
-                </button>
-                <div>
-                  <h2>{activeThread.contact.displayName}</h2>
-                  <p>{activeThread.contact.identity}</p>
-                </div>
-              </header>
-
-              <div className="message-thread" aria-live="polite">
-                {activeThreadMessages.map((item) => (
-                  <div className={`thread-message ${item.direction}`} key={item.message.id}>
-                    <div>
-                      <button
-                        className="message-author"
-                        type="button"
-                        onClick={() => openProfile(item.message.sender)}
-                        title={`View ${displayNameForIdentity(item.message.sender)}`}
-                      >
-                        {renderAvatar(item.message.sender)}
-                        <span>{displayNameForIdentity(item.message.sender)}</span>
-                      </button>
-                      {item.message.body ? <p>{item.message.body}</p> : null}
-                      {item.message.attachments?.length ? (
-                        <div className="message-media-grid">
-                          {item.message.attachments.map((attachment) => {
-                            const key = messageAttachmentKey(item.message.id, attachment);
-                            return (
-                              <figure className="message-media" key={key}>
-                                {messageAttachmentUrls[key] ? (
-                                  <img
-                                    src={messageAttachmentUrls[key]}
-                                    alt={attachment.alt || "Message image"}
-                                  />
-                                ) : messageAttachmentErrors[key] ? (
-                                  <div className="message-media-placeholder">Image unavailable</div>
-                                ) : (
-                                  <div className="message-media-placeholder">Loading image...</div>
-                                )}
-                                {attachment.alt ? <figcaption>{attachment.alt}</figcaption> : null}
-                              </figure>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                      <time>{new Date(item.message.createdAt).toLocaleString()}</time>
-                    </div>
-                  </div>
-                ))}
-                {activeThreadMessages.length === 0 ? (
-                  <div className="empty-thread">
-                    <MessageCircle size={28} />
-                    <h3>{activeThread.contact.displayName}</h3>
-                    <p>Start the encrypted one-to-one conversation.</p>
-                  </div>
-                ) : null}
-              </div>
-              <div className="thread-composer">
-                <div className="message-composer-main">
-                  <textarea
-                    rows={2}
-                    value={messageDrafts[activeThread.contact.identity] || ""}
-                    onChange={(event) =>
-                      setMessageDrafts((current) => ({
-                        ...current,
-                        [activeThread.contact.identity]: event.target.value
-                      }))
-                    }
-                    onKeyDown={(event) => handleMessageKeyDown(event, activeThread.contact)}
-                    placeholder={`Message ${activeThread.contact.displayName}`}
-                  />
-                  <div className="attachment-toolbar compact-toolbar">
-                    <label className="file-button icon-only" title="Attach images">
-                      <ImagePlus size={16} />
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        multiple
-                        onChange={(event) => addMessageAttachments(activeThread.contact.identity, event)}
-                      />
-                    </label>
-                    <span>Images are encrypted with the message thread</span>
-                  </div>
-                  {(messageAttachments[activeThread.contact.identity] || []).length > 0 ? (
-                    <div className="pending-media-grid message-pending-media">
-                      {(messageAttachments[activeThread.contact.identity] || []).map((attachment) => (
-                        <div className="pending-media-card" key={attachment.id}>
-                          <img src={attachment.previewUrl} alt={attachment.file.name} />
-                          <div>
-                            <strong>{attachment.file.name || "Image attachment"}</strong>
-                            <span>
-                              {formatBytes(attachment.file.size)}
-                              {attachment.width && attachment.height
-                                ? ` - ${attachment.width}x${attachment.height}`
-                                : ""}
-                            </span>
-                            <input
-                              value={attachment.alt}
-                              onChange={(event) =>
-                                updateMessageAttachmentAlt(
-                                  activeThread.contact.identity,
-                                  attachment.id,
-                                  event.target.value
-                                )
-                              }
-                              placeholder="Alt text"
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              removeMessageAttachment(activeThread.contact.identity, attachment.id)
-                            }
-                            title="Remove image"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-                <button
-                  className="primary"
-                  type="button"
-                  onClick={() => sendMessage(activeThread.contact)}
-                  disabled={busy === `message:${activeThread.contact.identity}`}
-                  title="Send encrypted message"
-                >
-                  <Send size={16} />
-                  Send
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="messages-empty">
-              <MessageCircle size={36} />
-              <h2>No message threads</h2>
-              <p>Accept a contact, then start a private conversation here.</p>
-            </div>
-          )}
-        </section>
-      </section>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -2668,180 +2904,299 @@ function App() {
     }
   };
 
+  const navItems: Array<{ view: AppView; label: string; icon: typeof Home; badge?: number }> = [
+    { view: "feed", label: "Feed", icon: Home },
+    { view: "profile", label: "Profile", icon: User },
+    { view: "messages", label: "Messages", icon: MessageCircle, badge: conversationList.length },
+    { view: "notifications", label: "Notifications", icon: Bell, badge: incoming.length }
+  ];
+
   return (
-    <main className="social-shell">
+    <TooltipProvider>
       {!canUseApp ? (
-        <section className="session-panel">
-          <div>
-            <KeyRound size={32} />
-            <h2>Connect Spoke to Jolt</h2>
-            <p>
+        <main className="grid min-h-screen place-items-center p-4">
+          <Card className="w-full max-w-2xl">
+            <CardHeader>
+              <div className="mb-2 flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <KeyRound className="size-6" />
+              </div>
+              <CardTitle>Connect Spoke to Jolt</CardTitle>
+              <CardDescription>
               Spoke needs scoped access to publish `/spoke/*`, read public Jolt content,
               and review incoming social objects.
-            </p>
-          </div>
-          <button className="primary" type="button" onClick={requestSession} disabled={busy === "session"}>
-            <KeyRound size={16} />
-            Request access
-          </button>
-        </section>
+              </CardDescription>
+            </CardHeader>
+            <CardFooter className="justify-end">
+              <Button type="button" onClick={requestSession} disabled={busy === "session"}>
+                <KeyRound className="size-4" />
+                Request access
+              </Button>
+            </CardFooter>
+          </Card>
+        </main>
       ) : (
-        <div className="social-layout">
-          <aside className="side-nav">
-            <div className="side-brand">
-              <span className="brand-mark">S</span>
-              <div>
-                <strong>Spoke</strong>
-                <span>Jolt social</span>
+        <SidebarProvider>
+          <Sidebar collapsible="icon">
+            <SidebarHeader>
+              <div className="flex items-center gap-3 rounded-lg px-2 py-1.5">
+                <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
+                  S
+                </div>
+                <div className="min-w-0 group-data-[collapsible=icon]:hidden">
+                  <strong className="block leading-none">Spoke</strong>
+                  <span className="text-xs text-sidebar-foreground/65">Jolt social</span>
+                </div>
               </div>
-            </div>
-            <nav aria-label="Spoke sections">
-              <button type="button" className={activeView === "feed" ? "active" : ""} onClick={() => setActiveView("feed")}>
-                <Home size={18} />
-                Feed
-              </button>
-              <button type="button" className={activeView === "profile" ? "active" : ""} onClick={() => setActiveView("profile")}>
-                <User size={18} />
-                Profile
-              </button>
-              <button type="button" className={activeView === "messages" ? "active" : ""} onClick={() => setActiveView("messages")}>
-                <MessageCircle size={18} />
-                Messages
-                {conversationList.length > 0 ? <span>{conversationList.length}</span> : null}
-              </button>
-              <button
-                type="button"
-                className={activeView === "notifications" ? "active" : ""}
-                onClick={() => setActiveView("notifications")}
-              >
-                <Bell size={18} />
-                Notifications
-                {incoming.length > 0 ? <span>{incoming.length}</span> : null}
-              </button>
-            </nav>
-            <button className="primary add-friend-button" type="button" onClick={() => setShowContactsModal(true)}>
-              <UserPlus size={18} />
-              Add friend
-            </button>
-            <div className="side-status">
-              {renderAvatar(localIdentity)}
-              <div>
-                <strong>{displayNameForIdentity(localIdentity)}</strong>
-                <span>{displayIdentity(localIdentity)}</span>
-                <span>{session.status}</span>
+            </SidebarHeader>
+            <SidebarContent>
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {navItems.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <SidebarMenuItem key={item.view}>
+                          <SidebarMenuButton
+                            isActive={activeView === item.view}
+                            tooltip={item.label}
+                            onClick={() => setActiveView(item.view)}
+                          >
+                            <Icon className="size-4" />
+                            <span>{item.label}</span>
+                          </SidebarMenuButton>
+                          {item.badge ? <SidebarMenuBadge>{item.badge}</SidebarMenuBadge> : null}
+                        </SidebarMenuItem>
+                      );
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+              <SidebarSeparator />
+              <SidebarGroup>
+                <SidebarGroupContent className="grid gap-2">
+                  <Button type="button" onClick={() => setShowContactsModal(true)} className="justify-start group-data-[collapsible=icon]:px-2">
+                    <UserPlus className="size-4" />
+                    <span className="group-data-[collapsible=icon]:hidden">Find people</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+                    title={theme === "dark" ? "Use light mode" : "Use dark mode"}
+                    className="justify-start group-data-[collapsible=icon]:px-2"
+                  >
+                    {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                    <span className="group-data-[collapsible=icon]:hidden">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+                  </Button>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            </SidebarContent>
+            <SidebarFooter>
+              <div className="flex items-center gap-3 rounded-lg border spoke-border bg-background/80 p-2 shadow-sm shadow-foreground/5 group-data-[collapsible=icon]:justify-center">
+                {renderAvatar(localIdentity)}
+                <div className="min-w-0 group-data-[collapsible=icon]:hidden">
+                  <strong className="block truncate text-sm">{displayNameForIdentity(localIdentity)}</strong>
+                  <span className="block truncate text-xs text-muted-foreground">{displayIdentity(localIdentity)}</span>
+                  <Badge variant="secondary" className="mt-1">{session.status}</Badge>
+                </div>
               </div>
-            </div>
-          </aside>
-
-          <section className="content-shell">
-            <header className="view-header">
-              <div>
-                <p className="eyebrow">Spoke</p>
-                <h1>{viewTitle[activeView].title}</h1>
-                <p>{viewTitle[activeView].subtitle}</p>
-              </div>
-              <div className="view-actions">
-                <button
-                  type="button"
-                  onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
-                  title={theme === "dark" ? "Use light mode" : "Use dark mode"}
-                >
-                  {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-                  {theme === "dark" ? "Light" : "Dark"}
-                </button>
-                {updateCheck?.available ? (
-                  <button type="button" onClick={installSpokeUpdate} disabled={updateAction === "install"} title="Install signed Spoke update">
-                    <Download size={16} />
+            </SidebarFooter>
+            <SidebarRail />
+          </Sidebar>
+          <SidebarInset>
+            <header className="sticky top-0 z-20 border-b spoke-border bg-background/90 shadow-sm shadow-foreground/5 backdrop-blur">
+              <div className="flex min-h-20 flex-wrap items-center justify-between gap-3 px-4 py-3 lg:px-8">
+                <div className="flex min-w-0 items-center gap-3">
+                  <SidebarTrigger className="md:hidden" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Spoke</p>
+                    <h1 className="truncate text-2xl font-semibold tracking-tight">{viewTitle[activeView].title}</h1>
+                    <p className="truncate text-sm text-muted-foreground">{viewTitle[activeView].subtitle}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {updateCheck?.available ? (
+                    <Button type="button" variant="outline" onClick={installSpokeUpdate} disabled={updateAction === "install"} title="Install signed Spoke update">
+                      <Download className="size-4" />
                     Update
-                  </button>
-                ) : null}
-                <button type="button" onClick={checkSpokeUpdate} disabled={updateAction === "check" || updateAction === "install"} title="Check for Spoke updates">
-                  <RefreshCw size={16} />
-                </button>
-                <button type="button" onClick={refreshSession} disabled={!sessionToken || busy === "session"} title="Refresh session">
-                  <RefreshCw size={16} />
-                </button>
+                    </Button>
+                  ) : null}
+                  <Button type="button" variant="outline" size="icon" onClick={checkSpokeUpdate} disabled={updateAction === "check" || updateAction === "install"} title="Check for Spoke updates">
+                    <RefreshCw className="size-4" />
+                  </Button>
+                  <Button type="button" variant="outline" size="icon" onClick={refreshSession} disabled={!sessionToken || busy === "session"} title="Refresh session">
+                    <ShieldCheck className="size-4" />
+                  </Button>
+                </div>
               </div>
             </header>
 
-            {error ? <div className="alert error">{error}</div> : null}
-            {notice ? <div className="alert notice">{notice}</div> : null}
+            <main className={cn("mx-auto grid w-full gap-5 p-4 lg:p-8", activeView === "messages" ? "max-w-7xl" : "max-w-5xl")}>
+            {error ? <div className="rounded-lg border spoke-border-error bg-destructive/10 px-3 py-2 text-sm text-destructive shadow-sm shadow-destructive/5">{error}</div> : null}
+            {notice ? <div className="rounded-lg border spoke-border-notice bg-primary/10 px-3 py-2 text-sm text-primary shadow-sm shadow-primary/5">{notice}</div> : null}
 
             {activeView === "feed" ? (
-              <section className="view-stack feed-view">
+              <section className="grid gap-5">
                 {renderComposer()}
-                <section className="feed-toolbar">
+                <Card size="sm">
+                  <CardHeader>
                   <div>
-                    <h2>Feed</h2>
-                    <p>{viewTitle.feed.subtitle}</p>
+                      <CardTitle>Feed</CardTitle>
+                      <CardDescription>{viewTitle.feed.subtitle}</CardDescription>
                   </div>
-                  <button type="button" onClick={refreshFeed} disabled={busy === "feed" || feedRefreshing} title="Refresh feed">
-                    <RefreshCw size={16} />
-                  </button>
-                </section>
-                <div className="feed-list">
+                    <CardAction>
+                      <Button type="button" variant="outline" size="icon" onClick={refreshFeed} disabled={busy === "feed" || feedRefreshing} title="Refresh feed">
+                        <RefreshCw className={cn("size-4", feedRefreshing ? "animate-spin" : "")} />
+                      </Button>
+                    </CardAction>
+                  </CardHeader>
+                </Card>
+                <div className="grid gap-4">
                   {feed.map((item) => renderPostCard(item))}
                   {feed.length === 0 ? (
-                    <div className="empty-state">Publish a post or add a known identity to build the feed.</div>
+                    <EmptyState>Publish a post or add a known identity to build the feed.</EmptyState>
                   ) : null}
                 </div>
               </section>
             ) : null}
 
             {activeView === "profile" ? (
-              <section className="view-stack profile-view">
-                <section className="panel profile-hero">
-                  <div className="profile-hero-actions">
-                    <button type="button" onClick={() => setShowContactsModal(true)} title="Manage known people">
-                      <UserCheck size={16} />
+              <section className="grid gap-5">
+                <Card>
+                  <CardHeader>
+                    <div className="flex flex-wrap justify-end gap-2">
+                    <Button type="button" variant="outline" onClick={() => setShowContactsModal(true)} title="Manage known people">
+                      <Users className="size-4" />
                       Known people
-                    </button>
-                    <button type="button" onClick={() => setShowProfileEditor(true)} title="Edit profile">
-                      <Pencil size={16} />
+                    </Button>
+                    <Button type="button" onClick={() => setShowProfileEditor(true)} title="Edit profile">
+                      <Pencil className="size-4" />
                       Edit profile
-                    </button>
+                    </Button>
                   </div>
+                  </CardHeader>
+                  <CardContent>
                   {renderProfileDetails(localIdentity)}
-                </section>
-                <section className="feed-toolbar">
+                  </CardContent>
+                </Card>
+                <Card size="sm">
+                  <CardHeader>
                   <div>
-                    <h2>Your Posts</h2>
-                    <p>{localFeedItems.length} posts published by this identity</p>
+                      <CardTitle>Your posts</CardTitle>
+                      <CardDescription>{localFeedItems.length} posts published by this identity</CardDescription>
                   </div>
-                </section>
-                <div className="feed-list">
+                  </CardHeader>
+                </Card>
+                <div className="grid gap-4">
                   {localFeedItems.map((item) => renderPostCard(item))}
-                  {localFeedItems.length === 0 ? <div className="empty-state">Your posts will appear here.</div> : null}
+                  {localFeedItems.length === 0 ? (
+                    <EmptyState>Your posts will appear here.</EmptyState>
+                  ) : null}
                 </div>
               </section>
             ) : null}
 
-            {activeView === "messages" ? renderMessagesView() : null}
+            {activeView === "messages" ? (
+              <MessagesView
+                activeThread={activeThread}
+                activeThreadMessages={activeThreadMessages}
+                busy={busy}
+                displayNameForIdentity={displayNameForIdentity}
+                formatBytes={formatBytes}
+                messageAttachmentErrors={messageAttachmentErrors}
+                messageAttachmentKey={messageAttachmentKey}
+                messageAttachmentUrls={messageAttachmentUrls}
+                messageAttachments={messageAttachments}
+                messageDrafts={messageDrafts}
+                messageThreads={messageThreads}
+                renderAvatar={renderAvatar}
+                threadSearch={threadSearch}
+                visibleMessageThreads={visibleMessageThreads}
+                onAddMessageAttachments={addMessageAttachments}
+                onBackToFeed={() => setActiveView("feed")}
+                onMessageDraftChange={(identity, value) =>
+                  setMessageDrafts((current) => ({ ...current, [identity]: value }))
+                }
+                onMessageImageFailed={markMessageImageFailed}
+                onMessageKeyDown={handleMessageKeyDown}
+                onOpenProfile={openProfile}
+                onRefreshIncoming={refreshIncoming}
+                onRemoveMessageAttachment={removeMessageAttachment}
+                onSelectThread={setActiveThreadId}
+                onSendMessage={sendMessage}
+                onThreadSearchChange={setThreadSearch}
+                onUpdateMessageAttachmentAlt={updateMessageAttachmentAlt}
+              />
+            ) : null}
 
             {activeView === "notifications" ? (
-              <section className="view-stack notifications-view">
-                <div className="notification-filters">
-                  <button type="button" className="active">All</button>
-                  <button type="button">Follows</button>
-                  <button type="button">Replies</button>
-                  <button type="button">Messages</button>
-                  <button type="button" onClick={refreshIncoming} disabled={busy === "incoming"} title="Refresh notifications">
-                    <RefreshCw size={16} />
-                  </button>
+              <section className="grid gap-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <Tabs value={notificationFilter} onValueChange={(value) => setNotificationFilter(value as NotificationFilter)}>
+                    <TabsList>
+                      <TabsTrigger value="all">All</TabsTrigger>
+                      <TabsTrigger value="follows">Follows</TabsTrigger>
+                      <TabsTrigger value="replies">Replies</TabsTrigger>
+                      <TabsTrigger value="messages">Messages</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <Button type="button" variant="outline" onClick={refreshIncoming} disabled={busy === "incoming"} title="Refresh notifications">
+                    <RefreshCw className="size-4" />
+                    Refresh
+                  </Button>
                 </div>
-                <div className="notification-list">
-                  {incoming.map((record) => renderNotificationCard(record))}
-                  {incoming.length === 0 ? <div className="empty-state compact">No pending notifications.</div> : null}
+                <div className="grid gap-5">
+                  {handledNotifications.length > 0 ? (
+                    <Card size="sm">
+                      <CardHeader>
+                        <CardTitle>Recent decisions</CardTitle>
+                        <CardDescription>Accepted and rejected items from this session.</CardDescription>
+                      </CardHeader>
+                      <CardContent className="grid gap-2">
+                        {handledNotifications.map((item) => (
+                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border spoke-border bg-background/85 p-2 shadow-sm shadow-foreground/5" key={item.id}>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{displayNameForIdentity(item.sender)}</p>
+                              <p className="truncate text-xs text-muted-foreground">{item.kind} from {item.sender}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={item.status === "accepted" ? "default" : "outline"}>
+                                {item.status}
+                              </Badge>
+                              <time className="text-xs text-muted-foreground">
+                                {new Date(item.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </time>
+                            </div>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                  {filteredNotificationGroups.map((group) => (
+                    <section className="grid gap-3" key={group.label}>
+                      <div className="flex items-center gap-3">
+                        <h2 className="text-sm font-semibold text-muted-foreground">{group.label}</h2>
+                        <Separator className="flex-1" />
+                      </div>
+                      <div className="grid gap-3">
+                        {group.records.map((record) => renderNotificationCard(record))}
+                      </div>
+                    </section>
+                  ))}
+                  {filteredNotificationGroups.length === 0 ? (
+                    <EmptyState>No pending notifications.</EmptyState>
+                  ) : null}
                 </div>
               </section>
             ) : null}
-          </section>
+            </main>
           {renderProfileModal()}
           {renderProfileEditModal()}
           {renderContactsModal()}
-        </div>
+          </SidebarInset>
+        </SidebarProvider>
       )}
-    </main>
+    </TooltipProvider>
   );
 
 }
