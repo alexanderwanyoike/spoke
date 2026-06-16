@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { SpokeFollowRequest, SpokeFollowResponse } from "./follow";
+import type { SpokeMessage } from "./message";
 
 export type NodeStatus = {
   peer_id: string;
@@ -482,13 +483,28 @@ export function submitFollowResponseByIdentity(
   return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, response.id, response);
 }
 
+export function submitMessageByIdentity(
+  sessionToken: string,
+  receiverIdentity: string,
+  message: SpokeMessage
+) {
+  return submitSpokeObjectByIdentity(
+    sessionToken,
+    receiverIdentity,
+    message.id,
+    message,
+    `/spoke/messages/outgoing/${message.id}`
+  );
+}
+
 async function submitSpokeObjectByIdentity(
   sessionToken: string,
   receiverIdentity: string,
   objectId: string,
-  body: object
+  body: object,
+  path?: string
 ) {
-  const outgoingPath = `/spoke/outgoing/${objectId}`;
+  const outgoingPath = path || `/spoke/outgoing/${objectId}`;
   const encrypted = await publishEncryptedJson(sessionToken, outgoingPath, body, [receiverIdentity]);
   const encryptedBytes = await fetchTarget(sessionToken, encrypted.content_id);
 
