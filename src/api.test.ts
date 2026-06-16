@@ -18,6 +18,7 @@ import {
   makePostPath,
   openIngress,
   publishBinary,
+  publishEncryptedBinary,
   publishPostWithIndex,
   publishProfile,
   publishJson,
@@ -451,6 +452,36 @@ describe("Spoke daemon API client", () => {
       "/jolt-api/ingress/send",
       expect.objectContaining({
         body: expect.stringContaining("\"recipient\":\"bob.jolt\"")
+      })
+    );
+  });
+
+  it("publishes encrypted image bytes for message attachments", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        content_id: "cid_image",
+        size: 3,
+        path: "/spoke/messages/media/msg_1/media_1",
+        recipient_count: 2
+      })
+    );
+
+    await publishEncryptedBinary(
+      "token-1",
+      "/spoke/messages/media/msg_1/media_1",
+      new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
+      { mimeType: "image/png", recipients: ["bob.jolt", "alice.jolt"] }
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/jolt-api/encrypted/publish",
+      expect.objectContaining({
+        body: JSON.stringify({
+          path: "/spoke/messages/media/msg_1/media_1",
+          plaintext: [1, 2, 3],
+          content_type: "image/png",
+          recipients: ["bob.jolt", "alice.jolt"]
+        })
       })
     );
   });

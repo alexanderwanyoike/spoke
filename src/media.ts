@@ -15,6 +15,11 @@ export type SpokeAttachment = {
   alt?: string;
 };
 
+export type SpokeMessageAttachment = SpokeAttachment & {
+  encrypted: true;
+  path?: string | null;
+};
+
 export type AttachmentSource = {
   type: string;
   size: number;
@@ -23,6 +28,7 @@ export type AttachmentSource = {
 export type PublishedAttachment = {
   content_id: string;
   size: number;
+  path?: string | null;
   address?: string | null;
 };
 
@@ -46,8 +52,12 @@ export function mediaPath(id: string) {
   return `/spoke/media/${id}`;
 }
 
+export function messageMediaPath(messageId: string, attachmentId: string) {
+  return `/spoke/messages/media/${messageId}/${attachmentId}`;
+}
+
 export function attachmentFetchTarget(attachment: SpokeAttachment) {
-  return attachment.contentId || attachment.address;
+  return attachment.address || attachment.contentId;
 }
 
 export function createImageAttachmentReference(input: {
@@ -68,5 +78,20 @@ export function createImageAttachmentReference(input: {
     width: input.width,
     height: input.height,
     alt: input.alt
+  };
+}
+
+export function createEncryptedImageAttachmentReference(input: {
+  id: string;
+  published: PublishedAttachment;
+  mimeType: ImageAttachmentMimeType;
+  width?: number;
+  height?: number;
+  alt?: string;
+}): SpokeMessageAttachment {
+  return {
+    ...createImageAttachmentReference(input),
+    encrypted: true,
+    path: input.published.path
   };
 }

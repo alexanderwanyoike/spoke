@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   attachmentFetchTarget,
+  createEncryptedImageAttachmentReference,
   createImageAttachmentReference,
   isSupportedImageMimeType,
   mediaPath,
+  messageMediaPath,
   validateImageAttachment,
   type SpokeAttachment
 } from "./media";
@@ -66,9 +68,34 @@ describe("Spoke media helpers", () => {
     };
 
     expect(mediaPath("media_1")).toBe("/spoke/media/media_1");
+    expect(messageMediaPath("msg_1", "media_1")).toBe("/spoke/messages/media/msg_1/media_1");
     expect(attachmentFetchTarget(attachment)).toBe("cid_media");
-    expect(attachmentFetchTarget({ ...attachment, contentId: "", address: "alice.jolt/spoke/media/media_1" })).toBe(
+    expect(attachmentFetchTarget({ ...attachment, address: "alice.jolt/spoke/media/media_1" })).toBe(
       "alice.jolt/spoke/media/media_1"
     );
+  });
+
+  it("creates encrypted attachment references for messages", () => {
+    expect(
+      createEncryptedImageAttachmentReference({
+        id: "media_1",
+        published: {
+          content_id: "cid_media",
+          size: 2048,
+          path: "/spoke/messages/media/msg_1/media_1",
+          address: "alice.jolt/spoke/messages/media/msg_1/media_1"
+        },
+        mimeType: "image/png"
+      })
+    ).toEqual({
+      id: "media_1",
+      kind: "image",
+      contentId: "cid_media",
+      address: "alice.jolt/spoke/messages/media/msg_1/media_1",
+      encrypted: true,
+      path: "/spoke/messages/media/msg_1/media_1",
+      mimeType: "image/png",
+      size: 2048
+    });
   });
 });

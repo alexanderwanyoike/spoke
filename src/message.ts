@@ -1,13 +1,15 @@
 import { sameIdentity } from "./follow";
+import type { SpokeMessageAttachment } from "./media";
 
 export type SpokeMessage = {
-  schema: "spoke.message.v1";
+  schema: "spoke.message.v1" | "spoke.message.v2";
   id: string;
   conversationId: string;
   sender: string;
   recipients: string[];
   body: string;
   createdAt: string;
+  attachments?: SpokeMessageAttachment[];
 };
 
 export type MessageDirection = "sent" | "received";
@@ -51,11 +53,11 @@ export function messageBelongsToConversation(message: SpokeMessage) {
 }
 
 export function isSpokeMessage(value: unknown): value is SpokeMessage {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { schema?: unknown }).schema === "spoke.message.v1"
-  );
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const schema = (value as { schema?: unknown }).schema;
+  return schema === "spoke.message.v1" || schema === "spoke.message.v2";
 }
 
 export function sortConversationMessages(messages: ConversationMessage[]) {

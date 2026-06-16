@@ -105,6 +105,24 @@ describe("Spoke message helpers", () => {
 
   it("recognizes Spoke message payloads", () => {
     expect(isSpokeMessage(message({}))).toBe(true);
+    expect(
+      isSpokeMessage(
+        message({
+          schema: "spoke.message.v2",
+          attachments: [
+            {
+              id: "media_1",
+              kind: "image",
+              contentId: "cid_media",
+              encrypted: true,
+              path: "/spoke/messages/media/msg_1/media_1",
+              mimeType: "image/png",
+              size: 1024
+            }
+          ]
+        })
+      )
+    ).toBe(true);
     expect(isSpokeMessage({ schema: "spoke.reply.v1" })).toBe(false);
   });
 });

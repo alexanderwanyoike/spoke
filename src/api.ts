@@ -435,6 +435,22 @@ export function publishEncryptedJson(
   body: object,
   recipients: string[]
 ) {
+  return publishEncryptedBytes(
+    sessionToken,
+    path,
+    Array.from(new TextEncoder().encode(JSON.stringify(body))),
+    "application/json",
+    recipients
+  );
+}
+
+export function publishEncryptedBytes(
+  sessionToken: string,
+  path: string,
+  plaintext: number[],
+  contentType: string,
+  recipients: string[]
+) {
   assertSpokePath(path);
 
   return request<EncryptedPublishResponse>(
@@ -442,10 +458,25 @@ export function publishEncryptedJson(
     "/encrypted/publish",
     jsonInit(sessionToken, {
       path,
-      plaintext: Array.from(new TextEncoder().encode(JSON.stringify(body))),
-      content_type: "application/json",
+      plaintext,
+      content_type: contentType,
       recipients: recipients.map((recipient) => recipient.trim()).filter(Boolean)
     })
+  );
+}
+
+export async function publishEncryptedBinary(
+  sessionToken: string,
+  path: string,
+  file: File | Blob,
+  options: { mimeType: string; recipients: string[] }
+) {
+  return publishEncryptedBytes(
+    sessionToken,
+    path,
+    Array.from(new Uint8Array(await file.arrayBuffer())),
+    options.mimeType,
+    options.recipients
   );
 }
 

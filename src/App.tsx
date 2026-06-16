@@ -42,6 +42,7 @@ import {
   openIngress,
   parseJsonBytes,
   publishBinary,
+  publishEncryptedBinary,
   publishJson,
   publishPostWithIndex,
   publishProfile,
@@ -107,12 +108,15 @@ import {
 } from "./message";
 import {
   attachmentFetchTarget,
+  createEncryptedImageAttachmentReference,
   createImageAttachmentReference,
   isSupportedImageMimeType,
   mediaPath,
+  messageMediaPath,
   validateImageAttachment,
   type ImageAttachmentMimeType,
-  type SpokeAttachment
+  type SpokeAttachment,
+  type SpokeMessageAttachment
 } from "./media";
 import {
   tauriSpokeUpdateClient,
@@ -146,7 +150,7 @@ type MessageThread = {
   lastMessageAt?: string;
 };
 
-type PendingPostAttachment = {
+type PendingImageAttachment = {
   id: string;
   file: File;
   previewUrl: string;
@@ -182,6 +186,10 @@ function displayIdentity(identity?: string | null) {
 
 function attachmentKey(attachment: SpokeAttachment) {
   return attachment.contentId || attachment.address || attachment.id;
+}
+
+function messageAttachmentKey(messageId: string, attachment: SpokeMessageAttachment) {
+  return `${messageId}:${attachmentKey(attachment)}`;
 }
 
 function formatBytes(bytes: number) {
@@ -222,9 +230,23 @@ function incomingPreview(payload: SpokeIncomingPayload) {
     return `${payload.sender} ${payload.decision} your follow request.`;
   }
   if (isSpokeMessage(payload)) {
-    return payload.body;
+    return messagePreview(payload);
   }
   return payload.body;
+}
+
+function messagePreview(message: SpokeMessage) {
+  if (message.body.trim()) {
+    return message.body;
+  }
+  const imageCount = message.attachments?.filter((attachment) => attachment.kind === "image").length || 0;
+  if (imageCount === 1) {
+    return "Image";
+  }
+  if (imageCount > 1) {
+    return `${imageCount} images`;
+  }
+  return "";
 }
 
 function parseIncomingPayload(bytes: number[]) {
@@ -262,7 +284,7 @@ function App() {
   });
   const [followMessageDraft, setFollowMessageDraft] = useState("");
   const [postDraft, setPostDraft] = useState({ title: "", body: "" });
-  const [postAttachments, setPostAttachments] = useState<PendingPostAttachment[]>([]);
+  const [postAttachments, setPostAttachments] = useState<PendingImageAttachment[]>([]);
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [attachmentErrors, setAttachmentErrors] = useState<Record<string, string>>({});
   const [feedIndex, setFeedIndex] = useState<SpokeFeedIndex | null>(null);
@@ -275,6 +297,9 @@ function App() {
   const [review, setReview] = useState<ReviewState>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
+  const [messageAttachments, setMessageAttachments] = useState<Record<string, PendingImageAttachment[]>>({});
+  const [messageAttachmentUrls, setMessageAttachmentUrls] = useState<Record<string, string>>({});
+  const [messageAttachmentErrors, setMessageAttachmentErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -290,6 +315,8 @@ function App() {
   const pendingAttachmentUrlsRef = useRef<string[]>([]);
   const fetchedAttachmentUrlsRef = useRef<Set<string>>(new Set());
   const fetchingAttachmentKeysRef = useRef<Set<string>>(new Set());
+  const messageAttachmentUrlsRef = useRef<Set<string>>(new Set());
+  const fetchingMessageAttachmentKeysRef = useRef<Set<string>>(new Set());
   const updateClient: SpokeUpdateClient = tauriSpokeUpdateClient;
 
   const sessionToken = session.token || "";
@@ -367,6 +394,18 @@ function App() {
     () => feed.flatMap((item) => item.post.attachments || []),
     [feed]
   );
+  const conversationAttachments = useMemo(
+    () =>
+      Object.values(conversations).flatMap((conversation) =>
+        conversation.messages.flatMap((item) =>
+          (item.message.attachments || []).map((attachment) => ({
+            messageId: item.message.id,
+            attachment
+          }))
+        )
+      ),
+    [conversations]
+  );
 
   useEffect(() => {
     getStatus()
@@ -380,6 +419,9 @@ function App() {
         URL.revokeObjectURL(url);
       }
       for (const url of fetchedAttachmentUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      for (const url of messageAttachmentUrlsRef.current) {
         URL.revokeObjectURL(url);
       }
     };
@@ -454,6 +496,56 @@ function App() {
       cancelled = true;
     };
   }, [attachmentErrors, attachmentUrls, canUseApp, feedAttachments, sessionToken]);
+
+  useEffect(() => {
+    if (!canUseApp || !sessionToken || conversationAttachments.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    for (const { messageId, attachment } of conversationAttachments) {
+      const key = messageAttachmentKey(messageId, attachment);
+      const target = attachmentFetchTarget(attachment);
+      if (
+        !target ||
+        messageAttachmentUrls[key] ||
+        messageAttachmentErrors[key] ||
+        fetchingMessageAttachmentKeysRef.current.has(key)
+      ) {
+        continue;
+      }
+
+      fetchingMessageAttachmentKeysRef.current.add(key);
+      decryptEncryptedTarget(sessionToken, target)
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+          const blob = new Blob([new Uint8Array(result.plaintext)], { type: attachment.mimeType });
+          const url = URL.createObjectURL(blob);
+          messageAttachmentUrlsRef.current.add(url);
+          setMessageAttachmentUrls((current) => ({ ...current, [key]: url }));
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setMessageAttachmentErrors((current) => ({ ...current, [key]: apiErrorMessage(err) }));
+          }
+        })
+        .finally(() => {
+          fetchingMessageAttachmentKeysRef.current.delete(key);
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canUseApp,
+    conversationAttachments,
+    messageAttachmentErrors,
+    messageAttachmentUrls,
+    sessionToken
+  ]);
 
   useEffect(() => {
     if (!sessionToken || session.status !== "active") {
@@ -605,16 +697,8 @@ function App() {
     });
   }
 
-  async function addPostAttachments(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.currentTarget.files || []);
-    event.currentTarget.value = "";
-    if (files.length === 0) {
-      return;
-    }
-
-    setError("");
-    setNotice("");
-    const nextAttachments: PendingPostAttachment[] = [];
+  async function prepareImageAttachments(files: File[]) {
+    const nextAttachments: PendingImageAttachment[] = [];
     try {
       for (const file of files) {
         validateImageAttachment(file);
@@ -639,15 +723,56 @@ function App() {
           throw err;
         }
       }
+      return nextAttachments;
     } catch (err) {
       for (const attachment of nextAttachments) {
         URL.revokeObjectURL(attachment.previewUrl);
       }
+      throw err;
+    }
+  }
+
+  async function addPostAttachments(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = "";
+    if (files.length === 0) {
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    let nextAttachments: PendingImageAttachment[] = [];
+    try {
+      nextAttachments = await prepareImageAttachments(files);
+    } catch (err) {
       setError(apiErrorMessage(err));
       return;
     }
 
     setPostAttachments((current) => [...current, ...nextAttachments]);
+  }
+
+  async function addMessageAttachments(identity: string, event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = "";
+    if (files.length === 0) {
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    let nextAttachments: PendingImageAttachment[] = [];
+    try {
+      nextAttachments = await prepareImageAttachments(files);
+    } catch (err) {
+      setError(apiErrorMessage(err));
+      return;
+    }
+
+    setMessageAttachments((current) => ({
+      ...current,
+      [identity]: [...(current[identity] || []), ...nextAttachments]
+    }));
   }
 
   function removePostAttachment(id: string) {
@@ -664,6 +789,29 @@ function App() {
     setPostAttachments((current) =>
       current.map((attachment) => attachment.id === id ? { ...attachment, alt } : attachment)
     );
+  }
+
+  function removeMessageAttachment(identity: string, id: string) {
+    setMessageAttachments((current) => {
+      const attachments = current[identity] || [];
+      const attachment = attachments.find((item) => item.id === id);
+      if (attachment) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+      return {
+        ...current,
+        [identity]: attachments.filter((item) => item.id !== id)
+      };
+    });
+  }
+
+  function updateMessageAttachmentAlt(identity: string, id: string, alt: string) {
+    setMessageAttachments((current) => ({
+      ...current,
+      [identity]: (current[identity] || []).map((attachment) =>
+        attachment.id === id ? { ...attachment, alt } : attachment
+      )
+    }));
   }
 
   async function loadLocalFeed(published?: PublishedContent[]) {
@@ -725,6 +873,14 @@ function App() {
       const publishedResult = await publishPostWithIndex(sessionToken, post, index);
       setFeedIndex(publishedResult.feedIndex);
       feedRefreshGeneration.current += 1;
+      for (const attachment of attachments) {
+        const pendingAttachment = postAttachments.find((item) => item.id === attachment.id);
+        if (pendingAttachment) {
+          const url = URL.createObjectURL(pendingAttachment.file);
+          fetchedAttachmentUrlsRef.current.add(url);
+          setAttachmentUrls((current) => ({ ...current, [attachmentKey(attachment)]: url }));
+        }
+      }
       setFeed((current) =>
         addOptimisticLocalPost(
           current,
@@ -1094,28 +1250,71 @@ function App() {
 
   async function sendMessage(contact: Contact) {
     const body = (messageDrafts[contact.identity] || "").trim();
-    if (!body) {
-      setError("Message body is required.");
+    const pendingAttachments = messageAttachments[contact.identity] || [];
+    if (!body && pendingAttachments.length === 0) {
+      setError("Message body or image is required.");
       return;
     }
 
     await withBusy(`message:${contact.identity}`, async () => {
+      const messageId = makeId("msg");
+      const attachments = await Promise.all(
+        pendingAttachments.map(async (attachment) => {
+          const published = await publishEncryptedBinary(
+            sessionToken,
+            messageMediaPath(messageId, attachment.id),
+            attachment.file,
+            {
+              mimeType: attachment.mimeType,
+              recipients: [contact.identity, localIdentity]
+            }
+          );
+          return createEncryptedImageAttachmentReference({
+            id: attachment.id,
+            published,
+            mimeType: attachment.mimeType,
+            width: attachment.width,
+            height: attachment.height,
+            alt: attachment.alt.trim() || undefined
+          });
+        })
+      );
       const message: SpokeMessage = {
-        schema: "spoke.message.v1",
-        id: makeId("msg"),
+        schema: attachments.length > 0 ? "spoke.message.v2" : "spoke.message.v1",
+        id: messageId,
         conversationId: conversationIdForParticipants([localIdentity, contact.identity]),
         sender: localIdentity,
         recipients: [contact.identity],
         body,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        ...(attachments.length > 0 ? { attachments } : {})
       };
       if (!messageBelongsToConversation(message)) {
         throw new Error("Message participants do not match its conversation.");
       }
       await submitMessageByIdentity(sessionToken, contact.identity, message);
+      for (const attachment of attachments) {
+        const pendingAttachment = pendingAttachments.find((item) => item.id === attachment.id);
+        if (pendingAttachment) {
+          const url = URL.createObjectURL(pendingAttachment.file);
+          messageAttachmentUrlsRef.current.add(url);
+          setMessageAttachmentUrls((current) => ({
+            ...current,
+            [messageAttachmentKey(message.id, attachment)]: url
+          }));
+        }
+      }
       setConversations((current) => upsertConversationMessage(current, message, "sent"));
       setMessageDrafts((current) => ({ ...current, [contact.identity]: "" }));
-      setNotice("Encrypted message submitted to recipient ingress.");
+      for (const attachment of pendingAttachments) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+      setMessageAttachments((current) => ({ ...current, [contact.identity]: [] }));
+      setNotice(
+        attachments.length > 0
+          ? "Encrypted message and images submitted to recipient ingress."
+          : "Encrypted message submitted to recipient ingress."
+      );
     });
   }
 
@@ -1164,7 +1363,8 @@ function App() {
         record.schema_hint &&
         record.schema_hint !== "spoke.follow_response.v1" &&
         record.schema_hint !== "spoke.reply.v1" &&
-        record.schema_hint !== "spoke.message.v1"
+        record.schema_hint !== "spoke.message.v1" &&
+        record.schema_hint !== "spoke.message.v2"
       ) {
         visibleRecords.push(record);
         continue;
@@ -1813,7 +2013,7 @@ function App() {
                         <strong>{thread.contact.displayName}</strong>
                         <span>
                           {lastMessage
-                            ? lastMessage.message.body
+                            ? messagePreview(lastMessage.message)
                             : `Start a private thread with ${thread.contact.displayName}`}
                         </span>
                       </span>
@@ -1850,7 +2050,29 @@ function App() {
                       <div className={`thread-message ${item.direction}`} key={item.message.id}>
                         <div>
                           <span>{displayNameForIdentity(item.message.sender)}</span>
-                          <p>{item.message.body}</p>
+                          {item.message.body ? <p>{item.message.body}</p> : null}
+                          {item.message.attachments?.length ? (
+                            <div className="message-media-grid">
+                              {item.message.attachments.map((attachment) => {
+                                const key = messageAttachmentKey(item.message.id, attachment);
+                                return (
+                                  <figure className="message-media" key={key}>
+                                    {messageAttachmentUrls[key] ? (
+                                      <img
+                                        src={messageAttachmentUrls[key]}
+                                        alt={attachment.alt || "Message image"}
+                                      />
+                                    ) : messageAttachmentErrors[key] ? (
+                                      <div className="message-media-placeholder">Image unavailable</div>
+                                    ) : (
+                                      <div className="message-media-placeholder">Loading image...</div>
+                                    )}
+                                    {attachment.alt ? <figcaption>{attachment.alt}</figcaption> : null}
+                                  </figure>
+                                );
+                              })}
+                            </div>
+                          ) : null}
                           <time>{new Date(item.message.createdAt).toLocaleString()}</time>
                         </div>
                       </div>
@@ -1865,18 +2087,70 @@ function App() {
                   </div>
 
                   <div className="thread-composer">
-                    <textarea
-                      rows={2}
-                      value={messageDrafts[activeThread.contact.identity] || ""}
-                      onChange={(event) =>
-                        setMessageDrafts((current) => ({
-                          ...current,
-                          [activeThread.contact.identity]: event.target.value
-                        }))
-                      }
-                      onKeyDown={(event) => handleMessageKeyDown(event, activeThread.contact)}
-                      placeholder={`Message ${activeThread.contact.displayName}`}
-                    />
+                    <div className="message-composer-main">
+                      <textarea
+                        rows={2}
+                        value={messageDrafts[activeThread.contact.identity] || ""}
+                        onChange={(event) =>
+                          setMessageDrafts((current) => ({
+                            ...current,
+                            [activeThread.contact.identity]: event.target.value
+                          }))
+                        }
+                        onKeyDown={(event) => handleMessageKeyDown(event, activeThread.contact)}
+                        placeholder={`Message ${activeThread.contact.displayName}`}
+                      />
+                      <div className="attachment-toolbar compact-toolbar">
+                        <label className="file-button icon-only" title="Attach images">
+                          <ImagePlus size={16} />
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            multiple
+                            onChange={(event) => addMessageAttachments(activeThread.contact.identity, event)}
+                          />
+                        </label>
+                        <span>Images are encrypted with the message thread</span>
+                      </div>
+                      {(messageAttachments[activeThread.contact.identity] || []).length > 0 ? (
+                        <div className="pending-media-grid message-pending-media">
+                          {(messageAttachments[activeThread.contact.identity] || []).map((attachment) => (
+                            <div className="pending-media-card" key={attachment.id}>
+                              <img src={attachment.previewUrl} alt={attachment.file.name} />
+                              <div>
+                                <strong>{attachment.file.name || "Image attachment"}</strong>
+                                <span>
+                                  {formatBytes(attachment.file.size)}
+                                  {attachment.width && attachment.height
+                                    ? ` - ${attachment.width}x${attachment.height}`
+                                    : ""}
+                                </span>
+                                <input
+                                  value={attachment.alt}
+                                  onChange={(event) =>
+                                    updateMessageAttachmentAlt(
+                                      activeThread.contact.identity,
+                                      attachment.id,
+                                      event.target.value
+                                    )
+                                  }
+                                  placeholder="Alt text"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  removeMessageAttachment(activeThread.contact.identity, attachment.id)
+                                }
+                                title="Remove image"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                     <button
                       className="primary"
                       type="button"
