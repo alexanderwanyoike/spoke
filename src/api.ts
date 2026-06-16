@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { SpokeFollowRequest, SpokeFollowResponse } from "./follow";
+import type { SpokeAttachment } from "./media";
 import type { SpokeMessage } from "./message";
 
 export type NodeStatus = {
@@ -112,7 +113,7 @@ export type SpokeProfile = {
 };
 
 export type SpokePost = {
-  schema: "spoke.post.v1";
+  schema: "spoke.post.v1" | "spoke.post.v2";
   id: string;
   author: string;
   displayName?: string;
@@ -121,6 +122,7 @@ export type SpokePost = {
   createdAt: string;
   path: string;
   threadPath?: string;
+  attachments?: SpokeAttachment[];
 };
 
 export type SpokeFeedIndex = {
@@ -352,6 +354,38 @@ export function publishJson<T extends object>(sessionToken: string, path: string
   const form = new FormData();
   const file = new Blob([jsonText], { type: "application/json" });
   form.append("file", file, `${path.split("/").pop() || "spoke"}.json`);
+  form.append("path", path);
+
+  return request<PublishResponse>(
+    "/jolt-api",
+    "/publish",
+    bearerInit(sessionToken, {
+      method: "POST",
+      body: form
+    })
+  );
+}
+
+export async function publishBinary(
+  sessionToken: string,
+  path: string,
+  file: File | Blob,
+  options: { fileName: string; mimeType: string }
+) {
+  assertSpokePath(path);
+
+  if (isDesktopRuntime()) {
+    return invoke<PublishResponse>("daemon_publish_bytes", {
+      sessionToken,
+      path,
+      bytes: Array.from(new Uint8Array(await file.arrayBuffer())),
+      fileName: options.fileName,
+      mimeType: options.mimeType
+    });
+  }
+
+  const form = new FormData();
+  form.append("file", file, options.fileName);
   form.append("path", path);
 
   return request<PublishResponse>(

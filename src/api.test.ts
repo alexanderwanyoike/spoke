@@ -17,6 +17,7 @@ import {
   listPendingIngress,
   makePostPath,
   openIngress,
+  publishBinary,
   publishPostWithIndex,
   publishProfile,
   publishJson,
@@ -138,6 +139,25 @@ describe("Spoke daemon API client", () => {
     });
   });
 
+  it("uses a Tauri daemon command for desktop binary publishing", async () => {
+    isTauriMock.mockReturnValue(true);
+    invokeMock.mockResolvedValueOnce({ content_id: "cid_media", size: 3 });
+
+    await publishBinary("token-1", "/spoke/media/media_1", new Blob([new Uint8Array([1, 2, 3])]), {
+      fileName: "photo.png",
+      mimeType: "image/png"
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(invokeMock).toHaveBeenCalledWith("daemon_publish_bytes", {
+      sessionToken: "token-1",
+      path: "/spoke/media/media_1",
+      bytes: [1, 2, 3],
+      fileName: "photo.png",
+      mimeType: "image/png"
+    });
+  });
+
   it("publishes profile and posts only under /spoke", async () => {
     const profile: SpokeProfile = {
       schema: "spoke.profile.v1",
@@ -201,10 +221,36 @@ describe("Spoke daemon API client", () => {
     );
   });
 
-  it("does not publish outside the Spoke namespace", () => {
+  it("publishes binary media under the Spoke namespace", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ content_id: "cid_media", size: 3, address: "alice.jolt/spoke/media/media_1" })
+    );
+
+    await publishBinary("token-1", "/spoke/media/media_1", new Blob([new Uint8Array([1, 2, 3])]), {
+      fileName: "photo.webp",
+      mimeType: "image/webp"
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/jolt-api/publish",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Authorization: "Bearer token-1" },
+        body: expect.any(FormData)
+      })
+    );
+  });
+
+  it("does not publish outside the Spoke namespace", async () => {
     expect(() => publishJson("token-1", "/profile", { nope: true })).toThrow(
       "Spoke can only publish under /spoke/"
     );
+    await expect(
+      publishBinary("token-1", "/media/media_1", new Blob(["nope"]), {
+        fileName: "nope.png",
+        mimeType: "image/png"
+      })
+    ).rejects.toThrow("Spoke can only publish under /spoke/");
 
     expect(fetch).not.toHaveBeenCalled();
   });

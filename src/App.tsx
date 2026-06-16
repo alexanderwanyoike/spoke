@@ -1,14 +1,23 @@
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type KeyboardEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import {
   ArrowLeft,
   Check,
   Download,
+  ImagePlus,
   Inbox,
   KeyRound,
   MessageCircle,
   Plus,
   RefreshCw,
   Send,
+  Trash2,
   UserCheck,
   UserPlus,
   X
@@ -32,6 +41,7 @@ import {
   makeThreadPath,
   openIngress,
   parseJsonBytes,
+  publishBinary,
   publishJson,
   publishPostWithIndex,
   publishProfile,
@@ -96,6 +106,15 @@ import {
   type SpokeMessage
 } from "./message";
 import {
+  attachmentFetchTarget,
+  createImageAttachmentReference,
+  isSupportedImageMimeType,
+  mediaPath,
+  validateImageAttachment,
+  type ImageAttachmentMimeType,
+  type SpokeAttachment
+} from "./media";
+import {
   tauriSpokeUpdateClient,
   type SpokeUpdateCheck,
   type SpokeUpdateClient
@@ -127,6 +146,16 @@ type MessageThread = {
   lastMessageAt?: string;
 };
 
+type PendingPostAttachment = {
+  id: string;
+  file: File;
+  previewUrl: string;
+  mimeType: ImageAttachmentMimeType;
+  width?: number;
+  height?: number;
+  alt: string;
+};
+
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
 const PROFILE_KEY = "spoke.profile";
@@ -149,6 +178,17 @@ function saveJson<T>(key: string, value: T) {
 
 function displayIdentity(identity?: string | null) {
   return identity || "No identity";
+}
+
+function attachmentKey(attachment: SpokeAttachment) {
+  return attachment.contentId || attachment.address || attachment.id;
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function hasRequiredCapabilities(granted: string[]) {
@@ -222,6 +262,9 @@ function App() {
   });
   const [followMessageDraft, setFollowMessageDraft] = useState("");
   const [postDraft, setPostDraft] = useState({ title: "", body: "" });
+  const [postAttachments, setPostAttachments] = useState<PendingPostAttachment[]>([]);
+  const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
+  const [attachmentErrors, setAttachmentErrors] = useState<Record<string, string>>({});
   const [feedIndex, setFeedIndex] = useState<SpokeFeedIndex | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [repliesByPost, setRepliesByPost] = useState<RepliesByPost>({});
@@ -244,6 +287,9 @@ function App() {
   const conversationRefreshInFlight = useRef(false);
   const feedRefreshGeneration = useRef(0);
   const contactsRef = useRef<Contact[]>(contacts);
+  const pendingAttachmentUrlsRef = useRef<string[]>([]);
+  const fetchedAttachmentUrlsRef = useRef<Set<string>>(new Set());
+  const fetchingAttachmentKeysRef = useRef<Set<string>>(new Set());
   const updateClient: SpokeUpdateClient = tauriSpokeUpdateClient;
 
   const sessionToken = session.token || "";
@@ -317,11 +363,26 @@ function App() {
     return messageThreads.find((thread) => thread.id === activeThreadId) || messageThreads[0] || null;
   }, [messageThreads, activeThreadId]);
   const activeThreadMessages = activeThread?.conversation?.messages || [];
+  const feedAttachments = useMemo(
+    () => feed.flatMap((item) => item.post.attachments || []),
+    [feed]
+  );
 
   useEffect(() => {
     getStatus()
       .then(setStatus)
       .catch((err) => setError(apiErrorMessage(err)));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      for (const url of pendingAttachmentUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      for (const url of fetchedAttachmentUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -349,6 +410,50 @@ function App() {
   useEffect(() => {
     saveJson(SESSION_KEY, session);
   }, [session]);
+
+  useEffect(() => {
+    if (!canUseApp || !sessionToken || feedAttachments.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    for (const attachment of feedAttachments) {
+      const key = attachmentKey(attachment);
+      const target = attachmentFetchTarget(attachment);
+      if (
+        !target ||
+        attachmentUrls[key] ||
+        attachmentErrors[key] ||
+        fetchingAttachmentKeysRef.current.has(key)
+      ) {
+        continue;
+      }
+
+      fetchingAttachmentKeysRef.current.add(key);
+      fetchTarget(sessionToken, target)
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+          const blob = new Blob([new Uint8Array(result.data)], { type: attachment.mimeType });
+          const url = URL.createObjectURL(blob);
+          fetchedAttachmentUrlsRef.current.add(url);
+          setAttachmentUrls((current) => ({ ...current, [key]: url }));
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setAttachmentErrors((current) => ({ ...current, [key]: apiErrorMessage(err) }));
+          }
+        })
+        .finally(() => {
+          fetchingAttachmentKeysRef.current.delete(key);
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [attachmentErrors, attachmentUrls, canUseApp, feedAttachments, sessionToken]);
 
   useEffect(() => {
     if (!sessionToken || session.status !== "active") {
@@ -491,6 +596,76 @@ function App() {
     return JSON.parse(decodeFetchData(result)) as T;
   }
 
+  function readImageDimensions(url: string) {
+    return new Promise<{ width: number; height: number }>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+      image.onerror = () => reject(new Error("Image attachment could not be read."));
+      image.src = url;
+    });
+  }
+
+  async function addPostAttachments(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files || []);
+    event.currentTarget.value = "";
+    if (files.length === 0) {
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    const nextAttachments: PendingPostAttachment[] = [];
+    try {
+      for (const file of files) {
+        validateImageAttachment(file);
+        if (!isSupportedImageMimeType(file.type)) {
+          throw new Error("Images must be JPEG, PNG, or WebP.");
+        }
+        const previewUrl = URL.createObjectURL(file);
+        try {
+          const dimensions = await readImageDimensions(previewUrl);
+          pendingAttachmentUrlsRef.current.push(previewUrl);
+          nextAttachments.push({
+            id: makeId("media"),
+            file,
+            previewUrl,
+            mimeType: file.type,
+            width: dimensions.width,
+            height: dimensions.height,
+            alt: ""
+          });
+        } catch (err) {
+          URL.revokeObjectURL(previewUrl);
+          throw err;
+        }
+      }
+    } catch (err) {
+      for (const attachment of nextAttachments) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+      setError(apiErrorMessage(err));
+      return;
+    }
+
+    setPostAttachments((current) => [...current, ...nextAttachments]);
+  }
+
+  function removePostAttachment(id: string) {
+    setPostAttachments((current) => {
+      const attachment = current.find((item) => item.id === id);
+      if (attachment) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+      return current.filter((item) => item.id !== id);
+    });
+  }
+
+  function updatePostAttachmentAlt(id: string, alt: string) {
+    setPostAttachments((current) =>
+      current.map((attachment) => attachment.id === id ? { ...attachment, alt } : attachment)
+    );
+  }
+
   async function loadLocalFeed(published?: PublishedContent[]) {
     let index: SpokeFeedIndex | null = null;
     try {
@@ -518,8 +693,24 @@ function App() {
       }
 
       const id = makeId("post");
+      const attachments = await Promise.all(
+        postAttachments.map(async (attachment) => {
+          const published = await publishBinary(sessionToken, mediaPath(attachment.id), attachment.file, {
+            fileName: attachment.file.name || `${attachment.id}.image`,
+            mimeType: attachment.mimeType
+          });
+          return createImageAttachmentReference({
+            id: attachment.id,
+            published,
+            mimeType: attachment.mimeType,
+            width: attachment.width,
+            height: attachment.height,
+            alt: attachment.alt.trim() || undefined
+          });
+        })
+      );
       const post: SpokePost = {
-        schema: "spoke.post.v1",
+        schema: attachments.length > 0 ? "spoke.post.v2" : "spoke.post.v1",
         id,
         author: localIdentity,
         displayName: profileDraft.displayName.trim() || localIdentity,
@@ -527,7 +718,8 @@ function App() {
         body,
         createdAt: new Date().toISOString(),
         path: makePostPath(id),
-        threadPath: makeThreadPath(id)
+        threadPath: makeThreadPath(id),
+        ...(attachments.length > 0 ? { attachments } : {})
       };
       const index = await loadLocalFeed();
       const publishedResult = await publishPostWithIndex(sessionToken, post, index);
@@ -541,7 +733,15 @@ function App() {
         )
       );
       setPostDraft({ title: "", body: "" });
-      setNotice("Post published and local feed index updated.");
+      for (const attachment of postAttachments) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+      setPostAttachments([]);
+      setNotice(
+        attachments.length > 0
+          ? "Post and media attachments published."
+          : "Post published and local feed index updated."
+      );
       void refreshFeedSilently();
     });
   }
@@ -1385,6 +1585,49 @@ function App() {
                   rows={4}
                   placeholder="Write a note for known contacts"
                 />
+                <div className="attachment-toolbar">
+                  <label className="file-button">
+                    <ImagePlus size={16} />
+                    Add images
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      onChange={addPostAttachments}
+                    />
+                  </label>
+                  <span>JPEG, PNG, or WebP up to 5 MB each</span>
+                </div>
+                {postAttachments.length > 0 ? (
+                  <div className="pending-media-grid">
+                    {postAttachments.map((attachment) => (
+                      <div className="pending-media-card" key={attachment.id}>
+                        <img src={attachment.previewUrl} alt={attachment.file.name} />
+                        <div>
+                          <strong>{attachment.file.name || "Image attachment"}</strong>
+                          <span>
+                            {formatBytes(attachment.file.size)}
+                            {attachment.width && attachment.height
+                              ? ` - ${attachment.width}x${attachment.height}`
+                              : ""}
+                          </span>
+                          <input
+                            value={attachment.alt}
+                            onChange={(event) => updatePostAttachmentAlt(attachment.id, event.target.value)}
+                            placeholder="Alt text"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removePostAttachment(attachment.id)}
+                          title="Remove image"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <button className="primary" type="button" onClick={publishPost} disabled={busy === "post"}>
                 <Plus size={16} />
@@ -1417,6 +1660,28 @@ function App() {
                   </header>
                   <h3>{item.post.title}</h3>
                   <p>{item.post.body}</p>
+                  {item.post.attachments?.length ? (
+                    <div className="post-media-grid">
+                      {item.post.attachments.map((attachment) => {
+                        const key = attachmentKey(attachment);
+                        return (
+                          <figure className="post-media" key={key}>
+                            {attachmentUrls[key] ? (
+                              <img
+                                src={attachmentUrls[key]}
+                                alt={attachment.alt || `${item.post.title} image`}
+                              />
+                            ) : attachmentErrors[key] ? (
+                              <div className="media-placeholder">Image unavailable</div>
+                            ) : (
+                              <div className="media-placeholder">Loading image...</div>
+                            )}
+                            {attachment.alt ? <figcaption>{attachment.alt}</figcaption> : null}
+                          </figure>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                   <div className="thread">
                     {(repliesByPost[item.address] || []).map((reply) => (
                       <div className="reply" key={reply.id}>
