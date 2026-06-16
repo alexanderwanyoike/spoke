@@ -315,6 +315,7 @@ function App() {
   const [profileAvatarErrors, setProfileAvatarErrors] = useState<Record<string, string>>({});
   const [activeProfileIdentity, setActiveProfileIdentity] = useState("");
   const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [showContactsModal, setShowContactsModal] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(() => loadJson<ThemeMode>(THEME_KEY, "light"));
   const [contactDraft, setContactDraft] = useState<Contact>({
     identity: "",
@@ -2221,14 +2222,21 @@ function App() {
     );
   }
 
-  function renderContactsPanel() {
+  function renderContactsPanel(onClose?: () => void) {
     return (
       <section className="panel">
         <div className="panel-heading">
           <h2>Known people</h2>
-          <button type="button" onClick={addContact} title="Add contact">
-            <UserCheck size={16} />
-          </button>
+          <div className="panel-actions">
+            <button type="button" onClick={addContact} title="Add contact">
+              <UserCheck size={16} />
+            </button>
+            {onClose ? (
+              <button type="button" onClick={onClose} title="Close">
+                <X size={16} />
+              </button>
+            ) : null}
+          </div>
         </div>
         <label>
           Identity
@@ -2294,6 +2302,19 @@ function App() {
           {contacts.length === 0 ? <div className="empty-state compact">No known people yet.</div> : null}
         </div>
       </section>
+    );
+  }
+
+  function renderContactsModal() {
+    if (!showContactsModal) {
+      return null;
+    }
+    return (
+      <div className="modal-backdrop" role="presentation">
+        <section className="modal-panel contacts-modal" role="dialog" aria-modal="true" aria-label="Known people">
+          {renderContactsPanel(() => setShowContactsModal(false))}
+        </section>
+      </div>
     );
   }
 
@@ -2698,7 +2719,7 @@ function App() {
                 {incoming.length > 0 ? <span>{incoming.length}</span> : null}
               </button>
             </nav>
-            <button className="primary add-friend-button" type="button" onClick={() => setActiveView("profile")}>
+            <button className="primary add-friend-button" type="button" onClick={() => setShowContactsModal(true)}>
               <UserPlus size={18} />
               Add friend
             </button>
@@ -2771,6 +2792,10 @@ function App() {
               <section className="view-stack profile-view">
                 <section className="panel profile-hero">
                   <div className="profile-hero-actions">
+                    <button type="button" onClick={() => setShowContactsModal(true)} title="Manage known people">
+                      <UserCheck size={16} />
+                      Known people
+                    </button>
                     <button type="button" onClick={() => setShowProfileEditor(true)} title="Edit profile">
                       <Pencil size={16} />
                       Edit profile
@@ -2778,7 +2803,6 @@ function App() {
                   </div>
                   {renderProfileDetails(localIdentity)}
                 </section>
-                {renderContactsPanel()}
                 <section className="feed-toolbar">
                   <div>
                     <h2>Your Posts</h2>
@@ -2814,6 +2838,7 @@ function App() {
           </section>
           {renderProfileModal()}
           {renderProfileEditModal()}
+          {renderContactsModal()}
         </div>
       )}
     </main>

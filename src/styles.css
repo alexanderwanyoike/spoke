@@ -1606,3 +1606,165 @@ time,
     justify-content: flex-end;
   }
 }
+
+.panel-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.content-shell {
+  justify-self: center;
+  max-width: 1220px;
+  width: 100%;
+}
+
+.view-header,
+.feed-view,
+.profile-view,
+.notifications-view {
+  max-width: 760px;
+}
+
+.view-header {
+  width: 100%;
+}
+
+.messages-view {
+  background: var(--surface);
+  border-color: var(--border);
+  min-height: min(720px, calc(100vh - 154px));
+}
+
+.messages-sidebar {
+  background: var(--surface-subtle);
+  border-color: var(--border);
+}
+
+.messages-sidebar-header,
+.message-thread-header {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.message-thread-shell {
+  background: var(--surface);
+}
+
+.message-thread {
+  align-content: start;
+  background: var(--surface-subtle);
+}
+
+.thread-composer {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.thread-composer textarea {
+  background: var(--surface-subtle);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.thread-composer textarea::placeholder {
+  color: var(--muted);
+}
+
+.thread-summary strong,
+.message-thread-header h2,
+.messages-sidebar-header h2,
+.messages-empty h2,
+.empty-thread h3 {
+  color: var(--text);
+}
+
+.thread-row time,
+.thread-message.received span,
+.thread-message.received time {
+  color: var(--muted);
+}
+
+.thread-message.received > div {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.thread-message.sent > div {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.thread-message.received .message-media-placeholder,
+.message-media-placeholder,
+.media-placeholder {
+  background: var(--surface-subtle);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.empty-thread,
+.messages-empty,
+.empty-state {
+  background: var(--surface-subtle);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.notification-list {
+  background: transparent;
+  border: 0;
+}
+
+.notification-list .empty-state {
+  text-align: left;
+}
+
+.contacts-modal {
+  max-width: 560px;
+  padding: 0;
+}
+
+.contacts-modal > .panel {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 16px;
+}
+
+.contacts-modal .contact-list {
+  max-height: min(340px, 38vh);
+  overflow: auto;
+}
+
+.profile-hero-actions {
+  gap: 8px;
+}
+
+:root[data-theme="dark"] .brand-mark {
+  background: #eaf3ed;
+  color: #101612;
+}
+
+:root[data-theme="dark"] .primary {
+  color: #07110d;
+}
+
+:root[data-theme="dark"] .thread-message.sent > div {
+  color: #07110d;
+}
+
+@media (max-width: 760px) {
+  .content-shell {
+    max-width: none;
+  }
+
+  .view-header,
+  .feed-view,
+  .profile-view,
+  .notifications-view {
+    max-width: none;
+  }
+}
