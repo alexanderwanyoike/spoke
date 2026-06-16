@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   Check,
   Download,
+  ExternalLink,
   ImagePlus,
   Inbox,
   KeyRound,
@@ -59,6 +60,7 @@ import {
   type SpokeFeedIndex,
   type SpokePost,
   type SpokeProfile,
+  type SpokeProfileLink,
   type SpokeReply,
   type SpokeThreadIndex
 } from "./api";
@@ -119,6 +121,14 @@ import {
   type SpokeMessageAttachment
 } from "./media";
 import {
+  displayNameForProfileIdentity,
+  normalizeProfileDraft,
+  profileCacheKey,
+  profileLinksFromDraft,
+  type ProfileDraft,
+  type ProfilesByIdentity
+} from "./profile";
+import {
   tauriSpokeUpdateClient,
   type SpokeUpdateCheck,
   type SpokeUpdateClient
@@ -163,6 +173,7 @@ type PendingImageAttachment = {
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
 const PROFILE_KEY = "spoke.profile";
+const PROFILE_CACHE_KEY = "spoke.profile_cache";
 const FEED_REFRESH_MS = 2000;
 const INCOMING_REFRESH_MS = 2000;
 const CONVERSATION_REFRESH_MS = 3000;
@@ -213,6 +224,14 @@ function isSpokeReply(value: unknown): value is SpokeReply {
     value !== null &&
     (value as { schema?: unknown }).schema === "spoke.reply.v1"
   );
+}
+
+function isSpokeProfile(value: unknown): value is SpokeProfile {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const schema = (value as { schema?: unknown }).schema;
+  return schema === "spoke.profile.v1" || schema === "spoke.profile.v2";
 }
 
 function incomingKind(payload: SpokeIncomingPayload) {
@@ -272,12 +291,22 @@ function App() {
     loadJson<StoredSession>(SESSION_KEY, { requestId: "", status: "pending" })
   );
   const [contacts, setContacts] = useState<Contact[]>(() => loadJson<Contact[]>(CONTACTS_KEY, []));
-  const [profileDraft, setProfileDraft] = useState(() =>
-    loadJson<Pick<SpokeProfile, "displayName" | "bio">>(PROFILE_KEY, {
+  const [profileDraft, setProfileDraft] = useState<ProfileDraft>(() =>
+    normalizeProfileDraft(loadJson<Partial<ProfileDraft>>(PROFILE_KEY, {
       displayName: "",
-      bio: ""
-    })
+      bio: "",
+      location: "",
+      pronouns: "",
+      links: []
+    }))
   );
+  const [profileAvatar, setProfileAvatar] = useState<PendingImageAttachment | null>(null);
+  const [profileCache, setProfileCache] = useState<ProfilesByIdentity>(() =>
+    loadJson<ProfilesByIdentity>(PROFILE_CACHE_KEY, {})
+  );
+  const [profileAvatarUrls, setProfileAvatarUrls] = useState<Record<string, string>>({});
+  const [profileAvatarErrors, setProfileAvatarErrors] = useState<Record<string, string>>({});
+  const [activeProfileIdentity, setActiveProfileIdentity] = useState("");
   const [contactDraft, setContactDraft] = useState<Contact>({
     identity: "",
     displayName: ""
@@ -317,6 +346,8 @@ function App() {
   const fetchingAttachmentKeysRef = useRef<Set<string>>(new Set());
   const messageAttachmentUrlsRef = useRef<Set<string>>(new Set());
   const fetchingMessageAttachmentKeysRef = useRef<Set<string>>(new Set());
+  const profileAvatarUrlsRef = useRef<Set<string>>(new Set());
+  const fetchingProfileAvatarKeysRef = useRef<Set<string>>(new Set());
   const updateClient: SpokeUpdateClient = tauriSpokeUpdateClient;
 
   const sessionToken = session.token || "";
@@ -337,11 +368,37 @@ function App() {
     [conversations]
   );
   const displayNameForIdentity = (identity: string) => {
-    if (sameIdentity(identity, localIdentity)) {
-      return profileDraft.displayName.trim() || localIdentity;
-    }
-    return contacts.find((contact) => sameIdentity(contact.identity, identity))?.displayName || identity;
+    return displayNameForProfileIdentity({
+      identity,
+      localIdentity,
+      localDisplayName: profileDraft.displayName,
+      contacts,
+      profiles: profileCache
+    });
   };
+  const contactDisplayName = (contact: Contact) => displayNameForIdentity(contact.identity);
+  const activeProfile = activeProfileIdentity
+    ? sameIdentity(activeProfileIdentity, localIdentity)
+      ? ({
+          schema: profileDraft.avatar ||
+            profileDraft.links.length ||
+            profileDraft.location.trim() ||
+            profileDraft.pronouns.trim()
+            ? "spoke.profile.v2"
+            : "spoke.profile.v1",
+          identity: localIdentity,
+          displayName: profileDraft.displayName,
+          bio: profileDraft.bio,
+          avatar: profileDraft.avatar,
+          links: profileLinksFromDraft(profileDraft.links),
+          location: profileDraft.location,
+          pronouns: profileDraft.pronouns,
+          updatedAt: ""
+        } satisfies SpokeProfile)
+      : Object.entries(profileCache).find(([profileIdentity]) =>
+          sameIdentity(profileIdentity, activeProfileIdentity)
+        )?.[1]
+    : null;
   const messageThreads = useMemo<MessageThread[]>(() => {
     if (!localIdentity) {
       return [];
@@ -352,7 +409,7 @@ function App() {
       const id = conversationIdForParticipants([localIdentity, contact.identity]);
       threads.set(id, {
         id,
-        contact,
+        contact: { ...contact, displayName: contactDisplayName(contact) },
         conversation: conversations[id],
         lastMessageAt: conversations[id]?.lastMessageAt
       });
@@ -385,7 +442,7 @@ function App() {
       if (b.lastMessageAt) return 1;
       return a.contact.displayName.localeCompare(b.contact.displayName);
     });
-  }, [acceptedContacts, conversationList, conversations, localIdentity, contacts, profileDraft.displayName]);
+  }, [acceptedContacts, conversationList, conversations, localIdentity, contacts, profileDraft.displayName, profileCache]);
   const activeThread = useMemo(() => {
     return messageThreads.find((thread) => thread.id === activeThreadId) || messageThreads[0] || null;
   }, [messageThreads, activeThreadId]);
@@ -406,6 +463,21 @@ function App() {
       ),
     [conversations]
   );
+  const profileAvatarEntries = useMemo(
+    () => {
+      const entries: Array<{ identity: string; attachment: SpokeAttachment }> = [];
+      if (localIdentity && profileDraft.avatar) {
+        entries.push({ identity: localIdentity, attachment: profileDraft.avatar });
+      }
+      for (const profile of Object.values(profileCache)) {
+        if (profile.avatar) {
+          entries.push({ identity: profile.identity, attachment: profile.avatar });
+        }
+      }
+      return entries;
+    },
+    [localIdentity, profileCache, profileDraft.avatar]
+  );
 
   useEffect(() => {
     getStatus()
@@ -422,6 +494,9 @@ function App() {
         URL.revokeObjectURL(url);
       }
       for (const url of messageAttachmentUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      for (const url of profileAvatarUrlsRef.current) {
         URL.revokeObjectURL(url);
       }
     };
@@ -448,6 +523,10 @@ function App() {
   useEffect(() => {
     saveJson(PROFILE_KEY, profileDraft);
   }, [profileDraft]);
+
+  useEffect(() => {
+    saveJson(PROFILE_CACHE_KEY, profileCache);
+  }, [profileCache]);
 
   useEffect(() => {
     saveJson(SESSION_KEY, session);
@@ -544,6 +623,56 @@ function App() {
     conversationAttachments,
     messageAttachmentErrors,
     messageAttachmentUrls,
+    sessionToken
+  ]);
+
+  useEffect(() => {
+    if (!canUseApp || !sessionToken || profileAvatarEntries.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    for (const { identity, attachment } of profileAvatarEntries) {
+      const key = profileCacheKey(identity);
+      const target = attachmentFetchTarget(attachment);
+      if (
+        !target ||
+        profileAvatarUrls[key] ||
+        profileAvatarErrors[key] ||
+        fetchingProfileAvatarKeysRef.current.has(key)
+      ) {
+        continue;
+      }
+
+      fetchingProfileAvatarKeysRef.current.add(key);
+      fetchTarget(sessionToken, target)
+        .then((result) => {
+          if (cancelled) {
+            return;
+          }
+          const blob = new Blob([new Uint8Array(result.data)], { type: attachment.mimeType });
+          const url = URL.createObjectURL(blob);
+          profileAvatarUrlsRef.current.add(url);
+          setProfileAvatarUrls((current) => ({ ...current, [key]: url }));
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setProfileAvatarErrors((current) => ({ ...current, [key]: apiErrorMessage(err) }));
+          }
+        })
+        .finally(() => {
+          fetchingProfileAvatarKeysRef.current.delete(key);
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canUseApp,
+    profileAvatarEntries,
+    profileAvatarErrors,
+    profileAvatarUrls,
     sessionToken
   ]);
 
@@ -671,15 +800,55 @@ function App() {
 
   async function publishProfileFromDraft() {
     await withBusy("profile", async () => {
+      let avatar = profileDraft.avatar;
+      if (profileAvatar) {
+        const publishedAvatar = await publishBinary(
+          sessionToken,
+          mediaPath(profileAvatar.id),
+          profileAvatar.file,
+          {
+            fileName: profileAvatar.file.name || `${profileAvatar.id}.image`,
+            mimeType: profileAvatar.mimeType
+          }
+        );
+        avatar = createImageAttachmentReference({
+          id: profileAvatar.id,
+          published: publishedAvatar,
+          mimeType: profileAvatar.mimeType,
+          width: profileAvatar.width,
+          height: profileAvatar.height,
+          alt: `${profileDraft.displayName.trim() || localIdentity} avatar`
+        });
+        const url = URL.createObjectURL(profileAvatar.file);
+        profileAvatarUrlsRef.current.add(url);
+        setProfileAvatarUrls((current) => ({ ...current, [profileCacheKey(localIdentity)]: url }));
+      }
+      const links = profileLinksFromDraft(profileDraft.links);
       const profile: SpokeProfile = {
-        schema: "spoke.profile.v1",
+        schema: avatar || links.length || profileDraft.location.trim() || profileDraft.pronouns.trim()
+          ? "spoke.profile.v2"
+          : "spoke.profile.v1",
         identity: localIdentity,
         displayName: profileDraft.displayName.trim() || localIdentity,
         bio: profileDraft.bio.trim(),
+        ...(avatar ? { avatar } : {}),
+        ...(links.length ? { links } : {}),
+        ...(profileDraft.location.trim() ? { location: profileDraft.location.trim() } : {}),
+        ...(profileDraft.pronouns.trim() ? { pronouns: profileDraft.pronouns.trim() } : {}),
         updatedAt: new Date().toISOString()
       };
       await publishProfile(sessionToken, profile);
-      setNotice("Profile published at /spoke/profile.");
+      if (profileAvatar) {
+        URL.revokeObjectURL(profileAvatar.previewUrl);
+      }
+      setProfileAvatar(null);
+      setProfileDraft((current) => ({ ...current, avatar }));
+      setProfileCache((current) => ({ ...current, [profileCacheKey(localIdentity)]: profile }));
+      setNotice(
+        profile.schema === "spoke.profile.v2"
+          ? "Rich profile published at /spoke/profile."
+          : "Profile published at /spoke/profile."
+      );
     });
   }
 
@@ -750,6 +919,70 @@ function App() {
     }
 
     setPostAttachments((current) => [...current, ...nextAttachments]);
+  }
+
+  async function addProfileAvatar(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files || []).slice(0, 1);
+    event.currentTarget.value = "";
+    if (files.length === 0) {
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    try {
+      const [nextAvatar] = await prepareImageAttachments(files);
+      setProfileAvatar((current) => {
+        if (current) {
+          URL.revokeObjectURL(current.previewUrl);
+        }
+        return nextAvatar;
+      });
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    }
+  }
+
+  function removeProfileAvatar() {
+    if (profileAvatar) {
+      URL.revokeObjectURL(profileAvatar.previewUrl);
+      setProfileAvatar(null);
+      return;
+    }
+    setProfileAvatarUrls((current) => {
+      const next = { ...current };
+      delete next[profileCacheKey(localIdentity)];
+      return next;
+    });
+    setProfileAvatarErrors((current) => {
+      const next = { ...current };
+      delete next[profileCacheKey(localIdentity)];
+      return next;
+    });
+    setProfileDraft((current) => ({ ...current, avatar: undefined }));
+  }
+
+  function updateProfileLink(index: number, key: keyof SpokeProfileLink, value: string) {
+    setProfileDraft((current) => ({
+      ...current,
+      links: current.links.map((link, itemIndex) =>
+        itemIndex === index ? { ...link, [key]: value } : link
+      )
+    }));
+  }
+
+  function addProfileLink() {
+    setProfileDraft((current) => ({
+      ...current,
+      links: [...current.links, { label: "", url: "" }]
+    }));
+  }
+
+  function removeProfileLink(index: number) {
+    setProfileDraft((current) => ({
+      ...current,
+      links: current.links.filter((_, itemIndex) => itemIndex !== index)
+    }));
   }
 
   async function addMessageAttachments(identity: string, event: ChangeEvent<HTMLInputElement>) {
@@ -966,6 +1199,15 @@ function App() {
     return JSON.parse(decodeFetchData(result)) as SpokeFeedIndex;
   }
 
+  async function fetchProfile(identity: string) {
+    const result = await fetchTarget(sessionToken, `${identity}/spoke/profile`);
+    const profile = JSON.parse(decodeFetchData(result)) as unknown;
+    if (!isSpokeProfile(profile)) {
+      throw new Error("Fetched object is not a Spoke profile.");
+    }
+    return profile;
+  }
+
   async function fetchPost(addressOrPath: string, owner: string) {
     const target = addressOrPath.startsWith("/spoke/")
       ? `${owner}${addressOrPath}`
@@ -1025,6 +1267,33 @@ function App() {
     setFeedRefreshing(true);
     const nextPublished = await listPublished(sessionToken).catch(() => []);
     const localIndex = await loadLocalFeed(nextPublished);
+    const fetchedProfiles = await Promise.all(
+      [localIdentity, ...feedContacts.map((contact) => contact.identity)]
+        .filter(Boolean)
+        .map(async (identity) => {
+          try {
+            return {
+              identity,
+              profile: await fetchProfile(identity)
+            };
+          } catch {
+            return null;
+          }
+        })
+    );
+    const nextProfiles = fetchedProfiles.reduce<ProfilesByIdentity>((current, entry) => {
+      if (!entry) {
+        return current;
+      }
+      return {
+        ...current,
+        [profileCacheKey(entry.identity)]: entry.profile,
+        [profileCacheKey(entry.profile.identity)]: entry.profile
+      };
+    }, profileCache);
+    if (fetchedProfiles.some(Boolean)) {
+      setProfileCache(nextProfiles);
+    }
 
     const localItems: Array<FeedItem | null> = await Promise.all(
       localPostReferences(localIndex, nextPublished).map(async (item) => {
@@ -1054,6 +1323,16 @@ function App() {
       feedContacts.map(async (contact) => {
         try {
           const index = await fetchIndex(contact.identity);
+          const contactForFeed = {
+            ...contact,
+            displayName: displayNameForProfileIdentity({
+              identity: contact.identity,
+              localIdentity,
+              localDisplayName: profileDraft.displayName,
+              contacts: nextContacts,
+              profiles: nextProfiles
+            })
+          };
           return Promise.all(
             index.posts.map(async (item) => {
               try {
@@ -1062,7 +1341,7 @@ function App() {
                   : await fetchPost(item.address || item.path, contact.identity);
                 return {
                   source: "contact" as const,
-                  contact,
+                  contact: contactForFeed,
                   post,
                   address: item.address || `${contact.identity}${item.path}`
                 };
@@ -1557,6 +1836,39 @@ function App() {
     });
   }
 
+  function avatarUrlForIdentity(identity: string) {
+    return profileAvatarUrls[profileCacheKey(identity)] || "";
+  }
+
+  function avatarInitial(identity: string) {
+    return displayNameForIdentity(identity).slice(0, 1).toUpperCase() || "?";
+  }
+
+  function profileForIdentity(identity: string) {
+    if (sameIdentity(identity, localIdentity)) {
+      return activeProfile && sameIdentity(activeProfile.identity, localIdentity)
+        ? activeProfile
+        : profileCache[profileCacheKey(localIdentity)];
+    }
+    return Object.entries(profileCache).find(([profileIdentity]) =>
+      sameIdentity(profileIdentity, identity)
+    )?.[1];
+  }
+
+  function renderAvatar(identity: string, size: "small" | "large" = "small") {
+    const url = avatarUrlForIdentity(identity);
+    const className = `profile-avatar ${size}`;
+    return (
+      <span className={className} aria-hidden="true">
+        {url ? <img src={url} alt="" /> : avatarInitial(identity)}
+      </span>
+    );
+  }
+
+  function openProfile(identity: string) {
+    setActiveProfileIdentity(identity);
+  }
+
   useEffect(() => {
     if (!canUseApp) {
       return;
@@ -1667,9 +1979,41 @@ function App() {
             <section className="panel">
               <div className="panel-heading">
                 <h2>Profile</h2>
-                <button type="button" onClick={publishProfileFromDraft} disabled={busy === "profile"} title="Publish profile">
+                <button
+                  type="button"
+                  onClick={publishProfileFromDraft}
+                  disabled={busy === "profile"}
+                  title="Publish profile"
+                >
                   <Send size={16} />
                 </button>
+              </div>
+              <div className="profile-editor-avatar">
+                <button type="button" onClick={() => openProfile(localIdentity)} title="View your profile">
+                  {profileAvatar ? (
+                    <span className="profile-avatar large" aria-hidden="true">
+                      <img src={profileAvatar.previewUrl} alt="" />
+                    </span>
+                  ) : (
+                    renderAvatar(localIdentity, "large")
+                  )}
+                </button>
+                <div>
+                  <label className="file-button">
+                    <ImagePlus size={16} />
+                    Avatar
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={addProfileAvatar}
+                    />
+                  </label>
+                  {(profileAvatar || profileDraft.avatar) ? (
+                    <button type="button" onClick={removeProfileAvatar} title="Remove avatar">
+                      <Trash2 size={14} />
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <label>
                 Display name
@@ -1692,6 +2036,53 @@ function App() {
                   placeholder="Short note for known contacts"
                 />
               </label>
+              <div className="field-row">
+                <label>
+                  Pronouns
+                  <input
+                    value={profileDraft.pronouns}
+                    onChange={(event) =>
+                      setProfileDraft((current) => ({ ...current, pronouns: event.target.value }))
+                    }
+                    placeholder="they/them"
+                  />
+                </label>
+                <label>
+                  Location
+                  <input
+                    value={profileDraft.location}
+                    onChange={(event) =>
+                      setProfileDraft((current) => ({ ...current, location: event.target.value }))
+                    }
+                    placeholder="London"
+                  />
+                </label>
+              </div>
+              <div className="profile-links-editor">
+                <div className="panel-heading compact-heading">
+                  <h3>Links</h3>
+                  <button type="button" onClick={addProfileLink} title="Add profile link">
+                    <Plus size={14} />
+                  </button>
+                </div>
+                {profileDraft.links.map((link, index) => (
+                  <div className="profile-link-edit" key={index}>
+                    <input
+                      value={link.label}
+                      onChange={(event) => updateProfileLink(index, "label", event.target.value)}
+                      placeholder="Label"
+                    />
+                    <input
+                      value={link.url}
+                      onChange={(event) => updateProfileLink(index, "url", event.target.value)}
+                      placeholder="https://example.com"
+                    />
+                    <button type="button" onClick={() => removeProfileLink(index)} title="Remove link">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </section>
 
             <section className="panel">
@@ -1712,7 +2103,7 @@ function App() {
                 />
               </label>
               <label>
-                Name
+                Nickname
                 <input
                   value={contactDraft.displayName}
                   onChange={(event) =>
@@ -1742,8 +2133,16 @@ function App() {
               <div className="contact-list">
                 {contacts.map((contact) => (
                   <div className="contact-row" key={contact.identity}>
+                    <button
+                      className="identity-button"
+                      type="button"
+                      onClick={() => openProfile(contact.identity)}
+                      title={`View ${contactDisplayName(contact)}`}
+                    >
+                      {renderAvatar(contact.identity)}
+                    </button>
                     <div>
-                      <strong>{contact.displayName}</strong>
+                      <strong>{contactDisplayName(contact)}</strong>
                       <span>{contact.identity}</span>
                       <span className="contact-status">{contact.relationship || "accepted"}</span>
                     </div>
@@ -1852,10 +2251,18 @@ function App() {
               {feed.map((item) => (
                 <article className="post-card" key={`${item.source}:${item.address}`}>
                   <header>
-                    <div>
-                      <strong>{displayNameForFeedItem(item)}</strong>
-                      <span>{item.post.author}</span>
-                    </div>
+                    <button
+                      className="post-author"
+                      type="button"
+                      onClick={() => openProfile(item.post.author)}
+                      title={`View ${displayNameForIdentity(item.post.author)}`}
+                    >
+                      {renderAvatar(item.post.author)}
+                      <span>
+                        <strong>{displayNameForIdentity(item.post.author)}</strong>
+                        <span>{item.post.author}</span>
+                      </span>
+                    </button>
                     <time>{new Date(item.post.createdAt).toLocaleString()}</time>
                   </header>
                   <h3>{item.post.title}</h3>
@@ -1886,7 +2293,15 @@ function App() {
                     {(repliesByPost[item.address] || []).map((reply) => (
                       <div className="reply" key={reply.id}>
                         <header>
-                          <strong>{displayNameForIdentity(reply.sender)}</strong>
+                          <button
+                            className="reply-author"
+                            type="button"
+                            onClick={() => openProfile(reply.sender)}
+                            title={`View ${displayNameForIdentity(reply.sender)}`}
+                          >
+                            {renderAvatar(reply.sender)}
+                            <strong>{displayNameForIdentity(reply.sender)}</strong>
+                          </button>
                           <time>{new Date(reply.createdAt).toLocaleString()}</time>
                         </header>
                         <p>{reply.body}</p>
@@ -1923,6 +2338,49 @@ function App() {
           </section>
 
           <aside className="rail">
+            <section className="panel profile-card">
+              <div className="panel-heading">
+                <h2>Profile</h2>
+                {activeProfileIdentity ? (
+                  <button type="button" onClick={() => setActiveProfileIdentity("")} title="Close profile">
+                    <X size={14} />
+                  </button>
+                ) : null}
+              </div>
+              {activeProfileIdentity ? (
+                <div className="profile-summary">
+                  {renderAvatar(activeProfileIdentity, "large")}
+                  <div>
+                    <strong>{displayNameForIdentity(activeProfileIdentity)}</strong>
+                    <span>{activeProfileIdentity}</span>
+                  </div>
+                  {profileForIdentity(activeProfileIdentity)?.pronouns ? (
+                    <span className="profile-chip">{profileForIdentity(activeProfileIdentity)?.pronouns}</span>
+                  ) : null}
+                  {profileForIdentity(activeProfileIdentity)?.location ? (
+                    <span className="profile-chip">{profileForIdentity(activeProfileIdentity)?.location}</span>
+                  ) : null}
+                  {profileForIdentity(activeProfileIdentity)?.bio ? (
+                    <p>{profileForIdentity(activeProfileIdentity)?.bio}</p>
+                  ) : (
+                    <p className="muted">No published profile details yet.</p>
+                  )}
+                  {profileForIdentity(activeProfileIdentity)?.links?.length ? (
+                    <div className="profile-links">
+                      {profileForIdentity(activeProfileIdentity)?.links?.map((link) => (
+                        <a href={link.url} key={`${link.label}:${link.url}`} target="_blank" rel="noreferrer">
+                          <ExternalLink size={14} />
+                          {link.label}
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="empty-state compact">Select a person to inspect their profile.</div>
+              )}
+            </section>
+
             <section className="panel">
               <div className="panel-heading">
                 <h2>Incoming</h2>
@@ -1937,7 +2395,7 @@ function App() {
                     <article className="incoming-card" key={record.ingress_id}>
                       <header>
                         <div>
-                          <strong>{record.sender_identity}</strong>
+                          <strong>{displayNameForIdentity(record.sender_identity)}</strong>
                           <span>{opened ? incomingKind(opened) : record.schema_hint || "encrypted object"}</span>
                         </div>
                         <div className="decision-buttons">
@@ -2006,9 +2464,7 @@ function App() {
                       key={thread.id}
                       onClick={() => setActiveThreadId(thread.id)}
                     >
-                      <span className="thread-avatar" aria-hidden="true">
-                        {thread.contact.displayName.slice(0, 1).toUpperCase()}
-                      </span>
+                      {renderAvatar(thread.contact.identity)}
                       <span className="thread-summary">
                         <strong>{thread.contact.displayName}</strong>
                         <span>
@@ -2036,9 +2492,14 @@ function App() {
                     <button className="mobile-back" type="button" onClick={() => setActiveView("feed")} title="Back to feed">
                       <ArrowLeft size={16} />
                     </button>
-                    <span className="thread-avatar large" aria-hidden="true">
-                      {activeThread.contact.displayName.slice(0, 1).toUpperCase()}
-                    </span>
+                    <button
+                      className="identity-button"
+                      type="button"
+                      onClick={() => openProfile(activeThread.contact.identity)}
+                      title={`View ${activeThread.contact.displayName}`}
+                    >
+                      {renderAvatar(activeThread.contact.identity, "large")}
+                    </button>
                     <div>
                       <h2>{activeThread.contact.displayName}</h2>
                       <p>{activeThread.contact.identity}</p>
@@ -2049,7 +2510,15 @@ function App() {
                     {activeThreadMessages.map((item) => (
                       <div className={`thread-message ${item.direction}`} key={item.message.id}>
                         <div>
-                          <span>{displayNameForIdentity(item.message.sender)}</span>
+                          <button
+                            className="message-author"
+                            type="button"
+                            onClick={() => openProfile(item.message.sender)}
+                            title={`View ${displayNameForIdentity(item.message.sender)}`}
+                          >
+                            {renderAvatar(item.message.sender)}
+                            <span>{displayNameForIdentity(item.message.sender)}</span>
+                          </button>
                           {item.message.body ? <p>{item.message.body}</p> : null}
                           {item.message.attachments?.length ? (
                             <div className="message-media-grid">
@@ -2085,7 +2554,6 @@ function App() {
                       </div>
                     ) : null}
                   </div>
-
                   <div className="thread-composer">
                     <div className="message-composer-main">
                       <textarea
