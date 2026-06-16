@@ -123,6 +123,36 @@ label {
   padding: 6px 8px;
 }
 
+.app-nav {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.app-nav button {
+  background: #ebe7de;
+  border-color: #d4ccbd;
+  min-width: 118px;
+}
+
+.app-nav button.active {
+  background: #1f2a24;
+  border-color: #1f2a24;
+  color: #ffffff;
+}
+
+.app-nav span {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  min-width: 22px;
+  justify-content: center;
+  padding: 2px 7px;
+}
+
 .alert {
   border-radius: 8px;
   margin-bottom: 14px;
@@ -366,68 +396,240 @@ time {
   margin: 0;
 }
 
-.message-composers,
-.conversation-list,
-.message-list {
+.messages-view {
+  background: #ffffff;
+  border: 1px solid #d6ddd3;
+  border-radius: 8px;
   display: grid;
-  gap: 10px;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  min-height: calc(100vh - 154px);
+  overflow: hidden;
 }
 
-.message-composer,
-.conversation-card {
-  border-top: 1px solid #edf0eb;
+.messages-sidebar {
+  background: #f7f6f2;
+  border-right: 1px solid #dce2d9;
   display: grid;
-  gap: 8px;
-  padding-top: 10px;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
 }
 
-.message-composer strong,
-.conversation-card strong {
-  color: #304039;
+.messages-sidebar-header {
+  align-items: center;
+  border-bottom: 1px solid #dce2d9;
+  display: flex;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.messages-sidebar-header h2,
+.message-thread-header h2,
+.empty-thread h3,
+.messages-empty h2 {
+  margin: 0;
+}
+
+.messages-sidebar-header p,
+.message-thread-header p,
+.messages-empty p,
+.empty-thread p {
+  color: #68736b;
   font-size: 13px;
+  margin: 4px 0 0;
   overflow-wrap: anywhere;
 }
 
-.message-input-row {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: 1fr auto;
-}
-
-.conversation-card header {
-  align-items: start;
-  display: flex;
-  gap: 8px;
-  justify-content: space-between;
-}
-
-.message-bubble {
-  border: 1px solid #e0e7de;
-  border-radius: 7px;
+.thread-list {
+  align-content: start;
   display: grid;
   gap: 4px;
-  padding: 8px 9px;
+  overflow: auto;
+  padding: 8px;
 }
 
-.message-bubble.sent {
-  background: #edf7ed;
-  border-color: #c8dfca;
+.thread-row {
+  align-items: center;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 7px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  justify-content: stretch;
+  min-height: 62px;
+  padding: 9px;
+  text-align: left;
+  width: 100%;
 }
 
-.message-bubble.received {
-  background: #f6f8f5;
+.thread-row:hover,
+.thread-row.active {
+  background: #ffffff;
+  border-color: #d9e1d6;
 }
 
-.message-bubble span {
+.thread-row.active {
+  box-shadow: inset 3px 0 0 #23614a;
+}
+
+.thread-avatar {
+  align-items: center;
+  background: #dbe5d8;
+  border: 1px solid #c5d3c1;
+  border-radius: 50%;
+  color: #1f2a24;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-weight: 700;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
+.thread-avatar.large {
+  height: 46px;
+  width: 46px;
+}
+
+.thread-summary {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.thread-summary strong {
+  color: #243029;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-summary span {
   color: #68736b;
-  font-size: 11px;
-  overflow-wrap: anywhere;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.message-bubble p {
-  line-height: 1.4;
+.thread-row time {
+  align-self: start;
+  color: #778179;
+  font-size: 11px;
+}
+
+.message-thread-shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.message-thread-header {
+  align-items: center;
+  border-bottom: 1px solid #edf0eb;
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.mobile-back {
+  display: none;
+}
+
+.message-thread {
+  align-content: end;
+  background: #fbfaf7;
+  display: grid;
+  gap: 10px;
+  overflow: auto;
+  padding: 20px 18px;
+}
+
+.thread-message {
+  display: flex;
+}
+
+.thread-message.sent {
+  justify-content: flex-end;
+}
+
+.thread-message.received {
+  justify-content: flex-start;
+}
+
+.thread-message > div {
+  border: 1px solid #dfe7dc;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  max-width: min(620px, 76%);
+  padding: 9px 11px;
+}
+
+.thread-message.sent > div {
+  background: #23614a;
+  border-color: #23614a;
+  color: #ffffff;
+}
+
+.thread-message.received > div {
+  background: #ffffff;
+}
+
+.thread-message span,
+.thread-message time {
+  font-size: 11px;
+}
+
+.thread-message.sent span,
+.thread-message.sent time {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.thread-message.received span,
+.thread-message.received time {
+  color: #68736b;
+}
+
+.thread-message p {
+  line-height: 1.45;
   margin: 0;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.thread-composer {
+  align-items: end;
+  background: #ffffff;
+  border-top: 1px solid #dce2d9;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px;
+}
+
+.thread-composer textarea {
+  max-height: 140px;
+  min-height: 44px;
+  resize: vertical;
+}
+
+.empty-thread,
+.messages-empty {
+  align-self: center;
+  color: #68736b;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  margin: auto;
+  max-width: 320px;
+  text-align: center;
+}
+
+.empty-thread svg,
+.messages-empty svg {
+  color: #647368;
 }
 
 .inline-error {
@@ -458,6 +660,10 @@ time {
     grid-column: 1 / -1;
     grid-template-columns: repeat(2, minmax(240px, 1fr));
   }
+
+  .messages-view {
+    grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 760px) {
@@ -478,6 +684,37 @@ time {
   }
 
   .reply-box {
+    grid-template-columns: 1fr;
+  }
+
+  .app-nav {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .messages-view {
+    grid-template-columns: 1fr;
+    min-height: calc(100vh - 172px);
+  }
+
+  .messages-sidebar {
+    border-right: 0;
+  }
+
+  .message-thread-shell {
+    display: grid;
+  }
+
+  .mobile-back {
+    display: inline-flex;
+  }
+
+  .thread-message > div {
+    max-width: 88%;
+  }
+
+  .thread-composer {
     grid-template-columns: 1fr;
   }
 }

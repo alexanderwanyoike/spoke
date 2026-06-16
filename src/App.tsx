@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   Check,
   Download,
   Inbox,
@@ -99,6 +100,9 @@ import {
   type SpokeUpdateCheck,
   type SpokeUpdateClient
 } from "./update/client";
+
+type AppView = "feed" | "messages";
+
 type StoredSession = {
   requestId: string;
   token?: string | null;
@@ -115,6 +119,13 @@ type ReviewState = {
 };
 
 type SpokeIncomingPayload = SpokeReply | SpokeFollowRequest | SpokeFollowResponse | SpokeMessage;
+
+type MessageThread = {
+  id: string;
+  contact: Contact;
+  conversation?: Conversation;
+  lastMessageAt?: string;
+};
 
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
@@ -215,6 +226,8 @@ function App() {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [repliesByPost, setRepliesByPost] = useState<RepliesByPost>({});
   const [conversations, setConversations] = useState<ConversationsById>({});
+  const [activeView, setActiveView] = useState<AppView>("feed");
+  const [activeThreadId, setActiveThreadId] = useState("");
   const [incoming, setIncoming] = useState<IngressRecord[]>([]);
   const [review, setReview] = useState<ReviewState>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
@@ -256,9 +269,54 @@ function App() {
     }
     return contacts.find((contact) => sameIdentity(contact.identity, identity))?.displayName || identity;
   };
-  const titleForConversation = (conversation: Conversation) =>
-    otherParticipants(conversation, localIdentity).map(displayNameForIdentity).join(", ") ||
-    displayNameForIdentity(localIdentity);
+  const messageThreads = useMemo<MessageThread[]>(() => {
+    if (!localIdentity) {
+      return [];
+    }
+
+    const threads = new Map<string, MessageThread>();
+    for (const contact of acceptedContacts) {
+      const id = conversationIdForParticipants([localIdentity, contact.identity]);
+      threads.set(id, {
+        id,
+        contact,
+        conversation: conversations[id],
+        lastMessageAt: conversations[id]?.lastMessageAt
+      });
+    }
+    for (const conversation of conversationList) {
+      if (threads.has(conversation.id)) {
+        continue;
+      }
+      const participant = otherParticipants(conversation, localIdentity)[0];
+      if (!participant) {
+        continue;
+      }
+      threads.set(conversation.id, {
+        id: conversation.id,
+        contact: {
+          identity: participant,
+          displayName: displayNameForIdentity(participant),
+          relationship: "accepted"
+        },
+        conversation,
+        lastMessageAt: conversation.lastMessageAt
+      });
+    }
+
+    return [...threads.values()].sort((a, b) => {
+      if (a.lastMessageAt && b.lastMessageAt) {
+        return b.lastMessageAt.localeCompare(a.lastMessageAt);
+      }
+      if (a.lastMessageAt) return -1;
+      if (b.lastMessageAt) return 1;
+      return a.contact.displayName.localeCompare(b.contact.displayName);
+    });
+  }, [acceptedContacts, conversationList, conversations, localIdentity, contacts, profileDraft.displayName]);
+  const activeThread = useMemo(() => {
+    return messageThreads.find((thread) => thread.id === activeThreadId) || messageThreads[0] || null;
+  }, [messageThreads, activeThreadId]);
+  const activeThreadMessages = activeThread?.conversation?.messages || [];
 
   useEffect(() => {
     getStatus()
@@ -270,6 +328,19 @@ function App() {
     contactsRef.current = contacts;
     saveJson(CONTACTS_KEY, contacts);
   }, [contacts]);
+
+  useEffect(() => {
+    if (activeView !== "messages") {
+      return;
+    }
+    if (!messageThreads.length) {
+      setActiveThreadId("");
+      return;
+    }
+    if (!activeThreadId || !messageThreads.some((thread) => thread.id === activeThreadId)) {
+      setActiveThreadId(messageThreads[0].id);
+    }
+  }, [activeView, activeThreadId, messageThreads]);
 
   useEffect(() => {
     saveJson(PROFILE_KEY, profileDraft);
@@ -848,6 +919,14 @@ function App() {
     });
   }
 
+  function handleMessageKeyDown(event: KeyboardEvent<HTMLTextAreaElement>, contact: Contact) {
+    if (event.key !== "Enter" || event.shiftKey) {
+      return;
+    }
+    event.preventDefault();
+    void sendMessage(contact);
+  }
+
   async function publishReceivedMessage(
     message: SpokeMessage,
     options: { silent?: boolean } = {}
@@ -1162,6 +1241,27 @@ function App() {
           </button>
         </section>
       ) : (
+        <>
+        <nav className="app-nav" aria-label="Spoke sections">
+          <button
+            type="button"
+            className={activeView === "feed" ? "active" : ""}
+            onClick={() => setActiveView("feed")}
+          >
+            Known Feed
+          </button>
+          <button
+            type="button"
+            className={activeView === "messages" ? "active" : ""}
+            onClick={() => setActiveView("messages")}
+          >
+            <MessageCircle size={16} />
+            Messages
+            {conversationList.length > 0 ? <span>{conversationList.length}</span> : null}
+          </button>
+        </nav>
+
+        {activeView === "feed" ? (
         <div className="workspace">
           <aside className="rail">
             <section className="panel">
@@ -1414,68 +1514,127 @@ function App() {
               </div>
             </section>
 
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Messages</h2>
-                <MessageCircle size={16} />
-              </div>
-              <div className="message-composers">
-                {acceptedContacts.map((contact) => (
-                  <div className="message-composer" key={contact.identity}>
-                    <strong>{contact.displayName}</strong>
-                    <div className="message-input-row">
-                      <input
-                        value={messageDrafts[contact.identity] || ""}
-                        onChange={(event) =>
-                          setMessageDrafts((current) => ({
-                            ...current,
-                            [contact.identity]: event.target.value
-                          }))
-                        }
-                        placeholder={`Message ${contact.displayName}`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => sendMessage(contact)}
-                        disabled={busy === `message:${contact.identity}`}
-                        title="Send encrypted message"
-                      >
-                        <Send size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {acceptedContacts.length === 0 ? (
-                  <div className="empty-state compact">Accepted contacts can receive messages.</div>
-                ) : null}
-              </div>
-              <div className="conversation-list">
-                {conversationList.map((conversation) => (
-                  <article className="conversation-card" key={conversation.id}>
-                    <header>
-                      <strong>{titleForConversation(conversation)}</strong>
-                      <time>{new Date(conversation.lastMessageAt).toLocaleString()}</time>
-                    </header>
-                    <div className="message-list">
-                      {conversation.messages.slice(-6).map((item) => (
-                        <div
-                          className={`message-bubble ${item.direction}`}
-                          key={item.message.id}
-                        >
-                          <span>{displayNameForIdentity(item.message.sender)}</span>
-                          <p>{item.message.body}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                ))}
-                {conversationList.length === 0 ? (
-                  <div className="empty-state compact">No messages yet.</div>
-                ) : null}
-              </div>
-            </section>
           </aside>
         </div>
+        ) : (
+          <section className="messages-view">
+            <aside className="messages-sidebar" aria-label="Conversations">
+              <div className="messages-sidebar-header">
+                <div>
+                  <h2>Messages</h2>
+                  <p>{messageThreads.length} conversation threads</p>
+                </div>
+                <button type="button" onClick={refreshIncoming} disabled={busy === "incoming"} title="Refresh incoming">
+                  <RefreshCw size={16} />
+                </button>
+              </div>
+
+              <div className="thread-list">
+                {messageThreads.map((thread) => {
+                  const lastMessage = thread.conversation?.messages[
+                    thread.conversation.messages.length - 1
+                  ];
+                  return (
+                    <button
+                      type="button"
+                      className={`thread-row ${activeThread?.id === thread.id ? "active" : ""}`}
+                      key={thread.id}
+                      onClick={() => setActiveThreadId(thread.id)}
+                    >
+                      <span className="thread-avatar" aria-hidden="true">
+                        {thread.contact.displayName.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="thread-summary">
+                        <strong>{thread.contact.displayName}</strong>
+                        <span>
+                          {lastMessage
+                            ? lastMessage.message.body
+                            : `Start a private thread with ${thread.contact.displayName}`}
+                        </span>
+                      </span>
+                      {thread.lastMessageAt ? (
+                        <time>{new Date(thread.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+                      ) : null}
+                    </button>
+                  );
+                })}
+                {messageThreads.length === 0 ? (
+                  <div className="empty-state compact">Accept a contact before starting messages.</div>
+                ) : null}
+              </div>
+            </aside>
+
+            <section className="message-thread-shell">
+              {activeThread ? (
+                <>
+                  <header className="message-thread-header">
+                    <button className="mobile-back" type="button" onClick={() => setActiveView("feed")} title="Back to feed">
+                      <ArrowLeft size={16} />
+                    </button>
+                    <span className="thread-avatar large" aria-hidden="true">
+                      {activeThread.contact.displayName.slice(0, 1).toUpperCase()}
+                    </span>
+                    <div>
+                      <h2>{activeThread.contact.displayName}</h2>
+                      <p>{activeThread.contact.identity}</p>
+                    </div>
+                  </header>
+
+                  <div className="message-thread" aria-live="polite">
+                    {activeThreadMessages.map((item) => (
+                      <div className={`thread-message ${item.direction}`} key={item.message.id}>
+                        <div>
+                          <span>{displayNameForIdentity(item.message.sender)}</span>
+                          <p>{item.message.body}</p>
+                          <time>{new Date(item.message.createdAt).toLocaleString()}</time>
+                        </div>
+                      </div>
+                    ))}
+                    {activeThreadMessages.length === 0 ? (
+                      <div className="empty-thread">
+                        <MessageCircle size={28} />
+                        <h3>{activeThread.contact.displayName}</h3>
+                        <p>Start the encrypted one-to-one conversation.</p>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="thread-composer">
+                    <textarea
+                      rows={2}
+                      value={messageDrafts[activeThread.contact.identity] || ""}
+                      onChange={(event) =>
+                        setMessageDrafts((current) => ({
+                          ...current,
+                          [activeThread.contact.identity]: event.target.value
+                        }))
+                      }
+                      onKeyDown={(event) => handleMessageKeyDown(event, activeThread.contact)}
+                      placeholder={`Message ${activeThread.contact.displayName}`}
+                    />
+                    <button
+                      className="primary"
+                      type="button"
+                      onClick={() => sendMessage(activeThread.contact)}
+                      disabled={busy === `message:${activeThread.contact.identity}`}
+                      title="Send encrypted message"
+                    >
+                      <Send size={16} />
+                      Send
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="messages-empty">
+                  <MessageCircle size={36} />
+                  <h2>No message threads</h2>
+                  <p>Accept a contact, then start a private conversation here.</p>
+                </div>
+              )}
+            </section>
+          </section>
+        )}
+        </>
       )}
     </main>
   );
