@@ -119,6 +119,7 @@ export type SpokePost = {
   body: string;
   createdAt: string;
   path: string;
+  threadPath?: string;
 };
 
 export type SpokeFeedIndex = {
@@ -143,6 +144,23 @@ export type SpokeReply = {
   postAddress: string;
   body: string;
   createdAt: string;
+};
+
+export type SpokeThreadIndex = {
+  schema: "spoke.thread.v1";
+  id: string;
+  owner: string;
+  postAddress: string;
+  visibility: "public";
+  updatedAt: string;
+  replies: Array<{
+    id: string;
+    sender: string;
+    address?: string | null;
+    contentId?: string;
+    createdAt: string;
+    moderation: "accepted";
+  }>;
 };
 
 export const SPOKE_CAPABILITIES = [
@@ -503,6 +521,10 @@ export function makePostPath(id: string) {
 
 export function makeReplyPath(id: string) {
   return `/spoke/replies/${id}`;
+}
+
+export function makeThreadPath(postId: string) {
+  return `/spoke/threads/${postId}`;
 }
 
 export function makeId(prefix: string) {

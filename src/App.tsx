@@ -28,6 +28,7 @@ import {
   makeId,
   makePostPath,
   makeReplyPath,
+  makeThreadPath,
   openIngress,
   parseJsonBytes,
   publishJson,
@@ -45,7 +46,8 @@ import {
   type SpokeFeedIndex,
   type SpokePost,
   type SpokeProfile,
-  type SpokeReply
+  type SpokeReply,
+  type SpokeThreadIndex
 } from "./api";
 import {
   addOptimisticLocalPost,
@@ -74,7 +76,12 @@ import {
   type SpokeFollowRequest,
   type SpokeFollowResponse
 } from "./follow";
-import { addReplyToPost, type RepliesByPost } from "./thread";
+import {
+  addReplyToPost,
+  threadPathForPostAddress,
+  upsertReplyInThreadIndex,
+  type RepliesByPost
+} from "./thread";
 import {
   tauriSpokeUpdateClient,
   type SpokeUpdateCheck,
@@ -408,7 +415,8 @@ function App() {
         title,
         body,
         createdAt: new Date().toISOString(),
-        path: makePostPath(id)
+        path: makePostPath(id),
+        threadPath: makeThreadPath(id)
       };
       const index = await loadLocalFeed();
       const publishedResult = await publishPostWithIndex(sessionToken, post, index);
@@ -504,9 +512,26 @@ function App() {
     return JSON.parse(decodeFetchData(result)) as SpokeReply;
   }
 
+  async function fetchThreadIndex(addressOrPath: string, owner: string) {
+    const target = addressOrPath.startsWith("/spoke/")
+      ? `${owner}${addressOrPath}`
+      : addressOrPath;
+    const result = await fetchTarget(sessionToken, target);
+    return JSON.parse(decodeFetchData(result)) as SpokeThreadIndex;
+  }
+
   async function decryptReply(address: string) {
     const result = await decryptEncryptedTarget(sessionToken, address);
     return parseJsonBytes<SpokeReply>(result.plaintext);
+  }
+
+  async function loadLocalThreadIndex(postAddress: string) {
+    const threadPath = threadPathForPostAddress(postAddress);
+    const inventory = await listPublished(sessionToken).catch(() => []);
+    const publishedThread = latestPublishedByPath(inventory, threadPath);
+    return publishedThread
+      ? await fetchPublishedJson<SpokeThreadIndex>(publishedThread.content_id)
+      : null;
   }
 
   async function loadFeedSnapshot(nextContacts = contacts) {
@@ -605,7 +630,38 @@ function App() {
           }
         })
     );
-    for (const reply of [...acceptedReplies, ...outgoingReplies]) {
+    const sharedThreadReplies = await Promise.all(
+      nextItems
+        .filter((item) => item.source === "contact")
+        .map(async (item) => {
+          try {
+            const owner = item.contact?.identity || item.post.author;
+            const threadPath = item.post.threadPath || threadPathForPostAddress(item.address);
+            const thread = await fetchThreadIndex(threadPath, owner);
+            return await Promise.all(
+              thread.replies
+                .filter((reply) => reply.moderation === "accepted")
+                .map(async (reply) => {
+                  try {
+                    const target = reply.contentId || reply.address;
+                    return target ? await fetchReply(target) : null;
+                  } catch {
+                    // Stale thread entries should not hide the rest of the thread.
+                    return null;
+                  }
+                })
+            );
+          } catch {
+            // Thread indexes are additive; older posts may not have one yet.
+            return [];
+          }
+        })
+    );
+    for (const reply of [
+      ...acceptedReplies,
+      ...outgoingReplies,
+      ...sharedThreadReplies.flat()
+    ]) {
       if (reply) {
         Object.assign(nextReplies, addReplyToPost(nextReplies, reply));
       }
@@ -820,9 +876,14 @@ function App() {
 
   async function publishAcceptedReply(reply: SpokeReply, options: { silent?: boolean } = {}) {
     try {
-      await publishJson(sessionToken, makeReplyPath(reply.id), reply);
+      const publishedReply = await publishJson(sessionToken, makeReplyPath(reply.id), reply);
+      if (sameIdentity(reply.postAuthor, localIdentity)) {
+        const existingThread = await loadLocalThreadIndex(reply.postAddress);
+        const threadIndex = upsertReplyInThreadIndex(existingThread, reply, publishedReply);
+        await publishJson(sessionToken, threadPathForPostAddress(reply.postAddress), threadIndex);
+      }
       if (!options.silent) {
-        setNotice("Reply accepted and published locally.");
+        setNotice("Reply accepted and published to the thread.");
       }
       void refreshFeedSilently();
     } catch (err) {
