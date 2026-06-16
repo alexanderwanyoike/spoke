@@ -8,17 +8,22 @@ import {
 } from "react";
 import {
   ArrowLeft,
+  Bell,
   Check,
   Download,
   ExternalLink,
+  Home,
   ImagePlus,
-  Inbox,
   KeyRound,
   MessageCircle,
+  Moon,
+  Pencil,
   Plus,
   RefreshCw,
   Send,
+  Sun,
   Trash2,
+  User,
   UserCheck,
   UserPlus,
   X
@@ -134,7 +139,8 @@ import {
   type SpokeUpdateClient
 } from "./update/client";
 
-type AppView = "feed" | "messages";
+type AppView = "feed" | "profile" | "messages" | "notifications";
+type ThemeMode = "light" | "dark";
 
 type StoredSession = {
   requestId: string;
@@ -174,6 +180,7 @@ const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
 const PROFILE_KEY = "spoke.profile";
 const PROFILE_CACHE_KEY = "spoke.profile_cache";
+const THEME_KEY = "spoke.theme";
 const FEED_REFRESH_MS = 2000;
 const INCOMING_REFRESH_MS = 2000;
 const CONVERSATION_REFRESH_MS = 3000;
@@ -307,6 +314,8 @@ function App() {
   const [profileAvatarUrls, setProfileAvatarUrls] = useState<Record<string, string>>({});
   const [profileAvatarErrors, setProfileAvatarErrors] = useState<Record<string, string>>({});
   const [activeProfileIdentity, setActiveProfileIdentity] = useState("");
+  const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [theme, setTheme] = useState<ThemeMode>(() => loadJson<ThemeMode>(THEME_KEY, "light"));
   const [contactDraft, setContactDraft] = useState<Contact>({
     identity: "",
     displayName: ""
@@ -358,6 +367,7 @@ function App() {
     () => feed.filter((item) => item.source === "local").length,
     [feed]
   );
+  const localFeedItems = useMemo(() => feed.filter((item) => item.source === "local"), [feed]);
   const activeContactCount = useMemo(() => activeContacts(contacts).length, [contacts]);
   const acceptedContacts = useMemo(
     () => contacts.filter((contact) => contact.relationship === "accepted"),
@@ -529,6 +539,11 @@ function App() {
   }, [profileCache]);
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    saveJson(THEME_KEY, theme);
+  }, [theme]);
+
+  useEffect(() => {
     saveJson(SESSION_KEY, session);
   }, [session]);
 
@@ -675,6 +690,38 @@ function App() {
     profileAvatarUrls,
     sessionToken
   ]);
+
+  useEffect(() => {
+    if (!canUseApp || !sessionToken || incoming.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const identities = Array.from(
+      new Set(incoming.map((record) => record.sender_identity).filter(Boolean))
+    ).filter((identity) => !profileCache[profileCacheKey(identity)]);
+
+    for (const identity of identities) {
+      fetchProfile(identity)
+        .then((profile) => {
+          if (cancelled) {
+            return;
+          }
+          setProfileCache((current) => ({
+            ...current,
+            [profileCacheKey(identity)]: profile,
+            [profileCacheKey(profile.identity)]: profile
+          }));
+        })
+        .catch(() => {
+          // Some senders will not have a public Spoke profile yet.
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canUseApp, incoming, profileCache, sessionToken]);
 
   useEffect(() => {
     if (!sessionToken || session.status !== "active") {
@@ -844,6 +891,7 @@ function App() {
       setProfileAvatar(null);
       setProfileDraft((current) => ({ ...current, avatar }));
       setProfileCache((current) => ({ ...current, [profileCacheKey(localIdentity)]: profile }));
+      setShowProfileEditor(false);
       setNotice(
         profile.schema === "spoke.profile.v2"
           ? "Rich profile published at /spoke/profile."
@@ -1866,7 +1914,688 @@ function App() {
   }
 
   function openProfile(identity: string) {
+    if (sameIdentity(identity, localIdentity)) {
+      setActiveView("profile");
+      setActiveProfileIdentity("");
+      return;
+    }
     setActiveProfileIdentity(identity);
+  }
+
+  function profileForDisplay(identity: string) {
+    if (sameIdentity(identity, localIdentity)) {
+      return {
+        schema: profileDraft.avatar ||
+          profileDraft.links.length ||
+          profileDraft.location.trim() ||
+          profileDraft.pronouns.trim()
+          ? "spoke.profile.v2"
+          : "spoke.profile.v1",
+        identity: localIdentity,
+        displayName: profileDraft.displayName.trim() || localIdentity,
+        bio: profileDraft.bio,
+        avatar: profileDraft.avatar,
+        links: profileLinksFromDraft(profileDraft.links),
+        location: profileDraft.location,
+        pronouns: profileDraft.pronouns,
+        updatedAt: ""
+      } satisfies SpokeProfile;
+    }
+    return profileForIdentity(identity);
+  }
+
+  function renderProfileDetails(identity: string) {
+    const profile = profileForDisplay(identity);
+    return (
+      <div className="profile-summary profile-summary-wide">
+        {renderAvatar(identity, "large")}
+        <div>
+          <strong>{displayNameForIdentity(identity)}</strong>
+          <span>{identity}</span>
+        </div>
+        <div className="profile-chip-row">
+          {profile?.pronouns ? <span className="profile-chip">{profile.pronouns}</span> : null}
+          {profile?.location ? <span className="profile-chip">{profile.location}</span> : null}
+        </div>
+        {profile?.bio ? <p>{profile.bio}</p> : <p className="muted">No published profile details yet.</p>}
+        {profile?.links?.length ? (
+          <div className="profile-links">
+            {profile.links.map((link) => (
+              <a href={link.url} key={`${link.label}:${link.url}`} target="_blank" rel="noreferrer">
+                <ExternalLink size={14} />
+                {link.label}
+              </a>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderProfileEditorForm() {
+    return (
+      <div className="profile-editor-form">
+        <div className="profile-editor-avatar">
+          <span className="profile-avatar large" aria-hidden="true">
+            {profileAvatar ? (
+              <img src={profileAvatar.previewUrl} alt="" />
+            ) : avatarUrlForIdentity(localIdentity) ? (
+              <img src={avatarUrlForIdentity(localIdentity)} alt="" />
+            ) : (
+              avatarInitial(localIdentity)
+            )}
+          </span>
+          <div>
+            <label className="file-button">
+              <ImagePlus size={16} />
+              Avatar
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={addProfileAvatar}
+              />
+            </label>
+            {(profileAvatar || profileDraft.avatar) ? (
+              <button type="button" onClick={removeProfileAvatar} title="Remove avatar">
+                <Trash2 size={14} />
+              </button>
+            ) : null}
+          </div>
+        </div>
+        <label>
+          Display name
+          <input
+            value={profileDraft.displayName}
+            onChange={(event) =>
+              setProfileDraft((current) => ({ ...current, displayName: event.target.value }))
+            }
+            placeholder="Alex"
+          />
+        </label>
+        <label>
+          Bio
+          <textarea
+            rows={3}
+            value={profileDraft.bio}
+            onChange={(event) =>
+              setProfileDraft((current) => ({ ...current, bio: event.target.value }))
+            }
+            placeholder="Short note for known contacts"
+          />
+        </label>
+        <div className="field-row">
+          <label>
+            Pronouns
+            <input
+              value={profileDraft.pronouns}
+              onChange={(event) =>
+                setProfileDraft((current) => ({ ...current, pronouns: event.target.value }))
+              }
+              placeholder="they/them"
+            />
+          </label>
+          <label>
+            Location
+            <input
+              value={profileDraft.location}
+              onChange={(event) =>
+                setProfileDraft((current) => ({ ...current, location: event.target.value }))
+              }
+              placeholder="London"
+            />
+          </label>
+        </div>
+        <div className="profile-links-editor">
+          <div className="panel-heading compact-heading">
+            <h3>Links</h3>
+            <button type="button" onClick={addProfileLink} title="Add profile link">
+              <Plus size={14} />
+            </button>
+          </div>
+          {profileDraft.links.map((link, index) => (
+            <div className="profile-link-edit" key={index}>
+              <input
+                value={link.label}
+                onChange={(event) => updateProfileLink(index, "label", event.target.value)}
+                placeholder="Label"
+              />
+              <input
+                value={link.url}
+                onChange={(event) => updateProfileLink(index, "url", event.target.value)}
+                placeholder="https://example.com"
+              />
+              <button type="button" onClick={() => removeProfileLink(index)} title="Remove link">
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderPostCard(item: FeedItem) {
+    return (
+      <article className="post-card" key={`${item.source}:${item.address}`}>
+        <header>
+          <button
+            className="post-author"
+            type="button"
+            onClick={() => openProfile(item.post.author)}
+            title={`View ${displayNameForIdentity(item.post.author)}`}
+          >
+            {renderAvatar(item.post.author)}
+            <span>
+              <strong>{displayNameForIdentity(item.post.author)}</strong>
+              <span>{item.post.author}</span>
+            </span>
+          </button>
+          <time>{new Date(item.post.createdAt).toLocaleString()}</time>
+        </header>
+        <h3>{item.post.title}</h3>
+        <p>{item.post.body}</p>
+        {item.post.attachments?.length ? (
+          <div className="post-media-grid">
+            {item.post.attachments.map((attachment) => {
+              const key = attachmentKey(attachment);
+              return (
+                <figure className="post-media" key={key}>
+                  {attachmentUrls[key] ? (
+                    <img src={attachmentUrls[key]} alt={attachment.alt || `${item.post.title} image`} />
+                  ) : attachmentErrors[key] ? (
+                    <div className="media-placeholder">Image unavailable</div>
+                  ) : (
+                    <div className="media-placeholder">Loading image...</div>
+                  )}
+                  {attachment.alt ? <figcaption>{attachment.alt}</figcaption> : null}
+                </figure>
+              );
+            })}
+          </div>
+        ) : null}
+        <div className="thread">
+          {(repliesByPost[item.address] || []).map((reply) => (
+            <div className="reply" key={reply.id}>
+              <header>
+                <button
+                  className="reply-author"
+                  type="button"
+                  onClick={() => openProfile(reply.sender)}
+                  title={`View ${displayNameForIdentity(reply.sender)}`}
+                >
+                  {renderAvatar(reply.sender)}
+                  <strong>{displayNameForIdentity(reply.sender)}</strong>
+                </button>
+                <time>{new Date(reply.createdAt).toLocaleString()}</time>
+              </header>
+              <p>{reply.body}</p>
+            </div>
+          ))}
+          {(repliesByPost[item.address] || []).length === 0 ? (
+            <span className="thread-empty">No replies yet.</span>
+          ) : null}
+        </div>
+        {item.source === "contact" ? (
+          <div className="reply-box">
+            <textarea
+              rows={2}
+              value={replyDrafts[item.address] || ""}
+              onChange={(event) =>
+                setReplyDrafts((current) => ({ ...current, [item.address]: event.target.value }))
+              }
+              placeholder={`Reply to ${displayNameForFeedItem(item)}`}
+            />
+            <button type="button" onClick={() => sendReply(item)} title="Send encrypted reply">
+              <MessageCircle size={16} />
+            </button>
+          </div>
+        ) : null}
+      </article>
+    );
+  }
+
+  function renderComposer() {
+    return (
+      <section className="composer">
+        <div className="composer-fields">
+          <input
+            value={postDraft.title}
+            onChange={(event) =>
+              setPostDraft((current) => ({ ...current, title: event.target.value }))
+            }
+            placeholder="Post title"
+          />
+          <textarea
+            value={postDraft.body}
+            onChange={(event) =>
+              setPostDraft((current) => ({ ...current, body: event.target.value }))
+            }
+            rows={4}
+            placeholder="Write a note for known contacts"
+          />
+          <div className="attachment-toolbar">
+            <label className="file-button">
+              <ImagePlus size={16} />
+              Add images
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                onChange={addPostAttachments}
+              />
+            </label>
+            <span>JPEG, PNG, or WebP up to 5 MB each</span>
+          </div>
+          {postAttachments.length > 0 ? (
+            <div className="pending-media-grid">
+              {postAttachments.map((attachment) => (
+                <div className="pending-media-card" key={attachment.id}>
+                  <img src={attachment.previewUrl} alt={attachment.file.name} />
+                  <div>
+                    <strong>{attachment.file.name || "Image attachment"}</strong>
+                    <span>
+                      {formatBytes(attachment.file.size)}
+                      {attachment.width && attachment.height
+                        ? ` - ${attachment.width}x${attachment.height}`
+                        : ""}
+                    </span>
+                    <input
+                      value={attachment.alt}
+                      onChange={(event) => updatePostAttachmentAlt(attachment.id, event.target.value)}
+                      placeholder="Alt text"
+                    />
+                  </div>
+                  <button type="button" onClick={() => removePostAttachment(attachment.id)} title="Remove image">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <button className="primary" type="button" onClick={publishPost} disabled={busy === "post"}>
+          <Plus size={16} />
+          Publish
+        </button>
+      </section>
+    );
+  }
+
+  function renderContactsPanel() {
+    return (
+      <section className="panel">
+        <div className="panel-heading">
+          <h2>Known people</h2>
+          <button type="button" onClick={addContact} title="Add contact">
+            <UserCheck size={16} />
+          </button>
+        </div>
+        <label>
+          Identity
+          <input
+            value={contactDraft.identity}
+            onChange={(event) =>
+              setContactDraft((current) => ({ ...current, identity: event.target.value }))
+            }
+            placeholder="bob.jolt"
+          />
+        </label>
+        <label>
+          Nickname
+          <input
+            value={contactDraft.displayName}
+            onChange={(event) =>
+              setContactDraft((current) => ({ ...current, displayName: event.target.value }))
+            }
+            placeholder="Bob"
+          />
+        </label>
+        <label>
+          Request note
+          <textarea
+            rows={2}
+            value={followMessageDraft}
+            onChange={(event) => setFollowMessageDraft(event.target.value)}
+            placeholder="Optional intro"
+          />
+        </label>
+        <button type="button" onClick={sendFollowRequest} disabled={busy === "follow"} title="Send follow request">
+          <UserPlus size={16} />
+          Request follow
+        </button>
+        <div className="contact-list">
+          {contacts.map((contact) => (
+            <div className="contact-row" key={contact.identity}>
+              <button
+                className="identity-button"
+                type="button"
+                onClick={() => openProfile(contact.identity)}
+                title={`View ${contactDisplayName(contact)}`}
+              >
+                {renderAvatar(contact.identity)}
+              </button>
+              <div>
+                <strong>{contactDisplayName(contact)}</strong>
+                <span>{contact.identity}</span>
+                <span className="contact-status">{contact.relationship || "accepted"}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setContacts((current) => current.filter((item) => item.identity !== contact.identity));
+                  setFeed((current) => removeContactFeedItems(current, contact.identity));
+                }}
+                title="Remove contact"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+          {contacts.length === 0 ? <div className="empty-state compact">No known people yet.</div> : null}
+        </div>
+      </section>
+    );
+  }
+
+  function renderProfileEditModal() {
+    if (!showProfileEditor) {
+      return null;
+    }
+    return (
+      <div className="modal-backdrop" role="presentation">
+        <section className="modal-panel profile-edit-modal" role="dialog" aria-modal="true" aria-label="Edit profile">
+          <div className="panel-heading">
+            <h2>Edit Profile</h2>
+            <button type="button" onClick={() => setShowProfileEditor(false)} title="Close">
+              <X size={16} />
+            </button>
+          </div>
+          {renderProfileEditorForm()}
+          <div className="modal-actions">
+            <button type="button" onClick={() => setShowProfileEditor(false)}>
+              Cancel
+            </button>
+            <button className="primary" type="button" onClick={publishProfileFromDraft} disabled={busy === "profile"}>
+              <Send size={16} />
+              Save profile
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  function renderProfileModal() {
+    if (!activeProfileIdentity) {
+      return null;
+    }
+    return (
+      <div className="modal-backdrop" role="presentation">
+        <section className="modal-panel compact-modal" role="dialog" aria-modal="true" aria-label="Profile">
+          <div className="panel-heading">
+            <h2>Profile</h2>
+            <button type="button" onClick={() => setActiveProfileIdentity("")} title="Close profile">
+              <X size={16} />
+            </button>
+          </div>
+          {renderProfileDetails(activeProfileIdentity)}
+        </section>
+      </div>
+    );
+  }
+
+  function renderNotificationCard(record: IngressRecord) {
+    const opened = review[record.ingress_id]?.opened;
+    const profile = profileForIdentity(record.sender_identity);
+    return (
+      <article className="notification-card" key={record.ingress_id}>
+        {renderAvatar(record.sender_identity)}
+        <div className="notification-main">
+          <header>
+            <strong>{displayNameForIdentity(record.sender_identity)}</strong>
+            <span>{opened ? incomingKind(opened) : record.schema_hint || "encrypted object"}</span>
+          </header>
+          <span>{record.sender_identity}</span>
+          {profile?.bio ? <p>{profile.bio}</p> : null}
+          {opened ? (
+            <div className="opened-reply">
+              <span>{incomingKind(opened)}</span>
+              <p>{incomingPreview(opened)}</p>
+            </div>
+          ) : (
+            <button type="button" onClick={() => openIncoming(record)} title="Open">
+              Open
+            </button>
+          )}
+          {review[record.ingress_id]?.error ? (
+            <p className="inline-error">{review[record.ingress_id]?.error}</p>
+          ) : null}
+        </div>
+        <div className="decision-buttons">
+          <button
+            type="button"
+            onClick={() => acceptIncoming(record)}
+            disabled={busy === `accept:${record.ingress_id}`}
+            title="Accept"
+          >
+            <Check size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => rejectIncoming(record)}
+            disabled={busy === `reject:${record.ingress_id}`}
+            title="Reject"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </article>
+    );
+  }
+
+  function renderMessagesView() {
+    return (
+      <section className="messages-view">
+        <aside className="messages-sidebar" aria-label="Conversations">
+          <div className="messages-sidebar-header">
+            <div>
+              <h2>Messages</h2>
+              <p>{messageThreads.length} conversation threads</p>
+            </div>
+            <button type="button" onClick={refreshIncoming} disabled={busy === "incoming"} title="Refresh incoming">
+              <RefreshCw size={16} />
+            </button>
+          </div>
+
+          <div className="thread-list">
+            {messageThreads.map((thread) => {
+              const lastMessage = thread.conversation?.messages[
+                thread.conversation.messages.length - 1
+              ];
+              return (
+                <button
+                  type="button"
+                  className={`thread-row ${activeThread?.id === thread.id ? "active" : ""}`}
+                  key={thread.id}
+                  onClick={() => setActiveThreadId(thread.id)}
+                >
+                  {renderAvatar(thread.contact.identity)}
+                  <span className="thread-summary">
+                    <strong>{thread.contact.displayName}</strong>
+                    <span>
+                      {lastMessage
+                        ? messagePreview(lastMessage.message)
+                        : `Start a private thread with ${thread.contact.displayName}`}
+                    </span>
+                  </span>
+                  {thread.lastMessageAt ? (
+                    <time>{new Date(thread.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
+                  ) : null}
+                </button>
+              );
+            })}
+            {messageThreads.length === 0 ? (
+              <div className="empty-state compact">Accept a contact before starting messages.</div>
+            ) : null}
+          </div>
+        </aside>
+
+        <section className="message-thread-shell">
+          {activeThread ? (
+            <>
+              <header className="message-thread-header">
+                <button className="mobile-back" type="button" onClick={() => setActiveView("feed")} title="Back to feed">
+                  <ArrowLeft size={16} />
+                </button>
+                <button
+                  className="identity-button"
+                  type="button"
+                  onClick={() => openProfile(activeThread.contact.identity)}
+                  title={`View ${activeThread.contact.displayName}`}
+                >
+                  {renderAvatar(activeThread.contact.identity, "large")}
+                </button>
+                <div>
+                  <h2>{activeThread.contact.displayName}</h2>
+                  <p>{activeThread.contact.identity}</p>
+                </div>
+              </header>
+
+              <div className="message-thread" aria-live="polite">
+                {activeThreadMessages.map((item) => (
+                  <div className={`thread-message ${item.direction}`} key={item.message.id}>
+                    <div>
+                      <button
+                        className="message-author"
+                        type="button"
+                        onClick={() => openProfile(item.message.sender)}
+                        title={`View ${displayNameForIdentity(item.message.sender)}`}
+                      >
+                        {renderAvatar(item.message.sender)}
+                        <span>{displayNameForIdentity(item.message.sender)}</span>
+                      </button>
+                      {item.message.body ? <p>{item.message.body}</p> : null}
+                      {item.message.attachments?.length ? (
+                        <div className="message-media-grid">
+                          {item.message.attachments.map((attachment) => {
+                            const key = messageAttachmentKey(item.message.id, attachment);
+                            return (
+                              <figure className="message-media" key={key}>
+                                {messageAttachmentUrls[key] ? (
+                                  <img
+                                    src={messageAttachmentUrls[key]}
+                                    alt={attachment.alt || "Message image"}
+                                  />
+                                ) : messageAttachmentErrors[key] ? (
+                                  <div className="message-media-placeholder">Image unavailable</div>
+                                ) : (
+                                  <div className="message-media-placeholder">Loading image...</div>
+                                )}
+                                {attachment.alt ? <figcaption>{attachment.alt}</figcaption> : null}
+                              </figure>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      <time>{new Date(item.message.createdAt).toLocaleString()}</time>
+                    </div>
+                  </div>
+                ))}
+                {activeThreadMessages.length === 0 ? (
+                  <div className="empty-thread">
+                    <MessageCircle size={28} />
+                    <h3>{activeThread.contact.displayName}</h3>
+                    <p>Start the encrypted one-to-one conversation.</p>
+                  </div>
+                ) : null}
+              </div>
+              <div className="thread-composer">
+                <div className="message-composer-main">
+                  <textarea
+                    rows={2}
+                    value={messageDrafts[activeThread.contact.identity] || ""}
+                    onChange={(event) =>
+                      setMessageDrafts((current) => ({
+                        ...current,
+                        [activeThread.contact.identity]: event.target.value
+                      }))
+                    }
+                    onKeyDown={(event) => handleMessageKeyDown(event, activeThread.contact)}
+                    placeholder={`Message ${activeThread.contact.displayName}`}
+                  />
+                  <div className="attachment-toolbar compact-toolbar">
+                    <label className="file-button icon-only" title="Attach images">
+                      <ImagePlus size={16} />
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        onChange={(event) => addMessageAttachments(activeThread.contact.identity, event)}
+                      />
+                    </label>
+                    <span>Images are encrypted with the message thread</span>
+                  </div>
+                  {(messageAttachments[activeThread.contact.identity] || []).length > 0 ? (
+                    <div className="pending-media-grid message-pending-media">
+                      {(messageAttachments[activeThread.contact.identity] || []).map((attachment) => (
+                        <div className="pending-media-card" key={attachment.id}>
+                          <img src={attachment.previewUrl} alt={attachment.file.name} />
+                          <div>
+                            <strong>{attachment.file.name || "Image attachment"}</strong>
+                            <span>
+                              {formatBytes(attachment.file.size)}
+                              {attachment.width && attachment.height
+                                ? ` - ${attachment.width}x${attachment.height}`
+                                : ""}
+                            </span>
+                            <input
+                              value={attachment.alt}
+                              onChange={(event) =>
+                                updateMessageAttachmentAlt(
+                                  activeThread.contact.identity,
+                                  attachment.id,
+                                  event.target.value
+                                )
+                              }
+                              placeholder="Alt text"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              removeMessageAttachment(activeThread.contact.identity, attachment.id)
+                            }
+                            title="Remove image"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <button
+                  className="primary"
+                  type="button"
+                  onClick={() => sendMessage(activeThread.contact)}
+                  disabled={busy === `message:${activeThread.contact.identity}`}
+                  title="Send encrypted message"
+                >
+                  <Send size={16} />
+                  Send
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="messages-empty">
+              <MessageCircle size={36} />
+              <h2>No message threads</h2>
+              <p>Accept a contact, then start a private conversation here.</p>
+            </div>
+          )}
+        </section>
+      </section>
+    );
   }
 
   useEffect(() => {
@@ -1899,44 +2628,27 @@ function App() {
     return () => window.clearInterval(timer);
   }, [canUseApp, sessionToken, localIdentity]);
 
+  const viewTitle: Record<AppView, { title: string; subtitle: string }> = {
+    feed: {
+      title: "Feed",
+      subtitle: `${localPosts} local posts, ${activeContactCount} active contacts${feedRefreshing ? " - updating..." : ""}`
+    },
+    profile: {
+      title: "Your Profile",
+      subtitle: "View your profile and your posts."
+    },
+    messages: {
+      title: "Messages",
+      subtitle: `${messageThreads.length} conversation threads`
+    },
+    notifications: {
+      title: "Notifications",
+      subtitle: `${incoming.length} pending item${incoming.length === 1 ? "" : "s"}`
+    }
+  };
+
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Jolt social PoC</p>
-          <h1>Spoke</h1>
-        </div>
-        <div className="status-strip">
-          <span>{displayIdentity(localIdentity)}</span>
-          <span>{session.status}</span>
-          {updateCheck?.available ? (
-            <button
-              type="button"
-              onClick={installSpokeUpdate}
-              disabled={updateAction === "install"}
-              title="Install signed Spoke update"
-            >
-              <Download size={16} />
-              Update available
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={checkSpokeUpdate}
-            disabled={updateAction === "check" || updateAction === "install"}
-            title="Check for Spoke updates"
-          >
-            <RefreshCw size={16} />
-          </button>
-          <button type="button" onClick={refreshSession} disabled={!sessionToken || busy === "session"} title="Refresh session">
-            <RefreshCw size={16} />
-          </button>
-        </div>
-      </header>
-
-      {error ? <div className="alert error">{error}</div> : null}
-      {notice ? <div className="alert notice">{notice}</div> : null}
-
+    <main className="social-shell">
       {!canUseApp ? (
         <section className="session-panel">
           <div>
@@ -1953,698 +2665,160 @@ function App() {
           </button>
         </section>
       ) : (
-        <>
-        <nav className="app-nav" aria-label="Spoke sections">
-          <button
-            type="button"
-            className={activeView === "feed" ? "active" : ""}
-            onClick={() => setActiveView("feed")}
-          >
-            Known Feed
-          </button>
-          <button
-            type="button"
-            className={activeView === "messages" ? "active" : ""}
-            onClick={() => setActiveView("messages")}
-          >
-            <MessageCircle size={16} />
-            Messages
-            {conversationList.length > 0 ? <span>{conversationList.length}</span> : null}
-          </button>
-        </nav>
-
-        {activeView === "feed" ? (
-        <div className="workspace">
-          <aside className="rail">
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Profile</h2>
-                <button
-                  type="button"
-                  onClick={publishProfileFromDraft}
-                  disabled={busy === "profile"}
-                  title="Publish profile"
-                >
-                  <Send size={16} />
-                </button>
+        <div className="social-layout">
+          <aside className="side-nav">
+            <div className="side-brand">
+              <span className="brand-mark">S</span>
+              <div>
+                <strong>Spoke</strong>
+                <span>Jolt social</span>
               </div>
-              <div className="profile-editor-avatar">
-                <button type="button" onClick={() => openProfile(localIdentity)} title="View your profile">
-                  {profileAvatar ? (
-                    <span className="profile-avatar large" aria-hidden="true">
-                      <img src={profileAvatar.previewUrl} alt="" />
-                    </span>
-                  ) : (
-                    renderAvatar(localIdentity, "large")
-                  )}
-                </button>
-                <div>
-                  <label className="file-button">
-                    <ImagePlus size={16} />
-                    Avatar
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={addProfileAvatar}
-                    />
-                  </label>
-                  {(profileAvatar || profileDraft.avatar) ? (
-                    <button type="button" onClick={removeProfileAvatar} title="Remove avatar">
-                      <Trash2 size={14} />
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-              <label>
-                Display name
-                <input
-                  value={profileDraft.displayName}
-                  onChange={(event) =>
-                    setProfileDraft((current) => ({ ...current, displayName: event.target.value }))
-                  }
-                  placeholder="Alex"
-                />
-              </label>
-              <label>
-                Bio
-                <textarea
-                  rows={3}
-                  value={profileDraft.bio}
-                  onChange={(event) =>
-                    setProfileDraft((current) => ({ ...current, bio: event.target.value }))
-                  }
-                  placeholder="Short note for known contacts"
-                />
-              </label>
-              <div className="field-row">
-                <label>
-                  Pronouns
-                  <input
-                    value={profileDraft.pronouns}
-                    onChange={(event) =>
-                      setProfileDraft((current) => ({ ...current, pronouns: event.target.value }))
-                    }
-                    placeholder="they/them"
-                  />
-                </label>
-                <label>
-                  Location
-                  <input
-                    value={profileDraft.location}
-                    onChange={(event) =>
-                      setProfileDraft((current) => ({ ...current, location: event.target.value }))
-                    }
-                    placeholder="London"
-                  />
-                </label>
-              </div>
-              <div className="profile-links-editor">
-                <div className="panel-heading compact-heading">
-                  <h3>Links</h3>
-                  <button type="button" onClick={addProfileLink} title="Add profile link">
-                    <Plus size={14} />
-                  </button>
-                </div>
-                {profileDraft.links.map((link, index) => (
-                  <div className="profile-link-edit" key={index}>
-                    <input
-                      value={link.label}
-                      onChange={(event) => updateProfileLink(index, "label", event.target.value)}
-                      placeholder="Label"
-                    />
-                    <input
-                      value={link.url}
-                      onChange={(event) => updateProfileLink(index, "url", event.target.value)}
-                      placeholder="https://example.com"
-                    />
-                    <button type="button" onClick={() => removeProfileLink(index)} title="Remove link">
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Contacts</h2>
-                <button type="button" onClick={addContact} title="Add contact">
-                  <UserCheck size={16} />
-                </button>
-              </div>
-              <label>
-                Identity
-                <input
-                  value={contactDraft.identity}
-                  onChange={(event) =>
-                    setContactDraft((current) => ({ ...current, identity: event.target.value }))
-                  }
-                  placeholder="bob.jolt"
-                />
-              </label>
-              <label>
-                Nickname
-                <input
-                  value={contactDraft.displayName}
-                  onChange={(event) =>
-                    setContactDraft((current) => ({ ...current, displayName: event.target.value }))
-                  }
-                  placeholder="Bob"
-                />
-              </label>
-              <label>
-                Request note
-                <textarea
-                  rows={2}
-                  value={followMessageDraft}
-                  onChange={(event) => setFollowMessageDraft(event.target.value)}
-                  placeholder="Optional intro"
-                />
-              </label>
+            </div>
+            <nav aria-label="Spoke sections">
+              <button type="button" className={activeView === "feed" ? "active" : ""} onClick={() => setActiveView("feed")}>
+                <Home size={18} />
+                Feed
+              </button>
+              <button type="button" className={activeView === "profile" ? "active" : ""} onClick={() => setActiveView("profile")}>
+                <User size={18} />
+                Profile
+              </button>
+              <button type="button" className={activeView === "messages" ? "active" : ""} onClick={() => setActiveView("messages")}>
+                <MessageCircle size={18} />
+                Messages
+                {conversationList.length > 0 ? <span>{conversationList.length}</span> : null}
+              </button>
               <button
                 type="button"
-                onClick={sendFollowRequest}
-                disabled={busy === "follow"}
-                title="Send follow request"
+                className={activeView === "notifications" ? "active" : ""}
+                onClick={() => setActiveView("notifications")}
               >
-                <UserPlus size={16} />
-                Request follow
+                <Bell size={18} />
+                Notifications
+                {incoming.length > 0 ? <span>{incoming.length}</span> : null}
               </button>
-              <div className="contact-list">
-                {contacts.map((contact) => (
-                  <div className="contact-row" key={contact.identity}>
-                    <button
-                      className="identity-button"
-                      type="button"
-                      onClick={() => openProfile(contact.identity)}
-                      title={`View ${contactDisplayName(contact)}`}
-                    >
-                      {renderAvatar(contact.identity)}
-                    </button>
-                    <div>
-                      <strong>{contactDisplayName(contact)}</strong>
-                      <span>{contact.identity}</span>
-                      <span className="contact-status">{contact.relationship || "accepted"}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        {
-                          setContacts((current) =>
-                            current.filter((item) => item.identity !== contact.identity)
-                          );
-                          setFeed((current) => removeContactFeedItems(current, contact.identity));
-                        }
-                      }
-                      title="Remove contact"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
+            </nav>
+            <button className="primary add-friend-button" type="button" onClick={() => setActiveView("profile")}>
+              <UserPlus size={18} />
+              Add friend
+            </button>
+            <div className="side-status">
+              {renderAvatar(localIdentity)}
+              <div>
+                <strong>{displayNameForIdentity(localIdentity)}</strong>
+                <span>{displayIdentity(localIdentity)}</span>
+                <span>{session.status}</span>
               </div>
-            </section>
+            </div>
           </aside>
 
-          <section className="main-column">
-            <section className="composer">
-              <div className="composer-fields">
-                <input
-                  value={postDraft.title}
-                  onChange={(event) =>
-                    setPostDraft((current) => ({ ...current, title: event.target.value }))
-                  }
-                  placeholder="Post title"
-                />
-                <textarea
-                  value={postDraft.body}
-                  onChange={(event) =>
-                    setPostDraft((current) => ({ ...current, body: event.target.value }))
-                  }
-                  rows={4}
-                  placeholder="Write a note for known contacts"
-                />
-                <div className="attachment-toolbar">
-                  <label className="file-button">
-                    <ImagePlus size={16} />
-                    Add images
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      multiple
-                      onChange={addPostAttachments}
-                    />
-                  </label>
-                  <span>JPEG, PNG, or WebP up to 5 MB each</span>
-                </div>
-                {postAttachments.length > 0 ? (
-                  <div className="pending-media-grid">
-                    {postAttachments.map((attachment) => (
-                      <div className="pending-media-card" key={attachment.id}>
-                        <img src={attachment.previewUrl} alt={attachment.file.name} />
-                        <div>
-                          <strong>{attachment.file.name || "Image attachment"}</strong>
-                          <span>
-                            {formatBytes(attachment.file.size)}
-                            {attachment.width && attachment.height
-                              ? ` - ${attachment.width}x${attachment.height}`
-                              : ""}
-                          </span>
-                          <input
-                            value={attachment.alt}
-                            onChange={(event) => updatePostAttachmentAlt(attachment.id, event.target.value)}
-                            placeholder="Alt text"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removePostAttachment(attachment.id)}
-                          title="Remove image"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              <button className="primary" type="button" onClick={publishPost} disabled={busy === "post"}>
-                <Plus size={16} />
-                Publish
-              </button>
-            </section>
-
-            <section className="feed-toolbar">
+          <section className="content-shell">
+            <header className="view-header">
               <div>
-                <h2>Known Feed</h2>
-                <p>
-                  {localPosts} local posts, {activeContactCount} active contacts
-                  {feedRefreshing ? " - updating..." : ""}
-                </p>
+                <p className="eyebrow">Spoke</p>
+                <h1>{viewTitle[activeView].title}</h1>
+                <p>{viewTitle[activeView].subtitle}</p>
               </div>
-              <button type="button" onClick={refreshFeed} disabled={busy === "feed" || feedRefreshing} title="Refresh feed">
-                <RefreshCw size={16} />
-              </button>
-            </section>
-
-            <div className="feed-list">
-              {feed.map((item) => (
-                <article className="post-card" key={`${item.source}:${item.address}`}>
-                  <header>
-                    <button
-                      className="post-author"
-                      type="button"
-                      onClick={() => openProfile(item.post.author)}
-                      title={`View ${displayNameForIdentity(item.post.author)}`}
-                    >
-                      {renderAvatar(item.post.author)}
-                      <span>
-                        <strong>{displayNameForIdentity(item.post.author)}</strong>
-                        <span>{item.post.author}</span>
-                      </span>
-                    </button>
-                    <time>{new Date(item.post.createdAt).toLocaleString()}</time>
-                  </header>
-                  <h3>{item.post.title}</h3>
-                  <p>{item.post.body}</p>
-                  {item.post.attachments?.length ? (
-                    <div className="post-media-grid">
-                      {item.post.attachments.map((attachment) => {
-                        const key = attachmentKey(attachment);
-                        return (
-                          <figure className="post-media" key={key}>
-                            {attachmentUrls[key] ? (
-                              <img
-                                src={attachmentUrls[key]}
-                                alt={attachment.alt || `${item.post.title} image`}
-                              />
-                            ) : attachmentErrors[key] ? (
-                              <div className="media-placeholder">Image unavailable</div>
-                            ) : (
-                              <div className="media-placeholder">Loading image...</div>
-                            )}
-                            {attachment.alt ? <figcaption>{attachment.alt}</figcaption> : null}
-                          </figure>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                  <div className="thread">
-                    {(repliesByPost[item.address] || []).map((reply) => (
-                      <div className="reply" key={reply.id}>
-                        <header>
-                          <button
-                            className="reply-author"
-                            type="button"
-                            onClick={() => openProfile(reply.sender)}
-                            title={`View ${displayNameForIdentity(reply.sender)}`}
-                          >
-                            {renderAvatar(reply.sender)}
-                            <strong>{displayNameForIdentity(reply.sender)}</strong>
-                          </button>
-                          <time>{new Date(reply.createdAt).toLocaleString()}</time>
-                        </header>
-                        <p>{reply.body}</p>
-                      </div>
-                    ))}
-                    {(repliesByPost[item.address] || []).length === 0 ? (
-                      <span className="thread-empty">No replies yet.</span>
-                    ) : null}
-                  </div>
-                  {item.source === "contact" ? (
-                    <div className="reply-box">
-                      <textarea
-                        rows={2}
-                        value={replyDrafts[item.address] || ""}
-                        onChange={(event) =>
-                          setReplyDrafts((current) => ({
-                            ...current,
-                            [item.address]: event.target.value
-                          }))
-                        }
-                        placeholder={`Reply to ${displayNameForFeedItem(item)}`}
-                      />
-                      <button type="button" onClick={() => sendReply(item)} title="Send encrypted reply">
-                        <MessageCircle size={16} />
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-              {feed.length === 0 ? (
-                <div className="empty-state">Publish a post or add a known identity to build the feed.</div>
-              ) : null}
-            </div>
-          </section>
-
-          <aside className="rail">
-            <section className="panel profile-card">
-              <div className="panel-heading">
-                <h2>Profile</h2>
-                {activeProfileIdentity ? (
-                  <button type="button" onClick={() => setActiveProfileIdentity("")} title="Close profile">
-                    <X size={14} />
+              <div className="view-actions">
+                <button
+                  type="button"
+                  onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+                  title={theme === "dark" ? "Use light mode" : "Use dark mode"}
+                >
+                  {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                  {theme === "dark" ? "Light" : "Dark"}
+                </button>
+                {updateCheck?.available ? (
+                  <button type="button" onClick={installSpokeUpdate} disabled={updateAction === "install"} title="Install signed Spoke update">
+                    <Download size={16} />
+                    Update
                   </button>
                 ) : null}
-              </div>
-              {activeProfileIdentity ? (
-                <div className="profile-summary">
-                  {renderAvatar(activeProfileIdentity, "large")}
-                  <div>
-                    <strong>{displayNameForIdentity(activeProfileIdentity)}</strong>
-                    <span>{activeProfileIdentity}</span>
-                  </div>
-                  {profileForIdentity(activeProfileIdentity)?.pronouns ? (
-                    <span className="profile-chip">{profileForIdentity(activeProfileIdentity)?.pronouns}</span>
-                  ) : null}
-                  {profileForIdentity(activeProfileIdentity)?.location ? (
-                    <span className="profile-chip">{profileForIdentity(activeProfileIdentity)?.location}</span>
-                  ) : null}
-                  {profileForIdentity(activeProfileIdentity)?.bio ? (
-                    <p>{profileForIdentity(activeProfileIdentity)?.bio}</p>
-                  ) : (
-                    <p className="muted">No published profile details yet.</p>
-                  )}
-                  {profileForIdentity(activeProfileIdentity)?.links?.length ? (
-                    <div className="profile-links">
-                      {profileForIdentity(activeProfileIdentity)?.links?.map((link) => (
-                        <a href={link.url} key={`${link.label}:${link.url}`} target="_blank" rel="noreferrer">
-                          <ExternalLink size={14} />
-                          {link.label}
-                        </a>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="empty-state compact">Select a person to inspect their profile.</div>
-              )}
-            </section>
-
-            <section className="panel">
-              <div className="panel-heading">
-                <h2>Incoming</h2>
-                <button type="button" onClick={refreshIncoming} disabled={busy === "incoming"} title="Refresh incoming">
-                  <Inbox size={16} />
+                <button type="button" onClick={checkSpokeUpdate} disabled={updateAction === "check" || updateAction === "install"} title="Check for Spoke updates">
+                  <RefreshCw size={16} />
                 </button>
-              </div>
-              <div className="incoming-list">
-                {incoming.map((record) => {
-                  const opened = review[record.ingress_id]?.opened;
-                  return (
-                    <article className="incoming-card" key={record.ingress_id}>
-                      <header>
-                        <div>
-                          <strong>{displayNameForIdentity(record.sender_identity)}</strong>
-                          <span>{opened ? incomingKind(opened) : record.schema_hint || "encrypted object"}</span>
-                        </div>
-                        <div className="decision-buttons">
-                          <button
-                            type="button"
-                            onClick={() => acceptIncoming(record)}
-                            disabled={busy === `accept:${record.ingress_id}`}
-                            title="Accept"
-                          >
-                            <Check size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => rejectIncoming(record)}
-                            disabled={busy === `reject:${record.ingress_id}`}
-                            title="Reject"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      </header>
-                      {opened ? (
-                        <div className="opened-reply">
-                          <span>{incomingKind(opened)}</span>
-                          <p>{incomingPreview(opened)}</p>
-                        </div>
-                      ) : (
-                        <button type="button" onClick={() => openIncoming(record)} title="Open">
-                          Open
-                        </button>
-                      )}
-                      {review[record.ingress_id]?.error ? (
-                        <p className="inline-error">{review[record.ingress_id]?.error}</p>
-                      ) : null}
-                    </article>
-                  );
-                })}
-                {incoming.length === 0 ? <div className="empty-state compact">No pending ingress.</div> : null}
-              </div>
-            </section>
-
-          </aside>
-        </div>
-        ) : (
-          <section className="messages-view">
-            <aside className="messages-sidebar" aria-label="Conversations">
-              <div className="messages-sidebar-header">
-                <div>
-                  <h2>Messages</h2>
-                  <p>{messageThreads.length} conversation threads</p>
-                </div>
-                <button type="button" onClick={refreshIncoming} disabled={busy === "incoming"} title="Refresh incoming">
+                <button type="button" onClick={refreshSession} disabled={!sessionToken || busy === "session"} title="Refresh session">
                   <RefreshCw size={16} />
                 </button>
               </div>
+            </header>
 
-              <div className="thread-list">
-                {messageThreads.map((thread) => {
-                  const lastMessage = thread.conversation?.messages[
-                    thread.conversation.messages.length - 1
-                  ];
-                  return (
-                    <button
-                      type="button"
-                      className={`thread-row ${activeThread?.id === thread.id ? "active" : ""}`}
-                      key={thread.id}
-                      onClick={() => setActiveThreadId(thread.id)}
-                    >
-                      {renderAvatar(thread.contact.identity)}
-                      <span className="thread-summary">
-                        <strong>{thread.contact.displayName}</strong>
-                        <span>
-                          {lastMessage
-                            ? messagePreview(lastMessage.message)
-                            : `Start a private thread with ${thread.contact.displayName}`}
-                        </span>
-                      </span>
-                      {thread.lastMessageAt ? (
-                        <time>{new Date(thread.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>
-                      ) : null}
-                    </button>
-                  );
-                })}
-                {messageThreads.length === 0 ? (
-                  <div className="empty-state compact">Accept a contact before starting messages.</div>
-                ) : null}
-              </div>
-            </aside>
+            {error ? <div className="alert error">{error}</div> : null}
+            {notice ? <div className="alert notice">{notice}</div> : null}
 
-            <section className="message-thread-shell">
-              {activeThread ? (
-                <>
-                  <header className="message-thread-header">
-                    <button className="mobile-back" type="button" onClick={() => setActiveView("feed")} title="Back to feed">
-                      <ArrowLeft size={16} />
-                    </button>
-                    <button
-                      className="identity-button"
-                      type="button"
-                      onClick={() => openProfile(activeThread.contact.identity)}
-                      title={`View ${activeThread.contact.displayName}`}
-                    >
-                      {renderAvatar(activeThread.contact.identity, "large")}
-                    </button>
-                    <div>
-                      <h2>{activeThread.contact.displayName}</h2>
-                      <p>{activeThread.contact.identity}</p>
-                    </div>
-                  </header>
-
-                  <div className="message-thread" aria-live="polite">
-                    {activeThreadMessages.map((item) => (
-                      <div className={`thread-message ${item.direction}`} key={item.message.id}>
-                        <div>
-                          <button
-                            className="message-author"
-                            type="button"
-                            onClick={() => openProfile(item.message.sender)}
-                            title={`View ${displayNameForIdentity(item.message.sender)}`}
-                          >
-                            {renderAvatar(item.message.sender)}
-                            <span>{displayNameForIdentity(item.message.sender)}</span>
-                          </button>
-                          {item.message.body ? <p>{item.message.body}</p> : null}
-                          {item.message.attachments?.length ? (
-                            <div className="message-media-grid">
-                              {item.message.attachments.map((attachment) => {
-                                const key = messageAttachmentKey(item.message.id, attachment);
-                                return (
-                                  <figure className="message-media" key={key}>
-                                    {messageAttachmentUrls[key] ? (
-                                      <img
-                                        src={messageAttachmentUrls[key]}
-                                        alt={attachment.alt || "Message image"}
-                                      />
-                                    ) : messageAttachmentErrors[key] ? (
-                                      <div className="message-media-placeholder">Image unavailable</div>
-                                    ) : (
-                                      <div className="message-media-placeholder">Loading image...</div>
-                                    )}
-                                    {attachment.alt ? <figcaption>{attachment.alt}</figcaption> : null}
-                                  </figure>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-                          <time>{new Date(item.message.createdAt).toLocaleString()}</time>
-                        </div>
-                      </div>
-                    ))}
-                    {activeThreadMessages.length === 0 ? (
-                      <div className="empty-thread">
-                        <MessageCircle size={28} />
-                        <h3>{activeThread.contact.displayName}</h3>
-                        <p>Start the encrypted one-to-one conversation.</p>
-                      </div>
-                    ) : null}
+            {activeView === "feed" ? (
+              <section className="view-stack feed-view">
+                {renderComposer()}
+                <section className="feed-toolbar">
+                  <div>
+                    <h2>Feed</h2>
+                    <p>{viewTitle.feed.subtitle}</p>
                   </div>
-                  <div className="thread-composer">
-                    <div className="message-composer-main">
-                      <textarea
-                        rows={2}
-                        value={messageDrafts[activeThread.contact.identity] || ""}
-                        onChange={(event) =>
-                          setMessageDrafts((current) => ({
-                            ...current,
-                            [activeThread.contact.identity]: event.target.value
-                          }))
-                        }
-                        onKeyDown={(event) => handleMessageKeyDown(event, activeThread.contact)}
-                        placeholder={`Message ${activeThread.contact.displayName}`}
-                      />
-                      <div className="attachment-toolbar compact-toolbar">
-                        <label className="file-button icon-only" title="Attach images">
-                          <ImagePlus size={16} />
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            multiple
-                            onChange={(event) => addMessageAttachments(activeThread.contact.identity, event)}
-                          />
-                        </label>
-                        <span>Images are encrypted with the message thread</span>
-                      </div>
-                      {(messageAttachments[activeThread.contact.identity] || []).length > 0 ? (
-                        <div className="pending-media-grid message-pending-media">
-                          {(messageAttachments[activeThread.contact.identity] || []).map((attachment) => (
-                            <div className="pending-media-card" key={attachment.id}>
-                              <img src={attachment.previewUrl} alt={attachment.file.name} />
-                              <div>
-                                <strong>{attachment.file.name || "Image attachment"}</strong>
-                                <span>
-                                  {formatBytes(attachment.file.size)}
-                                  {attachment.width && attachment.height
-                                    ? ` - ${attachment.width}x${attachment.height}`
-                                    : ""}
-                                </span>
-                                <input
-                                  value={attachment.alt}
-                                  onChange={(event) =>
-                                    updateMessageAttachmentAlt(
-                                      activeThread.contact.identity,
-                                      attachment.id,
-                                      event.target.value
-                                    )
-                                  }
-                                  placeholder="Alt text"
-                                />
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  removeMessageAttachment(activeThread.contact.identity, attachment.id)
-                                }
-                                title="Remove image"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                    <button
-                      className="primary"
-                      type="button"
-                      onClick={() => sendMessage(activeThread.contact)}
-                      disabled={busy === `message:${activeThread.contact.identity}`}
-                      title="Send encrypted message"
-                    >
-                      <Send size={16} />
-                      Send
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="messages-empty">
-                  <MessageCircle size={36} />
-                  <h2>No message threads</h2>
-                  <p>Accept a contact, then start a private conversation here.</p>
+                  <button type="button" onClick={refreshFeed} disabled={busy === "feed" || feedRefreshing} title="Refresh feed">
+                    <RefreshCw size={16} />
+                  </button>
+                </section>
+                <div className="feed-list">
+                  {feed.map((item) => renderPostCard(item))}
+                  {feed.length === 0 ? (
+                    <div className="empty-state">Publish a post or add a known identity to build the feed.</div>
+                  ) : null}
                 </div>
-              )}
-            </section>
+              </section>
+            ) : null}
+
+            {activeView === "profile" ? (
+              <section className="view-stack profile-view">
+                <section className="panel profile-hero">
+                  <div className="profile-hero-actions">
+                    <button type="button" onClick={() => setShowProfileEditor(true)} title="Edit profile">
+                      <Pencil size={16} />
+                      Edit profile
+                    </button>
+                  </div>
+                  {renderProfileDetails(localIdentity)}
+                </section>
+                {renderContactsPanel()}
+                <section className="feed-toolbar">
+                  <div>
+                    <h2>Your Posts</h2>
+                    <p>{localFeedItems.length} posts published by this identity</p>
+                  </div>
+                </section>
+                <div className="feed-list">
+                  {localFeedItems.map((item) => renderPostCard(item))}
+                  {localFeedItems.length === 0 ? <div className="empty-state">Your posts will appear here.</div> : null}
+                </div>
+              </section>
+            ) : null}
+
+            {activeView === "messages" ? renderMessagesView() : null}
+
+            {activeView === "notifications" ? (
+              <section className="view-stack notifications-view">
+                <div className="notification-filters">
+                  <button type="button" className="active">All</button>
+                  <button type="button">Follows</button>
+                  <button type="button">Replies</button>
+                  <button type="button">Messages</button>
+                  <button type="button" onClick={refreshIncoming} disabled={busy === "incoming"} title="Refresh notifications">
+                    <RefreshCw size={16} />
+                  </button>
+                </div>
+                <div className="notification-list">
+                  {incoming.map((record) => renderNotificationCard(record))}
+                  {incoming.length === 0 ? <div className="empty-state compact">No pending notifications.</div> : null}
+                </div>
+              </section>
+            ) : null}
           </section>
-        )}
-        </>
+          {renderProfileModal()}
+          {renderProfileEditModal()}
+        </div>
       )}
     </main>
   );
+
 }
 
 export default App;
