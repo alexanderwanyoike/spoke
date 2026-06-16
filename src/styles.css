@@ -366,6 +366,70 @@ time {
   margin: 0;
 }
 
+.message-composers,
+.conversation-list,
+.message-list {
+  display: grid;
+  gap: 10px;
+}
+
+.message-composer,
+.conversation-card {
+  border-top: 1px solid #edf0eb;
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.message-composer strong,
+.conversation-card strong {
+  color: #304039;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.message-input-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr auto;
+}
+
+.conversation-card header {
+  align-items: start;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.message-bubble {
+  border: 1px solid #e0e7de;
+  border-radius: 7px;
+  display: grid;
+  gap: 4px;
+  padding: 8px 9px;
+}
+
+.message-bubble.sent {
+  background: #edf7ed;
+  border-color: #c8dfca;
+}
+
+.message-bubble.received {
+  background: #f6f8f5;
+}
+
+.message-bubble span {
+  color: #68736b;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.message-bubble p {
+  line-height: 1.4;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .inline-error {
   color: #8b3028;
   font-size: 13px;

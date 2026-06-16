@@ -38,6 +38,7 @@ import {
   requestSpokeSession,
   submitFollowRequestByIdentity,
   submitFollowResponseByIdentity,
+  submitMessageByIdentity,
   submitReplyByIdentity,
   type AppSessionStatus,
   type IngressRecord,
@@ -83,6 +84,17 @@ import {
   type RepliesByPost
 } from "./thread";
 import {
+  conversationIdForParticipants,
+  conversationsFromMessages,
+  isSpokeMessage,
+  messageBelongsToConversation,
+  otherParticipants,
+  upsertConversationMessage,
+  type Conversation,
+  type ConversationsById,
+  type SpokeMessage
+} from "./message";
+import {
   tauriSpokeUpdateClient,
   type SpokeUpdateCheck,
   type SpokeUpdateClient
@@ -102,13 +114,14 @@ type ReviewState = {
   };
 };
 
-type SpokeIncomingPayload = SpokeReply | SpokeFollowRequest | SpokeFollowResponse;
+type SpokeIncomingPayload = SpokeReply | SpokeFollowRequest | SpokeFollowResponse | SpokeMessage;
 
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
 const PROFILE_KEY = "spoke.profile";
 const FEED_REFRESH_MS = 2000;
 const INCOMING_REFRESH_MS = 2000;
+const CONVERSATION_REFRESH_MS = 3000;
 
 function loadJson<T>(key: string, fallback: T): T {
   try {
@@ -146,6 +159,7 @@ function isSpokeReply(value: unknown): value is SpokeReply {
 function incomingKind(payload: SpokeIncomingPayload) {
   if (isSpokeFollowRequest(payload)) return "follow request";
   if (isSpokeFollowResponse(payload)) return "follow response";
+  if (isSpokeMessage(payload)) return "message";
   return "reply";
 }
 
@@ -156,15 +170,27 @@ function incomingPreview(payload: SpokeIncomingPayload) {
   if (isSpokeFollowResponse(payload)) {
     return `${payload.sender} ${payload.decision} your follow request.`;
   }
+  if (isSpokeMessage(payload)) {
+    return payload.body;
+  }
   return payload.body;
 }
 
 function parseIncomingPayload(bytes: number[]) {
   const payload = parseJsonBytes<unknown>(bytes);
-  if (isSpokeReply(payload) || isSpokeFollowRequest(payload) || isSpokeFollowResponse(payload)) {
+  if (
+    isSpokeReply(payload) ||
+    isSpokeFollowRequest(payload) ||
+    isSpokeFollowResponse(payload) ||
+    isSpokeMessage(payload)
+  ) {
     return payload;
   }
   throw new Error("Unsupported Spoke incoming object.");
+}
+
+function messageTargetsIdentity(message: SpokeMessage, identity: string) {
+  return message.recipients.some((recipient) => sameIdentity(recipient, identity));
 }
 
 function App() {
@@ -188,9 +214,11 @@ function App() {
   const [feedIndex, setFeedIndex] = useState<SpokeFeedIndex | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [repliesByPost, setRepliesByPost] = useState<RepliesByPost>({});
+  const [conversations, setConversations] = useState<ConversationsById>({});
   const [incoming, setIncoming] = useState<IngressRecord[]>([]);
   const [review, setReview] = useState<ReviewState>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -200,6 +228,7 @@ function App() {
   const [feedRefreshing, setFeedRefreshing] = useState(false);
   const feedRefreshInFlight = useRef(false);
   const incomingRefreshInFlight = useRef(false);
+  const conversationRefreshInFlight = useRef(false);
   const feedRefreshGeneration = useRef(0);
   const contactsRef = useRef<Contact[]>(contacts);
   const updateClient: SpokeUpdateClient = tauriSpokeUpdateClient;
@@ -213,12 +242,23 @@ function App() {
     [feed]
   );
   const activeContactCount = useMemo(() => activeContacts(contacts).length, [contacts]);
+  const acceptedContacts = useMemo(
+    () => contacts.filter((contact) => contact.relationship === "accepted"),
+    [contacts]
+  );
+  const conversationList = useMemo(
+    () => Object.values(conversations).sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)),
+    [conversations]
+  );
   const displayNameForIdentity = (identity: string) => {
     if (sameIdentity(identity, localIdentity)) {
       return profileDraft.displayName.trim() || localIdentity;
     }
     return contacts.find((contact) => sameIdentity(contact.identity, identity))?.displayName || identity;
   };
+  const titleForConversation = (conversation: Conversation) =>
+    otherParticipants(conversation, localIdentity).map(displayNameForIdentity).join(", ") ||
+    displayNameForIdentity(localIdentity);
 
   useEffect(() => {
     getStatus()
@@ -512,6 +552,15 @@ function App() {
     return JSON.parse(decodeFetchData(result)) as SpokeReply;
   }
 
+  async function fetchMessage(contentId: string) {
+    const result = await fetchTarget(sessionToken, contentId);
+    const message = JSON.parse(decodeFetchData(result)) as unknown;
+    if (!isSpokeMessage(message)) {
+      throw new Error("Fetched object is not a Spoke message.");
+    }
+    return message;
+  }
+
   async function fetchThreadIndex(addressOrPath: string, owner: string) {
     const target = addressOrPath.startsWith("/spoke/")
       ? `${owner}${addressOrPath}`
@@ -523,6 +572,15 @@ function App() {
   async function decryptReply(address: string) {
     const result = await decryptEncryptedTarget(sessionToken, address);
     return parseJsonBytes<SpokeReply>(result.plaintext);
+  }
+
+  async function decryptMessage(address: string) {
+    const result = await decryptEncryptedTarget(sessionToken, address);
+    const message = parseJsonBytes<unknown>(result.plaintext);
+    if (!isSpokeMessage(message)) {
+      throw new Error("Encrypted object is not a Spoke message.");
+    }
+    return message;
   }
 
   async function loadLocalThreadIndex(postAddress: string) {
@@ -672,6 +730,52 @@ function App() {
     }
   }
 
+  async function loadConversationSnapshot() {
+    const nextPublished = await listPublished(sessionToken).catch(() => []);
+    const spokeObjects = nextPublished.filter((item) => item.path?.startsWith("/spoke/"));
+    const receivedMessages = await Promise.all(
+      spokeObjects
+        .filter((object) => object.path?.startsWith("/spoke/messages/received/"))
+        .map(async (item) => {
+          try {
+            const message = await fetchMessage(item.content_id);
+            return { message, direction: "received" as const };
+          } catch {
+            return null;
+          }
+        })
+    );
+    const sentMessages = await Promise.all(
+      spokeObjects
+        .filter((object) => object.path?.startsWith("/spoke/messages/outgoing/"))
+        .map(async (item) => {
+          try {
+            const message = await decryptMessage(item.address || `${localIdentity}${item.path}`);
+            return { message, direction: "sent" as const };
+          } catch {
+            return null;
+          }
+        })
+    );
+    setConversations(
+      conversationsFromMessages([...receivedMessages, ...sentMessages].filter((item) => item !== null))
+    );
+  }
+
+  async function refreshConversationsSilently() {
+    if (conversationRefreshInFlight.current) {
+      return;
+    }
+    conversationRefreshInFlight.current = true;
+    try {
+      await loadConversationSnapshot();
+    } catch {
+      // Conversation polling should not interrupt posting or messaging.
+    } finally {
+      conversationRefreshInFlight.current = false;
+    }
+  }
+
   async function refreshFeed() {
     await withBusy("feed", async () => {
       await loadFeedSnapshot();
@@ -717,6 +821,48 @@ function App() {
     });
   }
 
+  async function sendMessage(contact: Contact) {
+    const body = (messageDrafts[contact.identity] || "").trim();
+    if (!body) {
+      setError("Message body is required.");
+      return;
+    }
+
+    await withBusy(`message:${contact.identity}`, async () => {
+      const message: SpokeMessage = {
+        schema: "spoke.message.v1",
+        id: makeId("msg"),
+        conversationId: conversationIdForParticipants([localIdentity, contact.identity]),
+        sender: localIdentity,
+        recipients: [contact.identity],
+        body,
+        createdAt: new Date().toISOString()
+      };
+      if (!messageBelongsToConversation(message)) {
+        throw new Error("Message participants do not match its conversation.");
+      }
+      await submitMessageByIdentity(sessionToken, contact.identity, message);
+      setConversations((current) => upsertConversationMessage(current, message, "sent"));
+      setMessageDrafts((current) => ({ ...current, [contact.identity]: "" }));
+      setNotice("Encrypted message submitted to recipient ingress.");
+    });
+  }
+
+  async function publishReceivedMessage(
+    message: SpokeMessage,
+    options: { silent?: boolean } = {}
+  ) {
+    try {
+      await publishJson(sessionToken, `/spoke/messages/received/${message.id}`, message);
+      if (!options.silent) {
+        setNotice("Message accepted into the local conversation.");
+      }
+      void refreshConversationsSilently();
+    } catch (err) {
+      setError(`Message accepted, but local publish failed: ${apiErrorMessage(err)}`);
+    }
+  }
+
   async function acceptPendingIngress(ingressId: string) {
     try {
       await acceptIngress(sessionToken, ingressId);
@@ -738,7 +884,8 @@ function App() {
       if (
         record.schema_hint &&
         record.schema_hint !== "spoke.follow_response.v1" &&
-        record.schema_hint !== "spoke.reply.v1"
+        record.schema_hint !== "spoke.reply.v1" &&
+        record.schema_hint !== "spoke.message.v1"
       ) {
         visibleRecords.push(record);
         continue;
@@ -758,6 +905,18 @@ function App() {
           await acceptPendingIngress(record.ingress_id);
           setRepliesByPost((current) => addReplyToPost(current, payload));
           await publishAcceptedReply(payload, { silent: true });
+          autoHandledIngressIds.push(record.ingress_id);
+          continue;
+        }
+        if (
+          isSpokeMessage(payload) &&
+          hasAcceptedContactForIdentity(nextContacts, payload.sender) &&
+          messageBelongsToConversation(payload) &&
+          messageTargetsIdentity(payload, localIdentity)
+        ) {
+          await acceptPendingIngress(record.ingress_id);
+          setConversations((current) => upsertConversationMessage(current, payload, "received"));
+          await publishReceivedMessage(payload, { silent: true });
           autoHandledIngressIds.push(record.ingress_id);
           continue;
         }
@@ -852,6 +1011,15 @@ function App() {
         void loadFeedSnapshot(nextContacts);
         return;
       }
+      if (isSpokeMessage(opened)) {
+        if (!messageBelongsToConversation(opened) || !messageTargetsIdentity(opened, localIdentity)) {
+          throw new Error("Message is not addressed to this Spoke identity.");
+        }
+        setConversations((current) => upsertConversationMessage(current, opened, "received"));
+        setNotice("Message accepted. Publishing local copy...");
+        void publishReceivedMessage(opened);
+        return;
+      }
       setRepliesByPost((current) => addReplyToPost(current, opened));
       setNotice("Reply accepted. Publishing local copy...");
       void publishAcceptedReply(opened);
@@ -929,6 +1097,16 @@ function App() {
     const timer = window.setInterval(refreshIncomingSilently, INCOMING_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [canUseApp, sessionToken]);
+
+  useEffect(() => {
+    if (!canUseApp) {
+      return;
+    }
+
+    refreshConversationsSilently();
+    const timer = window.setInterval(refreshConversationsSilently, CONVERSATION_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [canUseApp, sessionToken, localIdentity]);
 
   return (
     <main className="app-shell">
@@ -1233,6 +1411,67 @@ function App() {
                   );
                 })}
                 {incoming.length === 0 ? <div className="empty-state compact">No pending ingress.</div> : null}
+              </div>
+            </section>
+
+            <section className="panel">
+              <div className="panel-heading">
+                <h2>Messages</h2>
+                <MessageCircle size={16} />
+              </div>
+              <div className="message-composers">
+                {acceptedContacts.map((contact) => (
+                  <div className="message-composer" key={contact.identity}>
+                    <strong>{contact.displayName}</strong>
+                    <div className="message-input-row">
+                      <input
+                        value={messageDrafts[contact.identity] || ""}
+                        onChange={(event) =>
+                          setMessageDrafts((current) => ({
+                            ...current,
+                            [contact.identity]: event.target.value
+                          }))
+                        }
+                        placeholder={`Message ${contact.displayName}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => sendMessage(contact)}
+                        disabled={busy === `message:${contact.identity}`}
+                        title="Send encrypted message"
+                      >
+                        <Send size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {acceptedContacts.length === 0 ? (
+                  <div className="empty-state compact">Accepted contacts can receive messages.</div>
+                ) : null}
+              </div>
+              <div className="conversation-list">
+                {conversationList.map((conversation) => (
+                  <article className="conversation-card" key={conversation.id}>
+                    <header>
+                      <strong>{titleForConversation(conversation)}</strong>
+                      <time>{new Date(conversation.lastMessageAt).toLocaleString()}</time>
+                    </header>
+                    <div className="message-list">
+                      {conversation.messages.slice(-6).map((item) => (
+                        <div
+                          className={`message-bubble ${item.direction}`}
+                          key={item.message.id}
+                        >
+                          <span>{displayNameForIdentity(item.message.sender)}</span>
+                          <p>{item.message.body}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+                {conversationList.length === 0 ? (
+                  <div className="empty-state compact">No messages yet.</div>
+                ) : null}
               </div>
             </section>
           </aside>

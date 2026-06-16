@@ -24,6 +24,7 @@ import {
   requestSpokeSession,
   submitFollowRequestByIdentity,
   submitFollowResponseByIdentity,
+  submitMessageByIdentity,
   submitReplyByIdentity,
   type IngressRecord,
   type SpokePost,
@@ -31,6 +32,7 @@ import {
   type SpokeReply
 } from "./api";
 import type { SpokeFollowRequest, SpokeFollowResponse } from "./follow";
+import type { SpokeMessage } from "./message";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -365,6 +367,44 @@ describe("Spoke daemon API client", () => {
           content_type: "application/json",
           recipients: ["alice.jolt"]
         })
+      })
+    );
+  });
+
+  it("sends encrypted direct messages through recipient ingress", async () => {
+    const message: SpokeMessage = {
+      schema: "spoke.message.v1",
+      id: "msg_1",
+      conversationId: "conv_alice_bob",
+      sender: "alice.jolt",
+      recipients: ["bob.jolt"],
+      body: "Hello Bob",
+      createdAt: "2026-06-16T10:00:00.000Z"
+    };
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse({ content_id: "cid_message", size: 400, recipient_count: 1 }))
+      .mockResolvedValueOnce(jsonResponse({ data: [7, 8, 9], content_id: "cid_message", size: 3 }))
+      .mockResolvedValueOnce(jsonResponse({ ingress_id: "ing_message", status: "pending" } satisfies Partial<IngressRecord>));
+
+    await submitMessageByIdentity("token-1", "bob.jolt", message);
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "/jolt-api/encrypted/publish",
+      expect.objectContaining({
+        body: JSON.stringify({
+          path: "/spoke/messages/outgoing/msg_1",
+          plaintext: Array.from(new TextEncoder().encode(JSON.stringify(message))),
+          content_type: "application/json",
+          recipients: ["bob.jolt"]
+        })
+      })
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      "/jolt-api/ingress/send",
+      expect.objectContaining({
+        body: expect.stringContaining("\"recipient\":\"bob.jolt\"")
       })
     );
   });
