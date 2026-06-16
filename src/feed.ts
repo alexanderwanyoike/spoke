@@ -2,6 +2,7 @@ import type { PublishedContent, SpokeFeedIndex, SpokePost } from "./api";
 
 export type Contact = {
   identity: string;
+  /** Local nickname chosen by this user. */
   displayName: string;
   relationship?: "local" | "requested" | "accepted";
 };

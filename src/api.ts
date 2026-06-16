@@ -104,11 +104,20 @@ export type DecryptedEncryptedObject = {
   content_type: string;
 };
 
+export type SpokeProfileLink = {
+  label: string;
+  url: string;
+};
+
 export type SpokeProfile = {
-  schema: "spoke.profile.v1";
+  schema: "spoke.profile.v1" | "spoke.profile.v2";
   identity: string;
   displayName: string;
   bio: string;
+  avatar?: SpokeAttachment;
+  links?: SpokeProfileLink[];
+  location?: string;
+  pronouns?: string;
   updatedAt: string;
 };
 
