@@ -11,9 +11,11 @@ flat replies under a post. It does not yet support recursive conversation:
 Bob posts, Alice replies, Bob replies to Alice, Carol replies to Bob, and all
 participants see the same nested tree.
 
-It also needs to support author self-conversation: Bob can reply to Bob's own
-post, and Bob can reply to Bob's own replies. Self-replies should not require
-recipient ingress because Bob already owns the post/thread namespace.
+It also needs to support author self-conversation and participant recursion:
+Bob can reply to Bob's own post, Bob can reply to Bob's own replies, and Alice
+or Carol can reply to the post or any visible reply at any point. Self-replies
+should not require recipient ingress because Bob already owns the post/thread
+namespace.
 
 Spoke needs real visible thread conversations without violating Jolt's
 identity-owned namespace rule.
@@ -82,7 +84,8 @@ Nested reply:
 - For post-author self-replies, publish the reply locally and update the thread
   manifest immediately without sending ingress.
 - Build a nested reply tree from `parent` references.
-- Render nested replies with per-reply composers.
+- Render nested replies with per-reply composers so any participant can reply to
+  the post or any visible reply.
 - Keep old `spoke.reply.v1` and current `spoke.thread.v1` replies readable
   during migration.
 
@@ -95,6 +98,8 @@ Nested reply:
 - [ ] The post author can reply to their own reply, producing a nested
       self-reply.
 - [ ] The post author receives the reply notification and updates the manifest.
+- [ ] Alice and Carol can reply to the post at any point.
+- [ ] Alice and Carol can reply to any visible reply at any point.
 - [ ] Bob can reply to Alice's reply, and Carol can reply to Bob's reply.
 - [ ] All participants can fetch the same nested conversation tree.
 - [ ] Existing flat `spoke.reply.v1` and `spoke.thread.v1` content still
