@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { SpokeReply, SpokeThreadIndex } from "./api";
 import {
   addReplyToPost,
+  buildThreadTree,
+  createThreadManifest,
+  createThreadReply,
   postIdFromPostAddress,
+  threadReplyReference,
   threadPathForPostAddress,
+  upsertThreadManifestParticipant,
   upsertReplyInThreadIndex
 } from "./thread";
 
@@ -21,6 +26,114 @@ function reply(overrides: Partial<SpokeReply>): SpokeReply {
 }
 
 describe("Spoke thread helpers", () => {
+  it("lets Bob reply to his own post and then reply to his own reply", () => {
+    const first = createThreadReply({
+      id: "reply_bob_1",
+      postId: "post_1",
+      postAuthor: "bob.jolt",
+      author: "bob.jolt",
+      parent: "post_1",
+      body: "Adding context to my post",
+      createdAt: "2026-06-17T09:00:00.000Z"
+    });
+    const second = createThreadReply({
+      id: "reply_bob_2",
+      postId: "post_1",
+      postAuthor: "bob.jolt",
+      author: "bob.jolt",
+      parent: threadReplyReference(first),
+      body: "And a nested correction",
+      createdAt: "2026-06-17T09:01:00.000Z"
+    });
+
+    const tree = buildThreadTree({
+      postId: "post_1",
+      replies: [second, first]
+    });
+
+    expect(tree).toHaveLength(1);
+    expect(tree[0].reply.body).toBe("Adding context to my post");
+    expect(tree[0].children).toHaveLength(1);
+    expect(tree[0].children[0].reply.body).toBe("And a nested correction");
+  });
+
+  it("tracks Bob, Alice, and Carol as thread participants without duplicates", () => {
+    const manifest = createThreadManifest({
+      postId: "post_1",
+      owner: "bob.jolt",
+      createdAt: "2026-06-17T09:00:00.000Z"
+    });
+
+    const withAlice = upsertThreadManifestParticipant(manifest, {
+      identity: "alice.jolt",
+      addedAt: "2026-06-17T09:01:00.000Z"
+    });
+    const withCarol = upsertThreadManifestParticipant(withAlice, {
+      identity: "carol.jolt",
+      addedAt: "2026-06-17T09:02:00.000Z"
+    });
+    const duplicateAlice = upsertThreadManifestParticipant(withCarol, {
+      identity: "alice.jolt",
+      addedAt: "2026-06-17T09:03:00.000Z"
+    });
+
+    expect(duplicateAlice.participants.map((participant) => participant.identity)).toEqual([
+      "bob.jolt",
+      "alice.jolt",
+      "carol.jolt"
+    ]);
+  });
+
+  it("lets Alice and Carol reply to the post or any visible reply in the same thread", () => {
+    const bob = createThreadReply({
+      id: "reply_bob_1",
+      postId: "post_1",
+      postAuthor: "bob.jolt",
+      author: "bob.jolt",
+      parent: "post_1",
+      body: "Bob starts the conversation",
+      createdAt: "2026-06-17T09:00:00.000Z"
+    });
+    const alice = createThreadReply({
+      id: "reply_alice_1",
+      postId: "post_1",
+      postAuthor: "bob.jolt",
+      author: "alice.jolt",
+      parent: threadReplyReference(bob),
+      body: "Alice replies to Bob",
+      createdAt: "2026-06-17T09:01:00.000Z"
+    });
+    const carol = createThreadReply({
+      id: "reply_carol_1",
+      postId: "post_1",
+      postAuthor: "bob.jolt",
+      author: "carol.jolt",
+      parent: threadReplyReference(alice),
+      body: "Carol replies to Alice",
+      createdAt: "2026-06-17T09:02:00.000Z"
+    });
+    const unrelated = createThreadReply({
+      id: "reply_other",
+      postId: "post_2",
+      postAuthor: "alice.jolt",
+      author: "carol.jolt",
+      parent: "post_2",
+      body: "Different post",
+      createdAt: "2026-06-17T09:03:00.000Z"
+    });
+
+    const tree = buildThreadTree({
+      postId: "post_1",
+      replies: [unrelated, carol, bob, alice]
+    });
+
+    expect(tree.map((node) => node.reply.body)).toEqual(["Bob starts the conversation"]);
+    expect(tree[0].children.map((node) => node.reply.body)).toEqual(["Alice replies to Bob"]);
+    expect(tree[0].children[0].children.map((node) => node.reply.body)).toEqual([
+      "Carol replies to Alice"
+    ]);
+  });
+
   it("groups accepted replies under their post address in conversation order", () => {
     const first = reply({ id: "reply_1", body: "First", createdAt: "2026-06-06T10:00:00.000Z" });
     const second = reply({ id: "reply_2", body: "Second", createdAt: "2026-06-06T10:01:00.000Z" });

@@ -158,6 +158,28 @@ export type SpokeReply = {
   createdAt: string;
 };
 
+export type SpokeThreadReply = {
+  schema: "spoke.reply.v2";
+  id: string;
+  postId: string;
+  postAuthor: string;
+  parent: string;
+  author: string;
+  body: string;
+  createdAt: string;
+};
+
+export type SpokeThreadManifest = {
+  schema: "spoke.thread.v2";
+  postId: string;
+  owner: string;
+  participants: Array<{
+    identity: string;
+    addedAt: string;
+  }>;
+  updatedAt: string;
+};
+
 export type SpokeThreadIndex = {
   schema: "spoke.thread.v1";
   id: string;
