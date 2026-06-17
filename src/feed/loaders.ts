@@ -18,20 +18,15 @@ async function loadAuthorPosts(
   const refs = await enumeration.listPosts(identity);
   await Promise.all(
     refs.map(async (ref) => {
-      try {
-        const read = await sdk.read({ identity, path: ref.path });
-        const post = decodePost(read.bytes);
-        if (!post) return;
-        store.upsert({
-          identity: normalizeIdentity(identity),
-          path: ref.path,
-          latestSequence: read.latestSequence,
-          contentId: read.contentId,
-          value: post
-        });
-      } catch {
-        // A stale enumeration entry should not block the rest of the timeline.
-      }
+      const hit = await sdk.read({ identity, path: ref.path }, decodePost);
+      if (!hit) return; // missing, unreachable, or not a post
+      store.upsert({
+        identity: normalizeIdentity(identity),
+        path: ref.path,
+        latestSequence: hit.latestSequence,
+        contentId: hit.contentId,
+        value: hit.value
+      });
     })
   );
 }

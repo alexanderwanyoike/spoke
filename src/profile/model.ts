@@ -1,4 +1,5 @@
 import type { SpokeProfile } from "../api";
+import type { Decoder } from "../jolt";
 import type { Contact } from "../feed";
 import { normalizeIdentity, sameIdentity } from "../follow";
 
@@ -64,17 +65,11 @@ export function isSpokeProfile(value: unknown): value is SpokeProfile {
   return schema === "spoke.profile.v1" || schema === "spoke.profile.v2";
 }
 
-// Tolerant reader: decode bytes fetched from Jolt into a canonical profile, or
-// null if the object is unrecoverable. One malformed object must never poison a
-// Projection (see docs/CONTEXT.md "Tolerant readers, strict writers").
-export function decodeProfile(bytes: number[]): SpokeProfile | null {
-  try {
-    const value = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes))) as unknown;
-    return isSpokeProfile(value) ? value : null;
-  } catch {
-    return null;
-  }
-}
+// Tolerant reader: validate an already-parsed JSON value into a canonical
+// profile, or null if unrecoverable. The ACL handles bytes -> JSON; this is the
+// schema-level decoder (see docs/CONTEXT.md "Tolerant readers, strict writers").
+export const decodeProfile: Decoder<SpokeProfile> = (value) =>
+  isSpokeProfile(value) ? value : null;
 
 export function profileLinksFromDraft(links: ProfileDraftLink[]) {
   return links

@@ -43,10 +43,11 @@ function fakeSdk(
       onPublish?.(path, body);
       return { contentId: `cid_${path}`, latestSequence: 1, path, address: null };
     },
-    async read(ref: Reference) {
+    async read(ref: Reference, decode) {
       const hit = reads[`${ref.identity}${ref.path}`];
-      if (!hit) throw new Error(`not found: ${ref.identity}${ref.path}`);
-      return hit;
+      if (!hit) return null;
+      const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(hit.bytes))));
+      return value === null ? null : { ref, value, latestSequence: hit.latestSequence, contentId: hit.contentId };
     }
   };
 }

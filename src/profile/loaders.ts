@@ -20,16 +20,16 @@ export async function loadProfile(
   identity: string,
   store: Store = defaultStore
 ): Promise<SpokeProfile | null> {
-  const read = await sdk.read({ identity, path: PROFILE_PATH });
-  const profile = decodeProfile(read.bytes);
-  if (!profile) {
+  const hit = await sdk.read({ identity, path: PROFILE_PATH }, decodeProfile);
+  if (!hit) {
     return null;
   }
+  const profile = hit.value;
   store.upsert({
     identity: normalizeIdentity(profile.identity || identity),
     path: PROFILE_PATH,
-    latestSequence: read.latestSequence,
-    contentId: read.contentId,
+    latestSequence: hit.latestSequence,
+    contentId: hit.contentId,
     value: profile
   });
   return profile;

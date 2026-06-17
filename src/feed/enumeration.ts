@@ -40,12 +40,8 @@ export type BridgeOptions = {
 
 export function createBridgeEnumeration(sdk: JoltSdk, options: BridgeOptions): EnumerationSource {
   async function readIndex(identity: string): Promise<SpokeFeedIndex | null> {
-    try {
-      const read = await sdk.read({ identity, path: FEED_PATH });
-      return decodeFeedIndex(read.bytes);
-    } catch {
-      return null;
-    }
+    const hit = await sdk.read({ identity, path: FEED_PATH }, decodeFeedIndex);
+    return hit?.value ?? null;
   }
 
   return {

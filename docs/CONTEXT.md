@@ -44,6 +44,18 @@ folders: the monotonic store in `src/common/`, and the Jolt SDK / ACL in
 `src/jolt/`. Features are moved into this layout as their cards are worked, not
 all at once.
 
+### Marshalling lives in the ACL
+
+The Jolt SDK owns the wire format. `publishJson(path, body)` serialises; `read`
+takes a `Decoder<T>` (`(value: unknown) => T | null`), resolves, fetches,
+parses, and validates, returning a `Versioned<T>` (value + `latestSequence` +
+`contentId`) or `null` when the reference is missing, unreachable, or does not
+decode. The domain never sees bytes: a feature's `model.ts` only supplies pure
+schema-level decoders (`decodePost`, `decodeProfile`, ...), and loaders fold the
+returned `value`/version straight into the store. This keeps the
+tolerant-reader policy at the boundary and stops transport DTOs (raw bytes,
+snake_case daemon fields) from leaking up into the domain.
+
 ## Glossary
 
 ### Singleton Object

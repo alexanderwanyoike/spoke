@@ -1,4 +1,5 @@
 import type { PublishedContent, SpokeFeedIndex, SpokePost } from "../api";
+import type { Decoder } from "../jolt";
 
 export type Contact = {
   identity: string;
@@ -54,26 +55,13 @@ export function isSpokeFeedIndex(value: unknown): value is SpokeFeedIndex {
   return (value as { schema?: unknown }).schema === "spoke.feed.v1";
 }
 
-// Tolerant readers: decode bytes fetched from Jolt into a canonical model, or
-// null if unrecoverable. One malformed object never poisons the feed Projection
-// (see docs/CONTEXT.md "Tolerant readers, strict writers").
-export function decodePost(bytes: number[]): SpokePost | null {
-  try {
-    const value = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes))) as unknown;
-    return isSpokePost(value) ? value : null;
-  } catch {
-    return null;
-  }
-}
+// Tolerant readers: validate an already-parsed JSON value into a canonical
+// model, or null if unrecoverable. The ACL handles bytes -> JSON; these are the
+// schema-level decoders (see docs/CONTEXT.md "Tolerant readers, strict writers").
+export const decodePost: Decoder<SpokePost> = (value) => (isSpokePost(value) ? value : null);
 
-export function decodeFeedIndex(bytes: number[]): SpokeFeedIndex | null {
-  try {
-    const value = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes))) as unknown;
-    return isSpokeFeedIndex(value) ? value : null;
-  } catch {
-    return null;
-  }
-}
+export const decodeFeedIndex: Decoder<SpokeFeedIndex> = (value) =>
+  isSpokeFeedIndex(value) ? value : null;
 
 // Build the next feed-index Singleton including a freshly published post. This
 // is the write side of the bridge enumeration; J1's append-record enumeration
