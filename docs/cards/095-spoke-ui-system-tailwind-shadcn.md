@@ -2,7 +2,7 @@
 
 **Type:** HITL first, then AFK
 **Milestone:** Post-v0 Social
-**Status:** Proposed
+**Status:** Implemented; polish remaining
 **Blocked by:** 092, 094
 **Related:** 092, 093, 094
 
@@ -18,7 +18,7 @@ continuing to polish the interface. This gives us a consistent component
 system for navigation, dialogs, tabs, forms, buttons, avatars, cards, sheets,
 toasts, and dark mode.
 
-## Current State
+## Original State
 
 - Spoke uses React, Vite, Tauri, lucide-react, and plain CSS in `src/styles.css`.
 - Spoke does **not** currently use Tailwind.
@@ -130,19 +130,31 @@ must make it clear that no public profile was found.
 
 ## Acceptance Criteria
 
-- [ ] Tailwind is configured and used by Spoke.
-- [ ] shadcn/ui is installed and at least these primitives are used:
+- [x] Tailwind is configured and used by Spoke.
+- [x] shadcn/ui-style primitives are installed and at least these primitives are used:
       Button, Dialog, Avatar, Tabs or ToggleGroup, Input, Textarea, Badge,
       Separator, ScrollArea, Card or equivalent composition.
-- [ ] Feed, Profile, Messages, and Notifications are separate sections.
-- [ ] Profile editing is in a modal/dialog.
-- [ ] Find People / follow request is in a modal/dialog.
-- [ ] Notifications render as a top-down activity stream.
-- [ ] Follow request notifications show sender profile context when available.
-- [ ] Light/dark mode works and persists.
-- [ ] Existing social flows still work:
+- [x] Feed, Profile, Messages, and Notifications are separate sections.
+- [x] Profile editing is in a modal/dialog.
+- [x] Find People / follow request is in a modal/dialog.
+- [x] Notifications render as a top-down activity stream.
+- [x] Follow request notifications show sender profile context when available.
+- [x] Light/dark mode works and persists.
+- [x] Existing social flows still work:
       follow request, accept/reject, feed refresh, replies, messages,
       image posts, and image messages.
+
+## Implementation
+
+Implemented in Spoke PR #18:
+
+- <https://github.com/alexanderwanyoike/spoke/pull/18>
+
+## Remaining Follow-Ups
+
+- Continue extracting smaller app-level components from `App.tsx`.
+- Add rendered UI tests for modal and route behavior.
+- Run a design review pass after the first real users try the app.
 
 ## Non-Goals
 
