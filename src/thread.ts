@@ -5,6 +5,7 @@ import {
   type SpokeReply,
   type SpokeThreadIndex,
   type SpokeThreadManifest,
+  type SpokeThreadManifestReply,
   type SpokeThreadReply
 } from "./api";
 
@@ -22,6 +23,15 @@ export function threadReplyPath(reply: Pick<SpokeThreadReply, "postId" | "id">) 
 
 export function threadReplyReference(reply: Pick<SpokeThreadReply, "author" | "postId" | "id">) {
   return `${reply.author}:${threadReplyPath(reply)}`;
+}
+
+export function threadManifestReplyTargets(
+  reply: Pick<SpokeThreadManifestReply, "contentId" | "address">
+) {
+  return [reply.address, reply.contentId].filter(
+    (target, index, targets): target is string =>
+      Boolean(target) && targets.indexOf(target) === index
+  );
 }
 
 export function createThreadReply(input: Omit<SpokeThreadReply, "schema">): SpokeThreadReply {
@@ -109,6 +119,58 @@ export function toThreadReply(reply: SpokeAnyReply): SpokeThreadReply {
   return reply.schema === "spoke.reply.v2" ? reply : legacyReplyToThreadReply(reply);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return isString(value) && value.length > 0;
+}
+
+export function fetchedReplyToThreadReply(value: unknown): SpokeThreadReply | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (value.schema === "spoke.reply.v2") {
+    if (
+      isNonEmptyString(value.id) &&
+      isNonEmptyString(value.postId) &&
+      isNonEmptyString(value.postAuthor) &&
+      isNonEmptyString(value.parent) &&
+      isNonEmptyString(value.author) &&
+      isString(value.body) &&
+      isNonEmptyString(value.createdAt)
+    ) {
+      return value as SpokeThreadReply;
+    }
+    return null;
+  }
+
+  if (value.schema === "spoke.reply.v1") {
+    if (
+      isNonEmptyString(value.id) &&
+      isNonEmptyString(value.sender) &&
+      isNonEmptyString(value.postAuthor) &&
+      isNonEmptyString(value.postAddress) &&
+      isString(value.body) &&
+      isNonEmptyString(value.createdAt)
+    ) {
+      try {
+        return legacyReplyToThreadReply(value as SpokeReply);
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  return null;
+}
+
 export function addThreadReplyToPost(
   current: ThreadRepliesByPost,
   postAddress: string,
@@ -123,6 +185,22 @@ export function addThreadReplyToPost(
       reply
     ])
   };
+}
+
+export function threadRepliesForPost(input: {
+  repliesByPost: ThreadRepliesByPost;
+  postAddress: string;
+  postId: string;
+}) {
+  return Object.values(input.repliesByPost)
+    .flat()
+    .filter((reply, index, replies) => {
+      if (reply.postId !== input.postId) {
+        return false;
+      }
+      const reference = threadReplyReference(reply);
+      return replies.findIndex((item) => threadReplyReference(item) === reference) === index;
+    });
 }
 
 export function sortReplies(replies: SpokeReply[]) {

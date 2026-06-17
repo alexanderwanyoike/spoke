@@ -127,6 +127,7 @@ import {
   type SpokeReply,
   type SpokeThreadIndex,
   type SpokeThreadManifest,
+  type SpokeThreadManifestReply,
   type SpokeThreadReply
 } from "./api";
 import {
@@ -161,9 +162,12 @@ import {
   buildThreadTree,
   createThreadManifest,
   createThreadReply,
+  fetchedReplyToThreadReply,
   postIdFromPostAddress,
+  threadManifestReplyTargets,
   threadReplyPath,
   threadReplyReference,
+  threadRepliesForPost,
   threadPathForPostAddress,
   toThreadReply,
   upsertReplyInThreadManifest,
@@ -202,7 +206,9 @@ import {
   type ProfileDraft,
   type ProfilesByIdentity
 } from "./profile";
+import { publishBeforeAcceptingIngress } from "./incoming";
 import {
+  shouldShowSpokeUpdateInstall,
   tauriSpokeUpdateClient,
   type SpokeUpdateCheck,
   type SpokeUpdateClient
@@ -477,6 +483,10 @@ function App() {
   const fetchingProfileKeysRef = useRef<Set<string>>(new Set());
   const profileRetryAfterRef = useRef<Record<string, number>>({});
   const updateClient: SpokeUpdateClient = tauriSpokeUpdateClient;
+  const showSpokeUpdateInstall = shouldShowSpokeUpdateInstall({
+    updateCheck,
+    isDev: window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost"
+  });
 
   const sessionToken = session.token || "";
   const localIdentity = session.identity || status?.identity_address || "";
@@ -659,7 +669,8 @@ function App() {
     for (const thread of messageThreads) addIdentity(thread.contact.identity);
     for (const item of feed) {
       addIdentity(item.post.author);
-      for (const reply of repliesByPost[item.address] || []) {
+      const postId = item.post.id || postIdFromPostAddress(item.address);
+      for (const reply of threadRepliesForPost({ repliesByPost, postAddress: item.address, postId })) {
         addIdentity(reply.author);
       }
     }
@@ -1579,6 +1590,19 @@ function App() {
     return JSON.parse(decodeFetchData(result)) as SpokeAnyReply;
   }
 
+  async function fetchSharedThreadReply(
+    reply: Pick<SpokeThreadManifestReply, "contentId" | "address">
+  ) {
+    for (const target of threadManifestReplyTargets(reply)) {
+      try {
+        return await fetchReply(target);
+      } catch {
+        // Thread manifests can outlive one fetch route; try the next reference.
+      }
+    }
+    return null;
+  }
+
   async function fetchMessage(contentId: string) {
     const result = await fetchTarget(sessionToken, contentId);
     const message = JSON.parse(decodeFetchData(result)) as unknown;
@@ -1594,11 +1618,6 @@ function App() {
       : addressOrPath;
     const result = await fetchTarget(sessionToken, target);
     return JSON.parse(decodeFetchData(result)) as SpokeThreadIndex | SpokeThreadManifest;
-  }
-
-  async function decryptReply(address: string) {
-    const result = await decryptEncryptedTarget(sessionToken, address);
-    return parseJsonBytes<SpokeAnyReply>(result.plaintext);
   }
 
   async function decryptMessage(address: string) {
@@ -1752,18 +1771,6 @@ function App() {
           }
         })
     );
-    const outgoingReplies = await Promise.all(
-      spokeObjects
-        .filter((object) => object.path?.startsWith("/spoke/outgoing/"))
-        .map(async (item) => {
-          try {
-            return await decryptReply(item.address || `${localIdentity}${item.path}`);
-          } catch {
-            // Outgoing encrypted objects may be old or not decryptable with this identity.
-            return null;
-          }
-        })
-    );
     const sharedThreadReplies = await Promise.all(
       nextItems
         .filter((item) => item.source === "contact")
@@ -1775,15 +1782,7 @@ function App() {
             return await Promise.all(
               thread.replies
                 .filter((reply) => reply.moderation === "accepted")
-                .map(async (reply) => {
-                  try {
-                    const target = reply.contentId || reply.address;
-                    return target ? await fetchReply(target) : null;
-                  } catch {
-                    // Stale thread entries should not hide the rest of the thread.
-                    return null;
-                  }
-                })
+                .map((reply) => fetchSharedThreadReply(reply))
             );
           } catch {
             // Thread indexes are additive; older posts may not have one yet.
@@ -1793,11 +1792,11 @@ function App() {
     );
     for (const reply of [
       ...acceptedReplies,
-      ...outgoingReplies,
       ...sharedThreadReplies.flat()
     ]) {
       if (reply) {
-        const threadReply = toThreadReply(reply);
+        const threadReply = fetchedReplyToThreadReply(reply);
+        if (!threadReply) continue;
         Object.assign(
           nextReplies,
           addThreadReplyToPost(nextReplies, postAddressForThreadReply(threadReply), threadReply)
@@ -1807,6 +1806,7 @@ function App() {
 
     if (generation === feedRefreshGeneration.current) {
       setRepliesByPost(nextReplies);
+      setError((current) => current === "Request timed out" ? "" : current);
     }
   }
 
@@ -1910,15 +1910,22 @@ function App() {
         const existingManifest = await loadLocalThreadManifest(reply.postId);
         const manifest = upsertReplyInThreadManifest(existingManifest, publishedReply, published);
         await publishJson(sessionToken, makeThreadPath(reply.postId), manifest);
+        setRepliesByPost((current) =>
+          addThreadReplyToPost(
+            current,
+            postAddressForThreadReply(publishedReply),
+            publishedReply
+          )
+        );
         setNotice("Reply published to the thread.");
       } else {
         await submitReplyByIdentity(sessionToken, item.post.author, publishedReply);
-        setNotice("Public reply published and submitted to the post author.");
+        setNotice("Reply published and sent to the post owner for thread acceptance.");
       }
 
-      setRepliesByPost((current) => addThreadReplyToPost(current, item.address, publishedReply));
       setReplyDrafts((current) => ({ ...current, [draftKey]: "" }));
       setActiveReplyComposer((current) => (current === draftKey ? "" : current));
+      void refreshFeedSilently();
     });
   }
 
@@ -2002,7 +2009,7 @@ function App() {
 
   async function publishReceivedMessage(
     message: SpokeMessage,
-    options: { silent?: boolean } = {}
+    options: { rethrow?: boolean; silent?: boolean } = {}
   ) {
     try {
       await publishJson(sessionToken, `/spoke/messages/received/${message.id}`, message);
@@ -2012,6 +2019,9 @@ function App() {
       void refreshConversationsSilently();
     } catch (err) {
       setError(`Message accepted, but local publish failed: ${apiErrorMessage(err)}`);
+      if (options.rethrow) {
+        throw err;
+      }
     }
   }
 
@@ -2059,12 +2069,10 @@ function App() {
           (isSpokeReply(payload) || isSpokeThreadReply(payload)) &&
           hasAcceptedContactForIdentity(nextContacts, replyAuthor(payload))
         ) {
-          await acceptPendingIngress(record.ingress_id);
-          const threadReply = toThreadReply(payload);
-          setRepliesByPost((current) =>
-            addThreadReplyToPost(current, postAddressForThreadReply(threadReply), threadReply)
-          );
-          await publishAcceptedReply(payload, { silent: true });
+          await publishBeforeAcceptingIngress({
+            publishLocalCopy: () => publishAcceptedReply(payload, { rethrow: true, silent: true }),
+            acceptIngress: () => acceptPendingIngress(record.ingress_id)
+          });
           autoHandledIngressIds.push(record.ingress_id);
           continue;
         }
@@ -2074,9 +2082,11 @@ function App() {
           messageBelongsToConversation(payload) &&
           messageTargetsIdentity(payload, localIdentity)
         ) {
-          await acceptPendingIngress(record.ingress_id);
+          await publishBeforeAcceptingIngress({
+            publishLocalCopy: () => publishReceivedMessage(payload, { rethrow: true, silent: true }),
+            acceptIngress: () => acceptPendingIngress(record.ingress_id)
+          });
           setConversations((current) => upsertConversationMessage(current, payload, "received"));
-          await publishReceivedMessage(payload, { silent: true });
           autoHandledIngressIds.push(record.ingress_id);
           continue;
         }
@@ -2167,10 +2177,10 @@ function App() {
       const opened =
         review[record.ingress_id]?.opened ||
         parseIncomingPayload((await openIngress(sessionToken, record.ingress_id)).plaintext);
-      await acceptPendingIngress(record.ingress_id);
-      setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
-      recordHandledNotification(record, "accepted", opened);
       if (isSpokeFollowRequest(opened)) {
+        await acceptPendingIngress(record.ingress_id);
+        setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
+        recordHandledNotification(record, "accepted", opened);
         const nextContacts = upsertContact(contacts, acceptedContactFromRequest(opened));
         setContacts(nextContacts);
         await sendFollowResponse(opened, "accepted");
@@ -2179,6 +2189,9 @@ function App() {
         return;
       }
       if (isSpokeFollowResponse(opened)) {
+        await acceptPendingIngress(record.ingress_id);
+        setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
+        recordHandledNotification(record, "accepted", opened);
         const nextContacts = applyFollowResponse(contacts, opened);
         setContacts(nextContacts);
         setNotice(
@@ -2193,17 +2206,23 @@ function App() {
         if (!messageBelongsToConversation(opened) || !messageTargetsIdentity(opened, localIdentity)) {
           throw new Error("Message is not addressed to this Spoke identity.");
         }
+        await publishBeforeAcceptingIngress({
+          publishLocalCopy: () => publishReceivedMessage(opened, { rethrow: true, silent: true }),
+          acceptIngress: () => acceptPendingIngress(record.ingress_id)
+        });
+        setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
+        recordHandledNotification(record, "accepted", opened);
         setConversations((current) => upsertConversationMessage(current, opened, "received"));
-        setNotice("Message accepted. Publishing local copy...");
-        void publishReceivedMessage(opened);
+        setNotice("Message accepted into the local conversation.");
         return;
       }
-      const threadReply = toThreadReply(opened);
-      setRepliesByPost((current) =>
-        addThreadReplyToPost(current, postAddressForThreadReply(threadReply), threadReply)
-      );
-      setNotice("Reply accepted. Publishing local copy...");
-      void publishAcceptedReply(opened);
+      await publishBeforeAcceptingIngress({
+        publishLocalCopy: () => publishAcceptedReply(opened, { rethrow: true, silent: true }),
+        acceptIngress: () => acceptPendingIngress(record.ingress_id)
+      });
+      setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
+      recordHandledNotification(record, "accepted", opened);
+      setNotice("Reply accepted and published to the thread.");
     });
   }
 
@@ -2223,17 +2242,32 @@ function App() {
     await submitFollowResponseByIdentity(sessionToken, request.sender, response);
   }
 
-  async function publishAcceptedReply(reply: SpokeAnyReply, options: { silent?: boolean } = {}) {
+  async function publishAcceptedReply(
+    reply: SpokeAnyReply,
+    options: { rethrow?: boolean; silent?: boolean } = {}
+  ) {
     try {
       if (isSpokeThreadReply(reply)) {
         const published =
           reply.contentId || reply.address
             ? { address: reply.address, content_id: reply.contentId || reply.address || reply.id }
             : await publishJson(sessionToken, threadReplyPath(reply), reply);
+        const publishedReply = {
+          ...reply,
+          address: reply.address ?? published.address,
+          contentId: reply.contentId ?? published.content_id
+        };
         if (sameIdentity(reply.postAuthor, localIdentity)) {
           const existingManifest = await loadLocalThreadManifest(reply.postId);
-          const threadManifest = upsertReplyInThreadManifest(existingManifest, reply, published);
+          const threadManifest = upsertReplyInThreadManifest(existingManifest, publishedReply, published);
           await publishJson(sessionToken, makeThreadPath(reply.postId), threadManifest);
+          setRepliesByPost((current) =>
+            addThreadReplyToPost(
+              current,
+              postAddressForThreadReply(publishedReply),
+              publishedReply
+            )
+          );
         }
         if (!options.silent) {
           setNotice("Reply accepted and published to the thread.");
@@ -2257,7 +2291,14 @@ function App() {
       }
       void refreshFeedSilently();
     } catch (err) {
-      setError(`Reply accepted, but local publish failed: ${apiErrorMessage(err)}`);
+      setError(
+        options.rethrow
+          ? `Reply could not be published to the thread: ${apiErrorMessage(err)}`
+          : `Reply accepted, but local publish failed: ${apiErrorMessage(err)}`
+      );
+      if (options.rethrow) {
+        throw err;
+      }
     }
   }
 
@@ -2637,9 +2678,14 @@ function App() {
 
   function renderPostCard(item: FeedItem) {
     const postId = item.post.id || postIdFromPostAddress(item.address);
+    const threadReplies = threadRepliesForPost({
+      repliesByPost,
+      postAddress: item.address,
+      postId
+    });
     const threadTree = buildThreadTree({
       postId,
-      replies: repliesByPost[item.address] || []
+      replies: threadReplies
     });
 
     return (
@@ -3187,7 +3233,7 @@ function App() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {updateCheck?.available ? (
+                  {showSpokeUpdateInstall ? (
                     <Button type="button" variant="outline" onClick={installSpokeUpdate} disabled={updateAction === "install"} title="Install signed Spoke update">
                       <Download className="size-4" />
                     Update

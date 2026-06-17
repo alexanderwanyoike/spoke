@@ -173,6 +173,15 @@ export type SpokeThreadReply = {
 
 export type SpokeAnyReply = SpokeReply | SpokeThreadReply;
 
+export type SpokeThreadManifestReply = {
+  id: string;
+  author: string;
+  address?: string | null;
+  contentId?: string;
+  createdAt: string;
+  moderation: "accepted";
+};
+
 export type SpokeThreadManifest = {
   schema: "spoke.thread.v2";
   postId: string;
@@ -181,14 +190,7 @@ export type SpokeThreadManifest = {
     identity: string;
     addedAt: string;
   }>;
-  replies: Array<{
-    id: string;
-    author: string;
-    address?: string | null;
-    contentId?: string;
-    createdAt: string;
-    moderation: "accepted";
-  }>;
+  replies: SpokeThreadManifestReply[];
   updatedAt: string;
 };
 

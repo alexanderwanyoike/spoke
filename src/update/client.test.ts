@@ -1,7 +1,7 @@
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { tauriSpokeUpdateClient } from "./client";
+import { shouldShowSpokeUpdateInstall, tauriSpokeUpdateClient } from "./client";
 
 vi.mock("@tauri-apps/plugin-updater", () => ({
   check: vi.fn()
@@ -45,5 +45,33 @@ describe("tauriSpokeUpdateClient", () => {
 
     expect(update.downloadAndInstall).toHaveBeenCalledOnce();
     expect(relaunch).toHaveBeenCalledOnce();
+  });
+});
+
+describe("shouldShowSpokeUpdateInstall", () => {
+  it("hides the install action in local dev builds", () => {
+    expect(
+      shouldShowSpokeUpdateInstall({
+        updateCheck: {
+          available: true,
+          version: "0.2.0",
+          currentVersion: "0.1.0"
+        },
+        isDev: true
+      })
+    ).toBe(false);
+  });
+
+  it("shows the install action for available updates outside local dev", () => {
+    expect(
+      shouldShowSpokeUpdateInstall({
+        updateCheck: {
+          available: true,
+          version: "0.2.0",
+          currentVersion: "0.1.0"
+        },
+        isDev: false
+      })
+    ).toBe(true);
   });
 });

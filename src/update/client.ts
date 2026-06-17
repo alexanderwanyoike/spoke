@@ -21,6 +21,13 @@ export type SpokeUpdateClient = {
   installAndRelaunch(): Promise<void>;
 };
 
+export function shouldShowSpokeUpdateInstall(input: {
+  updateCheck: SpokeUpdateCheck | null;
+  isDev: boolean;
+}) {
+  return !input.isDev && input.updateCheck?.available === true;
+}
+
 let pendingUpdate: Update | null = null;
 
 export const tauriSpokeUpdateClient: SpokeUpdateClient = {

@@ -106,6 +106,20 @@ export function localPostReferences(
     });
   }
 
+  if (index) {
+    for (const item of published.filter((entry) => entry.path?.startsWith("/spoke/posts/"))) {
+      if (!item.path || !refs.has(item.path)) continue;
+      const current = refs.get(item.path);
+      refs.set(item.path, {
+        path: item.path,
+        address: current?.address || item.address,
+        contentId: current?.contentId || item.content_id
+      });
+    }
+
+    return [...refs.values()];
+  }
+
   for (const item of published.filter((entry) => entry.path?.startsWith("/spoke/posts/"))) {
     if (!item.path) continue;
     const current = refs.get(item.path);

@@ -155,7 +155,7 @@ describe("Spoke feed helpers", () => {
     ]);
   });
 
-  it("includes local post objects even when the feed index missed them", () => {
+  it("uses the local feed index as the visible post source when it exists", () => {
     const result = localPostReferences(
       {
         schema: "spoke.feed.v1",
@@ -183,12 +183,60 @@ describe("Spoke feed helpers", () => {
       ]
     );
 
-    expect(result.map((item) => item.path).sort()).toEqual([
-      "/spoke/posts/post_indexed",
-      "/spoke/posts/post_orphan"
+    expect(result.map((item) => item.path)).toEqual(["/spoke/posts/post_indexed"]);
+  });
+
+  it("falls back to local post objects when no feed index exists yet", () => {
+    const result = localPostReferences(null, [
+      {
+        content_id: "cid_orphan",
+        size: 1,
+        path: "/spoke/posts/post_orphan",
+        address: "alice.jolt/spoke/posts/post_orphan",
+        local_sequence: 5,
+        pin_state: "local"
+      }
     ]);
-    expect(result.find((item) => item.path === "/spoke/posts/post_orphan")?.contentId).toBe(
-      "cid_orphan"
+
+    expect(result).toEqual([
+      {
+        path: "/spoke/posts/post_orphan",
+        address: "alice.jolt/spoke/posts/post_orphan",
+        contentId: "cid_orphan"
+      }
+    ]);
+  });
+
+  it("enriches indexed local post references from the local published inventory", () => {
+    const result = localPostReferences(
+      {
+        schema: "spoke.feed.v1",
+        owner: "alice.jolt",
+        updatedAt: "2026-06-06T10:00:00.000Z",
+        posts: [
+          {
+            id: "post_indexed",
+            path: "/spoke/posts/post_indexed",
+            address: "alice.jolt/spoke/posts/post_indexed",
+            title: "Indexed",
+            createdAt: "2026-06-06T10:00:00.000Z"
+          }
+        ]
+      },
+      [
+        {
+          content_id: "cid_indexed",
+          size: 1,
+          path: "/spoke/posts/post_indexed",
+          address: "alice.jolt/spoke/posts/post_indexed",
+          local_sequence: 5,
+          pin_state: "local"
+        }
+      ]
+    );
+
+    expect(result.find((item) => item.path === "/spoke/posts/post_indexed")?.contentId).toBe(
+      "cid_indexed"
     );
   });
 
