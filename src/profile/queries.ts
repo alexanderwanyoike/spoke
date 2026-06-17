@@ -5,12 +5,12 @@
 // social truth.
 
 import { useMemo, useSyncExternalStore } from "react";
-import { referenceKey } from "./jolt";
-import { normalizeIdentity } from "./follow";
-import { store as defaultStore, type Store, type StoreSnapshot } from "./store";
+import { referenceKey } from "../jolt";
+import { normalizeIdentity } from "../follow";
+import { store as defaultStore, type Store, type StoreSnapshot } from "../store";
 import { PROFILE_PATH } from "./commands";
-import type { SpokeProfile } from "./api";
-import type { ProfilesByIdentity } from "./profile";
+import type { SpokeProfile } from "../api";
+import type { ProfilesByIdentity } from "./model";
 
 export function selectProfile(
   snapshot: StoreSnapshot,

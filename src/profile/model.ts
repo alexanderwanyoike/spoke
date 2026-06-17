@@ -1,6 +1,6 @@
-import type { SpokeProfile } from "./api";
-import type { Contact } from "./feed";
-import { normalizeIdentity, sameIdentity } from "./follow";
+import type { SpokeProfile } from "../api";
+import type { Contact } from "../feed";
+import { normalizeIdentity, sameIdentity } from "../follow";
 
 export type ProfilesByIdentity = Record<string, SpokeProfile>;
 

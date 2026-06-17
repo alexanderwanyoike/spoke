@@ -183,15 +183,16 @@ import {
 } from "./media";
 import {
   displayNameForProfileIdentity,
+  loadProfile,
   normalizeProfileDraft,
   profileCacheKey,
   profileLinksFromDraft,
+  publishProfile,
+  useProfiles,
   type ProfileDraft,
   type ProfilesByIdentity
 } from "./profile";
 import { createJoltSdk } from "./jolt";
-import { loadProfile, publishProfile } from "./commands";
-import { useProfiles } from "./queries";
 import {
   tauriSpokeUpdateClient,
   type SpokeUpdateCheck,

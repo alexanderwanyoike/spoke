@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { JoltSdk, Reference } from "./jolt";
-import { createStore } from "./store";
+import type { JoltSdk, Reference } from "../jolt";
+import { createStore } from "../store";
 import { loadProfile, publishProfile, PROFILE_PATH } from "./commands";
 import { selectProfile, selectProfiles } from "./queries";
-import type { SpokeProfile } from "./api";
+import type { SpokeProfile } from "../api";
 
 function profile(identity: string, displayName: string): SpokeProfile {
   return {

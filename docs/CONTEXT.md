@@ -11,11 +11,15 @@ never learn about posts, replies, or audiences.
 ```
 UI (React, thin)            knows ONLY the command + query seams. Nothing below.
   ↓
-queries.ts / commands.ts    the public domain seam (CQRS)
-  ↓                          queries expose projection subscription hooks
-store.ts                    PRIVATE to the domain. monotonic normalized cache.
+src/<feature>/              the public domain seam (CQRS), one folder per feature
+  commands.ts                 mutations
+  queries.ts                  projection subscription hooks + selectors
+  model.ts                    types + pure domain helpers / tolerant decoders
+  index.ts                    barrel: the feature's only public surface
+  ↓
+src/store.ts                PRIVATE to the domain. monotonic normalized cache.
   ↓                          React never imports or subscribes to it directly.
-Jolt SDK / ACL (src/jolt/)  pure transport + protocol primitives, no social concepts
+src/jolt/ (SDK / ACL)       pure transport + protocol primitives, no social concepts
   ↓
 Jolt daemon (../../jolt)    identity, publish, resolve, fetch, encrypt, ingress
 ```
@@ -25,6 +29,15 @@ React depends on commands (mutations) and query hooks (`useThread`, `useFeed`,
 wiring live behind the query seam and are swappable without touching components.
 `useState` is for UI-only concerns (drafts, modals, active tab), never social
 truth.
+
+### File organization
+
+Each social feature owns a folder under `src/` (`src/profile/`, `src/feed/`,
+`src/message/`, ...) bundling its `model` / `commands` / `queries` and tests
+behind an `index.ts` barrel; consumers import only from `./<feature>`, never a
+file inside it. The store (`src/store.ts`) and Jolt SDK (`src/jolt/`) are shared
+infrastructure, not features, so they sit at the top level. Features are moved
+into this layout as their cards are worked, not all at once.
 
 ## Glossary
 

@@ -2,11 +2,11 @@
 // through the Jolt SDK and folds the confirmed result into the monotonic store.
 // Components call commands; they never touch the store or the SDK directly.
 
-import type { JoltSdk } from "./jolt";
-import { normalizeIdentity } from "./follow";
-import { decodeProfile } from "./profile";
-import { store as defaultStore, type Store } from "./store";
-import type { SpokeProfile } from "./api";
+import type { JoltSdk } from "../jolt";
+import { normalizeIdentity } from "../follow";
+import { decodeProfile } from "./model";
+import { store as defaultStore, type Store } from "../store";
+import type { SpokeProfile } from "../api";
 
 export const PROFILE_PATH = "/spoke/profile";
 
