@@ -17,6 +17,7 @@ Spoke as a proving app, but Spoke product/UI/social cards should live here.
 | [096](096-spoke-media-completion-and-link-cards.md) | AFK after design | Ready after 091 | Finish remaining media/link attachment gaps after thread shape is settled. |
 | [097](097-spoke-social-product-slice-and-community-identities.md) | HITL | Discussion next | Decide Spoke's coherent social release and model groups/pages/orgs as Jolt identities. |
 | [098](098-spoke-regression-test-harness-and-ui-coverage.md) | AFK | Ready after 091/096/097 | Add UI coverage and a repeatable Bob/Alice/Carol regression harness. |
+| [099](099-spoke-compatibility-boundary-and-schema-evolution.md) | AFK | Ready after 091 stabilises | Add tolerant readers, strict writers, canonical models, and fixture-backed compatibility tests. |
 
 ## Reconciliation Notes
 
@@ -28,4 +29,7 @@ Spoke as a proving app, but Spoke product/UI/social cards should live here.
 - Group chat is not the target model. Groups, pages, and organisations should
   be Jolt identities with their own profiles, posts, membership/admin policy,
   and follow-request surfaces.
-
+- Current recursive thread testing exposed that malformed historical Spoke
+  objects can break the rendered feed even when the daemon/API data is present;
+  card `099` should establish the compatibility boundary before more schema
+  evolution lands.
