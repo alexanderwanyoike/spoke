@@ -24,8 +24,10 @@ identity-owned namespace rule.
 
 A post thread is a shared conversation anchored by the post author's identity.
 The post author owns the thread manifest. Each participant owns and signs their
-own replies under their own identity. Clients assemble the tree locally from
-manifest participants and reply parent references.
+own replies under their own identity. The post author's manifest records
+accepted reply references so clients can discover reply IDs without remote path
+listing. Clients assemble the tree locally from accepted manifest references
+and reply parent references.
 
 ## Proposed Schemas
 
@@ -39,6 +41,16 @@ Thread manifest:
   "participants": [
     { "identity": "alice.jolt", "addedAt": "2026-06-10T12:00:00Z" },
     { "identity": "bob.jolt", "addedAt": "2026-06-10T12:05:00Z" }
+  ],
+  "replies": [
+    {
+      "id": "reply_def456",
+      "author": "bob.jolt",
+      "address": "bob.jolt:/spoke/replies/post_abc123/reply_def456",
+      "contentId": "bafy...",
+      "createdAt": "2026-06-10T12:05:00Z",
+      "moderation": "accepted"
+    }
   ],
   "updatedAt": "2026-06-10T12:05:00Z"
 }
@@ -80,7 +92,7 @@ Nested reply:
 - Publish replies under the replier's own identity path:
   `/spoke/replies/{postId}/{replyId}`.
 - Send the post author an ingress notification so they can add the participant
-  to the thread manifest.
+  and accepted reply reference to the thread manifest.
 - For post-author self-replies, publish the reply locally and update the thread
   manifest immediately without sending ingress.
 - Build a nested reply tree from `parent` references.
@@ -91,20 +103,20 @@ Nested reply:
 
 ## Acceptance Criteria
 
-- [ ] A new post creates or exposes a thread manifest.
-- [ ] A contact can reply to the post and publish the reply under their own
+- [x] A new post creates or exposes a thread manifest.
+- [x] A contact can reply to the post and publish the reply under their own
       identity path.
-- [ ] The post author can reply to their own post without an ingress round trip.
-- [ ] The post author can reply to their own reply, producing a nested
+- [x] The post author can reply to their own post without an ingress round trip.
+- [x] The post author can reply to their own reply, producing a nested
       self-reply.
-- [ ] The post author receives the reply notification and updates the manifest.
-- [ ] Alice and Carol can reply to the post at any point.
-- [ ] Alice and Carol can reply to any visible reply at any point.
-- [ ] Bob can reply to Alice's reply, and Carol can reply to Bob's reply.
-- [ ] All participants can fetch the same nested conversation tree.
-- [ ] Existing flat `spoke.reply.v1` and `spoke.thread.v1` content still
+- [x] The post author receives the reply notification and updates the manifest.
+- [x] Alice and Carol can reply to the post at any point.
+- [x] Alice and Carol can reply to any visible reply at any point.
+- [x] Bob can reply to Alice's reply, and Carol can reply to Bob's reply.
+- [x] All participants can fetch the same nested conversation tree.
+- [x] Existing flat `spoke.reply.v1` and `spoke.thread.v1` content still
       renders.
-- [ ] No new Jolt daemon capabilities are required.
+- [x] No new Jolt daemon capabilities are required.
 - [ ] A Bob/Alice/Carol demo shows recursive replies propagating.
 
 ## Non-Goals

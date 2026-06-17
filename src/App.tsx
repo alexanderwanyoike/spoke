@@ -120,11 +120,14 @@ import {
   type NodeStatus,
   type PublishedContent,
   type SpokeFeedIndex,
+  type SpokeAnyReply,
   type SpokePost,
   type SpokeProfile,
   type SpokeProfileLink,
   type SpokeReply,
-  type SpokeThreadIndex
+  type SpokeThreadIndex,
+  type SpokeThreadManifest,
+  type SpokeThreadReply
 } from "./api";
 import {
   addOptimisticLocalPost,
@@ -154,10 +157,19 @@ import {
   type SpokeFollowResponse
 } from "./follow";
 import {
-  addReplyToPost,
+  addThreadReplyToPost,
+  buildThreadTree,
+  createThreadManifest,
+  createThreadReply,
+  postIdFromPostAddress,
+  threadReplyPath,
+  threadReplyReference,
   threadPathForPostAddress,
+  toThreadReply,
+  upsertReplyInThreadManifest,
   upsertReplyInThreadIndex,
-  type RepliesByPost
+  type ThreadTreeNode,
+  type ThreadRepliesByPost
 } from "./thread";
 import {
   conversationIdForParticipants,
@@ -223,7 +235,7 @@ type ReviewState = {
   };
 };
 
-type SpokeIncomingPayload = SpokeReply | SpokeFollowRequest | SpokeFollowResponse | SpokeMessage;
+type SpokeIncomingPayload = SpokeAnyReply | SpokeFollowRequest | SpokeFollowResponse | SpokeMessage;
 
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
@@ -283,6 +295,22 @@ function isSpokeReply(value: unknown): value is SpokeReply {
   );
 }
 
+function isSpokeThreadReply(value: unknown): value is SpokeThreadReply {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { schema?: unknown }).schema === "spoke.reply.v2"
+  );
+}
+
+function isSpokeThreadManifest(value: unknown): value is SpokeThreadManifest {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { schema?: unknown }).schema === "spoke.thread.v2"
+  );
+}
+
 function isSpokeProfile(value: unknown): value is SpokeProfile {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -315,6 +343,7 @@ function parseIncomingPayload(bytes: number[]) {
   const payload = parseJsonBytes<unknown>(bytes);
   if (
     isSpokeReply(payload) ||
+    isSpokeThreadReply(payload) ||
     isSpokeFollowRequest(payload) ||
     isSpokeFollowResponse(payload) ||
     isSpokeMessage(payload)
@@ -322,6 +351,14 @@ function parseIncomingPayload(bytes: number[]) {
     return payload;
   }
   throw new Error("Unsupported Spoke incoming object.");
+}
+
+function postAddressForThreadReply(reply: SpokeThreadReply) {
+  return `${reply.postAuthor}/spoke/posts/${reply.postId}`;
+}
+
+function replyAuthor(reply: SpokeAnyReply) {
+  return reply.schema === "spoke.reply.v2" ? reply.author : reply.sender;
 }
 
 function messageTargetsIdentity(message: SpokeMessage, identity: string) {
@@ -396,7 +433,7 @@ function App() {
   const [attachmentErrors, setAttachmentErrors] = useState<Record<string, string>>({});
   const [feedIndex, setFeedIndex] = useState<SpokeFeedIndex | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
-  const [repliesByPost, setRepliesByPost] = useState<RepliesByPost>({});
+  const [repliesByPost, setRepliesByPost] = useState<ThreadRepliesByPost>({});
   const [conversations, setConversations] = useState<ConversationsById>({});
   const [activeView, setActiveView] = useState<AppView>("feed");
   const [activeThreadId, setActiveThreadId] = useState("");
@@ -405,6 +442,7 @@ function App() {
   const [handledNotifications, setHandledNotifications] = useState<HandledNotification[]>([]);
   const [review, setReview] = useState<ReviewState>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [activeReplyComposer, setActiveReplyComposer] = useState("");
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [threadSearch, setThreadSearch] = useState("");
   const [messageAttachments, setMessageAttachments] = useState<Record<string, PendingImageAttachment[]>>({});
@@ -622,7 +660,7 @@ function App() {
     for (const item of feed) {
       addIdentity(item.post.author);
       for (const reply of repliesByPost[item.address] || []) {
-        addIdentity(reply.sender);
+        addIdentity(reply.author);
       }
     }
     for (const record of incoming) addIdentity(record.sender_identity);
@@ -1373,6 +1411,15 @@ function App() {
       };
       const index = await loadLocalFeed();
       const publishedResult = await publishPostWithIndex(sessionToken, post, index);
+      await publishJson(
+        sessionToken,
+        post.threadPath || makeThreadPath(id),
+        createThreadManifest({
+          postId: id,
+          owner: localIdentity,
+          createdAt: post.createdAt
+        })
+      );
       setFeedIndex(publishedResult.feedIndex);
       feedRefreshGeneration.current += 1;
       for (const attachment of attachments) {
@@ -1529,7 +1576,7 @@ function App() {
 
   async function fetchReply(contentId: string) {
     const result = await fetchTarget(sessionToken, contentId);
-    return JSON.parse(decodeFetchData(result)) as SpokeReply;
+    return JSON.parse(decodeFetchData(result)) as SpokeAnyReply;
   }
 
   async function fetchMessage(contentId: string) {
@@ -1546,12 +1593,12 @@ function App() {
       ? `${owner}${addressOrPath}`
       : addressOrPath;
     const result = await fetchTarget(sessionToken, target);
-    return JSON.parse(decodeFetchData(result)) as SpokeThreadIndex;
+    return JSON.parse(decodeFetchData(result)) as SpokeThreadIndex | SpokeThreadManifest;
   }
 
   async function decryptReply(address: string) {
     const result = await decryptEncryptedTarget(sessionToken, address);
-    return parseJsonBytes<SpokeReply>(result.plaintext);
+    return parseJsonBytes<SpokeAnyReply>(result.plaintext);
   }
 
   async function decryptMessage(address: string) {
@@ -1568,8 +1615,20 @@ function App() {
     const inventory = await listPublished(sessionToken).catch(() => []);
     const publishedThread = latestPublishedByPath(inventory, threadPath);
     return publishedThread
-      ? await fetchPublishedJson<SpokeThreadIndex>(publishedThread.content_id)
+      ? await fetchPublishedJson<SpokeThreadIndex | SpokeThreadManifest>(publishedThread.content_id)
       : null;
+  }
+
+  async function loadLocalThreadManifest(postId: string) {
+    const inventory = await listPublished(sessionToken).catch(() => []);
+    const publishedThread = latestPublishedByPath(inventory, makeThreadPath(postId));
+    if (!publishedThread) {
+      return null;
+    }
+    const thread = await fetchPublishedJson<SpokeThreadIndex | SpokeThreadManifest>(
+      publishedThread.content_id
+    );
+    return isSpokeThreadManifest(thread) ? thread : null;
   }
 
   async function loadFeedSnapshot(nextContacts = contacts) {
@@ -1680,7 +1739,7 @@ function App() {
       setFeedRefreshing(false);
     }
 
-    const nextReplies: RepliesByPost = {};
+    const nextReplies: ThreadRepliesByPost = {};
     const acceptedReplies = await Promise.all(
       spokeObjects
         .filter((object) => object.path?.startsWith("/spoke/replies/"))
@@ -1738,7 +1797,11 @@ function App() {
       ...sharedThreadReplies.flat()
     ]) {
       if (reply) {
-        Object.assign(nextReplies, addReplyToPost(nextReplies, reply));
+        const threadReply = toThreadReply(reply);
+        Object.assign(
+          nextReplies,
+          addThreadReplyToPost(nextReplies, postAddressForThreadReply(threadReply), threadReply)
+        );
       }
     }
 
@@ -1815,26 +1878,47 @@ function App() {
     }
   }
 
-  async function sendReply(item: FeedItem) {
-    const body = (replyDrafts[item.address] || "").trim();
+  function replyDraftKey(item: FeedItem, parent: string) {
+    return `${item.address}:${parent}`;
+  }
+
+  async function sendReply(item: FeedItem, parent: string = item.post.id) {
+    const draftKey = replyDraftKey(item, parent);
+    const body = (replyDrafts[draftKey] || "").trim();
     if (!body) {
       setError("Reply body is required.");
       return;
     }
-    await withBusy(`reply:${item.address}`, async () => {
-      const reply: SpokeReply = {
-        schema: "spoke.reply.v1",
+    await withBusy(`reply:${draftKey}`, async () => {
+      const reply = createThreadReply({
         id: makeId("reply"),
-        sender: localIdentity,
+        postId: item.post.id || postIdFromPostAddress(item.address),
         postAuthor: item.post.author,
-        postAddress: item.address,
+        parent,
+        author: localIdentity,
         body,
         createdAt: new Date().toISOString()
+      });
+      const published = await publishJson(sessionToken, threadReplyPath(reply), reply);
+      const publishedReply = {
+        ...reply,
+        address: published.address,
+        contentId: published.content_id
       };
-      await submitReplyByIdentity(sessionToken, item.contact!.identity, reply);
-      setRepliesByPost((current) => addReplyToPost(current, reply));
-      setReplyDrafts((current) => ({ ...current, [item.address]: "" }));
-      setNotice("Encrypted reply submitted to recipient ingress.");
+
+      if (sameIdentity(item.post.author, localIdentity)) {
+        const existingManifest = await loadLocalThreadManifest(reply.postId);
+        const manifest = upsertReplyInThreadManifest(existingManifest, publishedReply, published);
+        await publishJson(sessionToken, makeThreadPath(reply.postId), manifest);
+        setNotice("Reply published to the thread.");
+      } else {
+        await submitReplyByIdentity(sessionToken, item.post.author, publishedReply);
+        setNotice("Public reply published and submitted to the post author.");
+      }
+
+      setRepliesByPost((current) => addThreadReplyToPost(current, item.address, publishedReply));
+      setReplyDrafts((current) => ({ ...current, [draftKey]: "" }));
+      setActiveReplyComposer((current) => (current === draftKey ? "" : current));
     });
   }
 
@@ -1953,6 +2037,7 @@ function App() {
         record.schema_hint &&
         record.schema_hint !== "spoke.follow_response.v1" &&
         record.schema_hint !== "spoke.reply.v1" &&
+        record.schema_hint !== "spoke.reply.v2" &&
         record.schema_hint !== "spoke.message.v1" &&
         record.schema_hint !== "spoke.message.v2"
       ) {
@@ -1970,9 +2055,15 @@ function App() {
           autoHandledIngressIds.push(record.ingress_id);
           continue;
         }
-        if (isSpokeReply(payload) && hasAcceptedContactForIdentity(nextContacts, payload.sender)) {
+        if (
+          (isSpokeReply(payload) || isSpokeThreadReply(payload)) &&
+          hasAcceptedContactForIdentity(nextContacts, replyAuthor(payload))
+        ) {
           await acceptPendingIngress(record.ingress_id);
-          setRepliesByPost((current) => addReplyToPost(current, payload));
+          const threadReply = toThreadReply(payload);
+          setRepliesByPost((current) =>
+            addThreadReplyToPost(current, postAddressForThreadReply(threadReply), threadReply)
+          );
           await publishAcceptedReply(payload, { silent: true });
           autoHandledIngressIds.push(record.ingress_id);
           continue;
@@ -2107,7 +2198,10 @@ function App() {
         void publishReceivedMessage(opened);
         return;
       }
-      setRepliesByPost((current) => addReplyToPost(current, opened));
+      const threadReply = toThreadReply(opened);
+      setRepliesByPost((current) =>
+        addThreadReplyToPost(current, postAddressForThreadReply(threadReply), threadReply)
+      );
       setNotice("Reply accepted. Publishing local copy...");
       void publishAcceptedReply(opened);
     });
@@ -2129,12 +2223,33 @@ function App() {
     await submitFollowResponseByIdentity(sessionToken, request.sender, response);
   }
 
-  async function publishAcceptedReply(reply: SpokeReply, options: { silent?: boolean } = {}) {
+  async function publishAcceptedReply(reply: SpokeAnyReply, options: { silent?: boolean } = {}) {
     try {
+      if (isSpokeThreadReply(reply)) {
+        const published =
+          reply.contentId || reply.address
+            ? { address: reply.address, content_id: reply.contentId || reply.address || reply.id }
+            : await publishJson(sessionToken, threadReplyPath(reply), reply);
+        if (sameIdentity(reply.postAuthor, localIdentity)) {
+          const existingManifest = await loadLocalThreadManifest(reply.postId);
+          const threadManifest = upsertReplyInThreadManifest(existingManifest, reply, published);
+          await publishJson(sessionToken, makeThreadPath(reply.postId), threadManifest);
+        }
+        if (!options.silent) {
+          setNotice("Reply accepted and published to the thread.");
+        }
+        void refreshFeedSilently();
+        return;
+      }
+
       const publishedReply = await publishJson(sessionToken, makeReplyPath(reply.id), reply);
       if (sameIdentity(reply.postAuthor, localIdentity)) {
         const existingThread = await loadLocalThreadIndex(reply.postAddress);
-        const threadIndex = upsertReplyInThreadIndex(existingThread, reply, publishedReply);
+        const threadIndex = upsertReplyInThreadIndex(
+          existingThread && !isSpokeThreadManifest(existingThread) ? existingThread : null,
+          reply,
+          publishedReply
+        );
         await publishJson(sessionToken, threadPathForPostAddress(reply.postAddress), threadIndex);
       }
       if (!options.silent) {
@@ -2437,7 +2552,96 @@ function App() {
     );
   }
 
+  function renderReplyComposer(item: FeedItem, parent: string, placeholder: string) {
+    const draftKey = replyDraftKey(item, parent);
+    return (
+      <div className="flex gap-2">
+        <Textarea
+          className="min-h-12"
+          rows={2}
+          value={replyDrafts[draftKey] || ""}
+          onChange={(event) =>
+            setReplyDrafts((current) => ({ ...current, [draftKey]: event.target.value }))
+          }
+          placeholder={placeholder}
+        />
+        <Button
+          type="button"
+          size="icon-lg"
+          onClick={() => sendReply(item, parent)}
+          disabled={busy === `reply:${draftKey}`}
+          title="Publish reply"
+        >
+          {busy === `reply:${draftKey}` ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <MessageCircle className="size-4" />
+          )}
+        </Button>
+      </div>
+    );
+  }
+
+  function renderThreadReplyNode(item: FeedItem, node: ThreadTreeNode, depth = 0) {
+    const replyReference = threadReplyReference(node.reply);
+    const draftKey = replyDraftKey(item, replyReference);
+    const active = activeReplyComposer === draftKey;
+
+    return (
+      <div className={cn("space-y-2", depth > 0 ? "ml-4 sm:ml-6" : "")} key={replyReference}>
+        <div className="rounded-lg border spoke-border bg-background/80 p-3 shadow-sm shadow-foreground/5">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <Button
+              variant="ghost"
+              className="h-auto gap-2 p-0 hover:bg-transparent"
+              type="button"
+              onClick={() => openProfile(node.reply.author)}
+              title={`View ${displayNameForIdentity(node.reply.author)}`}
+            >
+              {renderAvatar(node.reply.author)}
+              <span className="font-medium">{displayNameForIdentity(node.reply.author)}</span>
+            </Button>
+            <time className="text-xs text-muted-foreground">
+              {new Date(node.reply.createdAt).toLocaleString()}
+            </time>
+          </div>
+          <p className="whitespace-pre-wrap text-sm">{node.reply.body}</p>
+          <div className="mt-3 flex justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setActiveReplyComposer((current) => (current === draftKey ? "" : draftKey))}
+            >
+              Reply
+            </Button>
+          </div>
+          {active ? (
+            <div className="mt-3">
+              {renderReplyComposer(
+                item,
+                replyReference,
+                `Reply to ${displayNameForIdentity(node.reply.author)}`
+              )}
+            </div>
+          ) : null}
+        </div>
+        {node.children.length > 0 ? (
+          <div className="space-y-2">
+            {node.children.map((child) => renderThreadReplyNode(item, child, depth + 1))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderPostCard(item: FeedItem) {
+    const postId = item.post.id || postIdFromPostAddress(item.address);
+    const threadTree = buildThreadTree({
+      postId,
+      replies: repliesByPost[item.address] || []
+    });
+
     return (
       <Card className="overflow-hidden" key={`${item.source}:${item.address}`}>
         <CardHeader className="bg-muted/20">
@@ -2484,44 +2688,12 @@ function App() {
         </CardContent>
         <CardFooter className="block space-y-3">
         <div className="grid gap-2">
-          {(repliesByPost[item.address] || []).map((reply) => (
-            <div className="rounded-lg border spoke-border bg-background/80 p-3 shadow-sm shadow-foreground/5" key={reply.id}>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <Button
-                  variant="ghost"
-                  className="h-auto gap-2 p-0 hover:bg-transparent"
-                  type="button"
-                  onClick={() => openProfile(reply.sender)}
-                  title={`View ${displayNameForIdentity(reply.sender)}`}
-                >
-                  {renderAvatar(reply.sender)}
-                  <span className="font-medium">{displayNameForIdentity(reply.sender)}</span>
-                </Button>
-                <time className="text-xs text-muted-foreground">{new Date(reply.createdAt).toLocaleString()}</time>
-              </div>
-              <p className="whitespace-pre-wrap text-sm">{reply.body}</p>
-            </div>
-          ))}
-          {(repliesByPost[item.address] || []).length === 0 ? (
+          {threadTree.map((node) => renderThreadReplyNode(item, node))}
+          {threadTree.length === 0 ? (
             <span className="text-sm text-muted-foreground">No replies yet.</span>
           ) : null}
         </div>
-        {item.source === "contact" ? (
-          <div className="flex gap-2">
-            <Textarea
-              className="min-h-12"
-              rows={2}
-              value={replyDrafts[item.address] || ""}
-              onChange={(event) =>
-                setReplyDrafts((current) => ({ ...current, [item.address]: event.target.value }))
-              }
-              placeholder={`Reply to ${displayNameForFeedItem(item)}`}
-            />
-            <Button type="button" size="icon-lg" onClick={() => sendReply(item)} title="Send encrypted reply">
-              <MessageCircle className="size-4" />
-            </Button>
-          </div>
-        ) : null}
+        {renderReplyComposer(item, postId, `Reply to ${displayNameForFeedItem(item)}`)}
         </CardFooter>
       </Card>
     );

@@ -167,7 +167,11 @@ export type SpokeThreadReply = {
   author: string;
   body: string;
   createdAt: string;
+  address?: string | null;
+  contentId?: string;
 };
+
+export type SpokeAnyReply = SpokeReply | SpokeThreadReply;
 
 export type SpokeThreadManifest = {
   schema: "spoke.thread.v2";
@@ -176,6 +180,14 @@ export type SpokeThreadManifest = {
   participants: Array<{
     identity: string;
     addedAt: string;
+  }>;
+  replies: Array<{
+    id: string;
+    author: string;
+    address?: string | null;
+    contentId?: string;
+    createdAt: string;
+    moderation: "accepted";
   }>;
   updatedAt: string;
 };
@@ -558,7 +570,7 @@ export function rejectIngress(sessionToken: string, ingressId: string) {
 export async function submitReplyByIdentity(
   sessionToken: string,
   receiverIdentity: string,
-  reply: SpokeReply
+  reply: SpokeAnyReply
 ) {
   return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, reply.id, reply);
 }

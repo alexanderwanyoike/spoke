@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import type { SpokeReply, SpokeThreadIndex } from "./api";
 import {
   addReplyToPost,
+  addThreadReplyToPost,
   buildThreadTree,
   createThreadManifest,
   createThreadReply,
+  legacyReplyToThreadReply,
   postIdFromPostAddress,
   threadReplyReference,
   threadPathForPostAddress,
   upsertThreadManifestParticipant,
+  upsertReplyInThreadManifest,
   upsertReplyInThreadIndex
 } from "./thread";
 
@@ -132,6 +135,96 @@ describe("Spoke thread helpers", () => {
     expect(tree[0].children[0].children.map((node) => node.reply.body)).toEqual([
       "Carol replies to Alice"
     ]);
+  });
+
+  it("records accepted v2 reply references in the owner manifest for shared fetch", () => {
+    const bob = createThreadReply({
+      id: "reply_bob_1",
+      postId: "post_1",
+      postAuthor: "alice.jolt",
+      author: "bob.jolt",
+      parent: "post_1",
+      body: "Bob replies publicly",
+      createdAt: "2026-06-17T09:00:00.000Z"
+    });
+    const carol = createThreadReply({
+      id: "reply_carol_1",
+      postId: "post_1",
+      postAuthor: "alice.jolt",
+      author: "carol.jolt",
+      parent: threadReplyReference(bob),
+      body: "Carol replies to Bob",
+      createdAt: "2026-06-17T09:01:00.000Z"
+    });
+
+    const manifest = upsertReplyInThreadManifest(
+      upsertReplyInThreadManifest(null, bob, {
+        address: "bob.jolt/spoke/replies/post_1/reply_bob_1",
+        content_id: "cid_bob"
+      }),
+      carol,
+      {
+        address: "carol.jolt/spoke/replies/post_1/reply_carol_1",
+        content_id: "cid_carol"
+      }
+    );
+
+    expect(manifest.participants.map((participant) => participant.identity)).toEqual([
+      "alice.jolt",
+      "bob.jolt",
+      "carol.jolt"
+    ]);
+    expect(manifest.replies.map((item) => `${item.author}:${item.id}`)).toEqual([
+      "bob.jolt:reply_bob_1",
+      "carol.jolt:reply_carol_1"
+    ]);
+    expect(manifest.replies[1]).toMatchObject({
+      address: "carol.jolt/spoke/replies/post_1/reply_carol_1",
+      contentId: "cid_carol",
+      moderation: "accepted"
+    });
+  });
+
+  it("converts legacy flat replies into post-level v2 thread replies", () => {
+    const legacy = reply({
+      id: "reply_legacy",
+      sender: "bob.jolt",
+      postAuthor: "alice.jolt",
+      postAddress: "alice.jolt/spoke/posts/post_1",
+      body: "Old reply"
+    });
+
+    expect(legacyReplyToThreadReply(legacy)).toEqual({
+      schema: "spoke.reply.v2",
+      id: "reply_legacy",
+      postId: "post_1",
+      postAuthor: "alice.jolt",
+      parent: "post_1",
+      author: "bob.jolt",
+      body: "Old reply",
+      createdAt: "2026-06-06T10:00:00.000Z"
+    });
+  });
+
+  it("groups nested public replies under a post address and replaces duplicate author replies", () => {
+    const original = createThreadReply({
+      id: "reply_bob_1",
+      postId: "post_1",
+      postAuthor: "alice.jolt",
+      author: "bob.jolt",
+      parent: "post_1",
+      body: "Original",
+      createdAt: "2026-06-17T09:00:00.000Z"
+    });
+    const edited = { ...original, body: "Latest" };
+
+    const result = addThreadReplyToPost(
+      addThreadReplyToPost({}, "alice.jolt/spoke/posts/post_1", original),
+      "alice.jolt/spoke/posts/post_1",
+      edited
+    );
+
+    expect(result["alice.jolt/spoke/posts/post_1"]).toEqual([edited]);
   });
 
   it("groups accepted replies under their post address in conversation order", () => {

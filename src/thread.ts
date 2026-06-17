@@ -1,6 +1,7 @@
 import {
   makeThreadPath,
   type PublishResponse,
+  type SpokeAnyReply,
   type SpokeReply,
   type SpokeThreadIndex,
   type SpokeThreadManifest,
@@ -8,6 +9,7 @@ import {
 } from "./api";
 
 export type RepliesByPost = Record<string, SpokeReply[]>;
+export type ThreadRepliesByPost = Record<string, SpokeThreadReply[]>;
 
 export type ThreadTreeNode = {
   reply: SpokeThreadReply;
@@ -39,6 +41,7 @@ export function createThreadManifest(input: {
     postId: input.postId,
     owner: input.owner,
     participants: [{ identity: input.owner, addedAt: input.createdAt }],
+    replies: [],
     updatedAt: input.createdAt
   };
 }
@@ -86,6 +89,40 @@ export function buildThreadTree(input: { postId: string; replies: SpokeThreadRep
 
 function sortThreadReplies(replies: SpokeThreadReply[]) {
   return [...replies].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export function legacyReplyToThreadReply(reply: SpokeReply): SpokeThreadReply {
+  const postId = postIdFromPostAddress(reply.postAddress);
+  return {
+    schema: "spoke.reply.v2",
+    id: reply.id,
+    postId,
+    postAuthor: reply.postAuthor,
+    parent: postId,
+    author: reply.sender,
+    body: reply.body,
+    createdAt: reply.createdAt
+  };
+}
+
+export function toThreadReply(reply: SpokeAnyReply): SpokeThreadReply {
+  return reply.schema === "spoke.reply.v2" ? reply : legacyReplyToThreadReply(reply);
+}
+
+export function addThreadReplyToPost(
+  current: ThreadRepliesByPost,
+  postAddress: string,
+  reply: SpokeThreadReply
+): ThreadRepliesByPost {
+  const existing = current[postAddress] || [];
+  const nextReference = threadReplyReference(reply);
+  return {
+    ...current,
+    [postAddress]: sortThreadReplies([
+      ...existing.filter((item) => threadReplyReference(item) !== nextReference),
+      reply
+    ])
+  };
 }
 
 export function sortReplies(replies: SpokeReply[]) {
@@ -146,6 +183,43 @@ export function upsertReplyInThreadIndex(
     replies: [
       nextReply,
       ...(existing?.replies || []).filter((item) => item.id !== reply.id)
+    ].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  };
+}
+
+export function upsertReplyInThreadManifest(
+  existing: SpokeThreadManifest | null,
+  reply: SpokeThreadReply,
+  publishedReply: Pick<PublishResponse, "address" | "content_id">
+): SpokeThreadManifest {
+  const createdAt = reply.createdAt;
+  const base =
+    existing ||
+    createThreadManifest({
+      postId: reply.postId,
+      owner: reply.postAuthor,
+      createdAt
+    });
+  const withParticipant = upsertThreadManifestParticipant(base, {
+    identity: reply.author,
+    addedAt: createdAt
+  });
+  const nextReply = {
+    id: reply.id,
+    author: reply.author,
+    address: reply.address ?? publishedReply.address,
+    contentId: reply.contentId ?? publishedReply.content_id,
+    createdAt: reply.createdAt,
+    moderation: "accepted" as const
+  };
+  const nextReference = `${nextReply.author}:${nextReply.id}`;
+
+  return {
+    ...withParticipant,
+    updatedAt: new Date().toISOString(),
+    replies: [
+      ...withParticipant.replies.filter((item) => `${item.author}:${item.id}` !== nextReference),
+      nextReply
     ].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   };
 }
