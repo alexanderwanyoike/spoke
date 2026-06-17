@@ -56,7 +56,7 @@ never the source of social truth.
 |------|-------|-------|--------|------------|----|
 | J1   | Jolt: append-record enumeration + append publish | jolt repo | done (merged to jolt `dev`) | — | jolt #155 |
 | 101  | Spoke: Jolt SDK seam + monotonic store (profile tracer) | spoke | done | — | #24 |
-| 102  | Spoke: feed vertical | spoke | in progress | 101 | — |
+| 102  | Spoke: feed vertical | spoke | done | 101 | #25 |
 | 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | needs rewrite | 101 | — |
 | 103  | Spoke: messages + follows vertical | spoke | not started | 101 | — |
 | 104  | Spoke: swap bridge enumeration → J1 door | spoke | not started | J1, 102, 091 | — |
@@ -141,8 +141,27 @@ single source of truth for "where are we."
 
 ### 104 - swap bridge enumeration → J1 door
 - **Goal:** replace the bridge enumeration implementation with the J1-backed
-  one. One-file change behind the `EnumerationSource` seam.
-- **Done when:** Collections read via Jolt's enumeration API; bridge removed.
+  one behind the `EnumerationSource` seam (`src/feed/enumeration.ts`).
+- **J1 surface (on jolt `dev`, PR #155):**
+  - `POST /app/v1/append` - multipart `file`+`path`, cap `publish:<path>`, local
+    identity. Publishes a coexisting device-writer Append entry; returns the
+    normal `PublishResponse`. This becomes how `publishPost` writes (replacing
+    the Singleton publish + `recordPost` index rewrite, which then disappears).
+  - `POST /app/v1/enumerate` - JSON `{ identity, path_prefix }`, cap
+    `resolve:public`, any identity. Returns `AppendRecordInfo[]`
+    `{ path, content_id, device_id, device_sequence, created_at, entry_hash }`.
+    Spoke already holds both capabilities; no session change needed.
+- **Caveat (drives phasing):** enumerate reads *cached* merged device-writer
+  state; live remote-identity device-writer sync is a jolt 094 follow-up. So
+  J1-back the **local** identity first; keep the `/spoke/feed` bridge for
+  **remote** contacts (per-identity inside the same seam) until remote sync
+  lands, or remote feeds regress.
+- **Also here:** add `publishAppend`/`enumerate` to the Jolt SDK and map the
+  `AppendRecordInfo` (and local `PublishedContent`) DTOs to a domain `PostRef`
+  in the ACL, so neither the bridge nor the J1 adapter leaks snake_case wire
+  fields up (the deferred half of the ACL marshalling refactor).
+- **Done when:** local Collections read via Jolt's enumeration API; bridge
+  retained only where remote sync is not yet available; DTO mapping in the ACL.
 
 ## How to resume in a fresh context
 
