@@ -20,7 +20,6 @@ import {
   publishBinary,
   publishEncryptedBinary,
   publishPostWithIndex,
-  publishProfile,
   publishJson,
   rejectIngress,
   requestSpokeSession,
@@ -182,7 +181,7 @@ describe("Spoke daemon API client", () => {
       .mockResolvedValueOnce(jsonResponse({ content_id: "cid_post", size: 10, address: "alice.jolt/spoke/posts/post_1" }))
       .mockResolvedValueOnce(jsonResponse({ content_id: "cid_feed", size: 10, address: "alice.jolt/spoke/feed" }));
 
-    await publishProfile("token-1", profile);
+    await publishJson("token-1", "/spoke/profile", profile);
     const result = await publishPostWithIndex("token-1", post, null);
 
     expect(result.feedIndex.posts).toEqual([

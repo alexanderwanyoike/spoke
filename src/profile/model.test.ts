@@ -4,7 +4,7 @@ import {
   normalizeProfileDraft,
   profileCacheKey,
   profileLinksFromDraft
-} from "./profile";
+} from "./model";
 
 describe("Spoke profile helpers", () => {
   it("normalizes old profile drafts into the rich profile draft shape", () => {

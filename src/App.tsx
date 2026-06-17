@@ -108,7 +108,6 @@ import {
   publishEncryptedBinary,
   publishJson,
   publishPostWithIndex,
-  publishProfile,
   rejectIngress,
   requestSpokeSession,
   submitFollowRequestByIdentity,
@@ -184,12 +183,16 @@ import {
 } from "./media";
 import {
   displayNameForProfileIdentity,
+  loadProfile,
   normalizeProfileDraft,
   profileCacheKey,
   profileLinksFromDraft,
+  publishProfile,
+  useProfiles,
   type ProfileDraft,
   type ProfilesByIdentity
 } from "./profile";
+import { createJoltSdk } from "./jolt";
 import {
   tauriSpokeUpdateClient,
   type SpokeUpdateCheck,
@@ -228,7 +231,6 @@ type SpokeIncomingPayload = SpokeReply | SpokeFollowRequest | SpokeFollowRespons
 const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
 const PROFILE_KEY = "spoke.profile";
-const PROFILE_CACHE_KEY = "spoke.profile_cache";
 const THEME_KEY = "spoke.theme";
 const FEED_REFRESH_MS = 2000;
 const INCOMING_REFRESH_MS = 2000;
@@ -281,14 +283,6 @@ function isSpokeReply(value: unknown): value is SpokeReply {
     value !== null &&
     (value as { schema?: unknown }).schema === "spoke.reply.v1"
   );
-}
-
-function isSpokeProfile(value: unknown): value is SpokeProfile {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const schema = (value as { schema?: unknown }).schema;
-  return schema === "spoke.profile.v1" || schema === "spoke.profile.v2";
 }
 
 function incomingKind(payload: SpokeIncomingPayload) {
@@ -376,9 +370,9 @@ function App() {
     }))
   );
   const [profileAvatar, setProfileAvatar] = useState<PendingImageAttachment | null>(null);
-  const [profileCache, setProfileCache] = useState<ProfilesByIdentity>(() =>
-    loadJson<ProfilesByIdentity>(PROFILE_CACHE_KEY, {})
-  );
+  // Profiles are read from the monotonic store through the query seam, not from
+  // React state. publishProfile/loadProfile commands fold writes into the store.
+  const profileCache = useProfiles();
   const [profileAvatarUrls, setProfileAvatarUrls] = useState<Record<string, string>>({});
   const [profileAvatarErrors, setProfileAvatarErrors] = useState<Record<string, string>>({});
   const [activeProfileIdentity, setActiveProfileIdentity] = useState("");
@@ -441,6 +435,7 @@ function App() {
   const updateClient: SpokeUpdateClient = tauriSpokeUpdateClient;
 
   const sessionToken = session.token || "";
+  const jolt = useMemo(() => createJoltSdk(() => sessionToken), [sessionToken]);
   const localIdentity = session.identity || status?.identity_address || "";
   const canUseApp = Boolean(sessionToken && session.status === "active" && sessionValidated);
 
@@ -676,10 +671,6 @@ function App() {
   }, [profileDraft]);
 
   useEffect(() => {
-    saveJson(PROFILE_CACHE_KEY, profileCache);
-  }, [profileCache]);
-
-  useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
     saveJson(THEME_KEY, theme);
   }, [theme]);
@@ -714,17 +705,16 @@ function App() {
       }
 
       fetchingProfileKeysRef.current.add(key);
-      fetchProfile(identity)
+      loadProfile(jolt, identity)
         .then((profile) => {
           if (cancelled) {
             return;
           }
-          delete profileRetryAfterRef.current[key];
-          setProfileCache((current) => ({
-            ...current,
-            [key]: profile,
-            [profileCacheKey(profile.identity)]: profile
-          }));
+          if (profile) {
+            delete profileRetryAfterRef.current[key];
+          } else {
+            profileRetryAfterRef.current[key] = Date.now() + MEDIA_RETRY_MS;
+          }
         })
         .catch(() => {
           if (!cancelled) {
@@ -739,7 +729,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [canUseApp, mediaRetryTick, profileCache, sessionToken, visibleProfileIdentities]);
+  }, [canUseApp, jolt, mediaRetryTick, profileCache, sessionToken, visibleProfileIdentities]);
 
   useEffect(() => {
     if (!canUseApp || !sessionToken || feedAttachments.length === 0) {
@@ -917,32 +907,16 @@ function App() {
       return;
     }
 
-    let cancelled = false;
     const identities = Array.from(
       new Set(incoming.map((record) => record.sender_identity).filter(Boolean))
     ).filter((identity) => !profileCache[profileCacheKey(identity)]);
 
     for (const identity of identities) {
-      fetchProfile(identity)
-        .then((profile) => {
-          if (cancelled) {
-            return;
-          }
-          setProfileCache((current) => ({
-            ...current,
-            [profileCacheKey(identity)]: profile,
-            [profileCacheKey(profile.identity)]: profile
-          }));
-        })
-        .catch(() => {
-          // Some senders will not have a public Spoke profile yet.
-        });
+      // Some senders will not have a public Spoke profile yet; loadProfile
+      // folds any hit into the store and is a no-op otherwise.
+      loadProfile(jolt, identity).catch(() => {});
     }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [canUseApp, incoming, profileCache, sessionToken]);
+  }, [canUseApp, incoming, jolt, profileCache, sessionToken]);
 
   useEffect(() => {
     if (!sessionToken || session.status !== "active") {
@@ -1105,13 +1079,12 @@ function App() {
         ...(profileDraft.pronouns.trim() ? { pronouns: profileDraft.pronouns.trim() } : {}),
         updatedAt: new Date().toISOString()
       };
-      await publishProfile(sessionToken, profile);
+      await publishProfile(jolt, profile);
       if (profileAvatar) {
         URL.revokeObjectURL(profileAvatar.previewUrl);
       }
       setProfileAvatar(null);
       setProfileDraft((current) => ({ ...current, avatar }));
-      setProfileCache((current) => ({ ...current, [profileCacheKey(localIdentity)]: profile }));
       setShowProfileEditor(false);
       setNotice(
         profile.schema === "spoke.profile.v2"
@@ -1468,15 +1441,6 @@ function App() {
     return JSON.parse(decodeFetchData(result)) as SpokeFeedIndex;
   }
 
-  async function fetchProfile(identity: string) {
-    const result = await fetchTarget(sessionToken, `${identity}/spoke/profile`);
-    const profile = JSON.parse(decodeFetchData(result)) as unknown;
-    if (!isSpokeProfile(profile)) {
-      throw new Error("Fetched object is not a Spoke profile.");
-    }
-    return profile;
-  }
-
   useEffect(() => {
     if (!showContactsModal || !canUseApp || !sessionToken) {
       setContactProfilePreview(null);
@@ -1495,16 +1459,16 @@ function App() {
     setContactProfilePreview(null);
     setContactProfilePreviewState("loading");
     const timer = window.setTimeout(() => {
-      fetchProfile(identity)
+      loadProfile(jolt, identity)
         .then((profile) => {
           if (cancelled) return;
-          setContactProfilePreview(profile);
-          setProfileCache((current) => ({
-            ...current,
-            [profileCacheKey(identity)]: profile,
-            [profileCacheKey(profile.identity)]: profile
-          }));
-          setContactProfilePreviewState("found");
+          if (profile) {
+            setContactProfilePreview(profile);
+            setContactProfilePreviewState("found");
+          } else {
+            setContactProfilePreview(null);
+            setContactProfilePreviewState("missing");
+          }
         })
         .catch(() => {
           if (cancelled) return;
@@ -1517,7 +1481,7 @@ function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [showContactsModal, canUseApp, sessionToken, contactDraft.identity]);
+  }, [showContactsModal, canUseApp, jolt, sessionToken, contactDraft.identity]);
 
   async function fetchPost(addressOrPath: string, owner: string) {
     const target = addressOrPath.startsWith("/spoke/")
@@ -1578,18 +1542,16 @@ function App() {
     setFeedRefreshing(true);
     const nextPublished = await listPublished(sessionToken).catch(() => []);
     const localIndex = await loadLocalFeed(nextPublished);
+    // Fold each fetched profile into the monotonic store; a stale or missing
+    // read can never drop a profile another reader already confirmed. The
+    // local map is only used to label this snapshot's posts before the store
+    // re-render lands.
     const fetchedProfiles = await Promise.all(
       [localIdentity, ...feedContacts.map((contact) => contact.identity)]
         .filter(Boolean)
         .map(async (identity) => {
-          try {
-            return {
-              identity,
-              profile: await fetchProfile(identity)
-            };
-          } catch {
-            return null;
-          }
+          const profile = await loadProfile(jolt, identity).catch(() => null);
+          return profile ? { identity, profile } : null;
         })
     );
     const nextProfiles = fetchedProfiles.reduce<ProfilesByIdentity>((current, entry) => {
@@ -1602,9 +1564,6 @@ function App() {
         [profileCacheKey(entry.profile.identity)]: entry.profile
       };
     }, profileCache);
-    if (fetchedProfiles.some(Boolean)) {
-      setProfileCache(nextProfiles);
-    }
 
     const localItems: Array<FeedItem | null> = await Promise.all(
       localPostReferences(localIndex, nextPublished).map(async (item) => {
