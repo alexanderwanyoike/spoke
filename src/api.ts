@@ -407,10 +407,6 @@ export async function publishBinary(
   );
 }
 
-export function publishProfile(sessionToken: string, profile: SpokeProfile) {
-  return publishJson(sessionToken, "/spoke/profile", profile);
-}
-
 export async function publishPostWithIndex(
   sessionToken: string,
   post: SpokePost,

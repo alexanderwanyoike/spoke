@@ -55,7 +55,7 @@ never the source of social truth.
 | Card | Title | Track | Status | Depends on | PR |
 |------|-------|-------|--------|------------|----|
 | J1   | Jolt: append-record enumeration + append publish | jolt repo | not started | — | — |
-| 101  | Spoke: Jolt SDK seam + monotonic store (profile tracer) | spoke | not started | — | — |
+| 101  | Spoke: Jolt SDK seam + monotonic store (profile tracer) | spoke | in progress | — | — |
 | 102  | Spoke: feed vertical | spoke | not started | 101 | — |
 | 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | needs rewrite | 101 | — |
 | 103  | Spoke: messages + follows vertical | spoke | not started | 101 | — |

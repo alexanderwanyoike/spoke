@@ -56,6 +56,26 @@ export function profileCacheKey(identity: string) {
   return normalizeIdentity(identity);
 }
 
+export function isSpokeProfile(value: unknown): value is SpokeProfile {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const schema = (value as { schema?: unknown }).schema;
+  return schema === "spoke.profile.v1" || schema === "spoke.profile.v2";
+}
+
+// Tolerant reader: decode bytes fetched from Jolt into a canonical profile, or
+// null if the object is unrecoverable. One malformed object must never poison a
+// Projection (see docs/CONTEXT.md "Tolerant readers, strict writers").
+export function decodeProfile(bytes: number[]): SpokeProfile | null {
+  try {
+    const value = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes))) as unknown;
+    return isSpokeProfile(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export function profileLinksFromDraft(links: ProfileDraftLink[]) {
   return links
     .map((link) => ({
