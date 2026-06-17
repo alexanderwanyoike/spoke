@@ -4,7 +4,6 @@
 
 import type { JoltSdk } from "../jolt";
 import { normalizeIdentity } from "../follow";
-import { decodeProfile } from "./model";
 import { store as defaultStore, type Store } from "../common/store";
 import type { SpokeProfile } from "../api";
 
@@ -28,29 +27,6 @@ export async function publishProfile(
     path: PROFILE_PATH,
     latestSequence,
     contentId: result.contentId,
-    value: profile
-  });
-  return profile;
-}
-
-// Read a remote (or own) profile through the SDK and fold it into the store.
-// Returns the decoded profile, or null if it was missing or not a profile.
-// A stale read can never downgrade a newer cached profile (store is monotonic).
-export async function loadProfile(
-  sdk: JoltSdk,
-  identity: string,
-  store: Store = defaultStore
-): Promise<SpokeProfile | null> {
-  const read = await sdk.read({ identity, path: PROFILE_PATH });
-  const profile = decodeProfile(read.bytes);
-  if (!profile) {
-    return null;
-  }
-  store.upsert({
-    identity: normalizeIdentity(profile.identity || identity),
-    path: PROFILE_PATH,
-    latestSequence: read.latestSequence,
-    contentId: read.contentId,
     value: profile
   });
   return profile;

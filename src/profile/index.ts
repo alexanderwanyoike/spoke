@@ -13,5 +13,6 @@ export {
   type ProfileDraftLink,
   type ProfilesByIdentity
 } from "./model";
-export { loadProfile, publishProfile, PROFILE_PATH } from "./commands";
+export { publishProfile, PROFILE_PATH } from "./commands";
+export { loadProfile } from "./loaders";
 export { selectProfile, selectProfiles, useProfile, useProfiles } from "./queries";

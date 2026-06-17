@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { JoltSdk, Reference } from "../jolt";
 import { createStore } from "../common/store";
-import { loadProfile, publishProfile, PROFILE_PATH } from "./commands";
+import { publishProfile, PROFILE_PATH } from "./commands";
+import { loadProfile } from "./loaders";
 import { selectProfile, selectProfiles } from "./queries";
 import type { SpokeProfile } from "../api";
 
@@ -82,7 +83,9 @@ describe("profile commands", () => {
 
     expect(selectProfile(store.getSnapshot(), "alice.jolt")?.displayName).toBe("New Alice");
   });
+});
 
+describe("profile loaders", () => {
   it("loadProfile decodes the fetched bytes and upserts the store", async () => {
     const store = createStore();
     const sdk = fakeSdk({

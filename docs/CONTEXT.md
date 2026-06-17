@@ -12,8 +12,9 @@ never learn about posts, replies, or audiences.
 UI (React, thin)            knows ONLY the command + query seams. Nothing below.
   ↓
 src/<feature>/              the public domain seam (CQRS), one folder per feature
-  commands.ts                 mutations
-  queries.ts                  projection subscription hooks + selectors
+  commands.ts                 mutations: create/change durable social truth on Jolt
+  loaders.ts                  read-path: async fetch-from-Jolt + monotonic merge into store
+  queries.ts                  projection subscription hooks + selectors (sync, pure)
   model.ts                    types + pure domain helpers / tolerant decoders
   index.ts                    barrel: the feature's only public surface
   ↓
@@ -33,9 +34,12 @@ truth.
 ### File organization
 
 Each social feature owns a folder under `src/` (`src/profile/`, `src/feed/`,
-`src/message/`, ...) bundling its `model` / `commands` / `queries` and tests
-behind an `index.ts` barrel; consumers import only from `./<feature>`, never a
-file inside it. Shared, non-feature infrastructure lives outside the feature
+`src/message/`, ...) bundling its `model` / `commands` / `loaders` / `queries`
+and tests behind an `index.ts` barrel; consumers import only from `./<feature>`,
+never a file inside it. The three seam roles are kept distinct: a **command**
+creates durable social truth on Jolt; a **loader** hydrates the cache by
+fetching truth that already exists and merging it monotonically (the read-side
+of ADR 0003); a **query** is a synchronous, side-effect-free Projection read. Shared, non-feature infrastructure lives outside the feature
 folders: the monotonic store in `src/common/`, and the Jolt SDK / ACL in
 `src/jolt/`. Features are moved into this layout as their cards are worked, not
 all at once.
