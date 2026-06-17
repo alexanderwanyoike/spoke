@@ -107,7 +107,6 @@ import {
   publishBinary,
   publishEncryptedBinary,
   publishJson,
-  publishPostWithIndex,
   rejectIngress,
   requestSpokeSession,
   submitFollowRequestByIdentity,
@@ -118,7 +117,6 @@ import {
   type IngressRecord,
   type NodeStatus,
   type PublishedContent,
-  type SpokeFeedIndex,
   type SpokePost,
   type SpokeProfile,
   type SpokeProfileLink,
@@ -126,15 +124,13 @@ import {
   type SpokeThreadIndex
 } from "./api";
 import {
-  addOptimisticLocalPost,
+  createBridgeEnumeration,
   displayNameForFeedItem,
-  isFeedItem,
   latestPublishedByPath,
-  localPostReferences,
-  mergeFeedSnapshot,
-  mergeLocalFeedSnapshot,
-  removeContactFeedItems,
-  withLocalContentIds,
+  loadFeed,
+  publishPost as publishPostCommand,
+  readFeed,
+  useFeed,
   activeContacts,
   type Contact,
   type FeedItem
@@ -189,8 +185,7 @@ import {
   profileLinksFromDraft,
   publishProfile,
   useProfiles,
-  type ProfileDraft,
-  type ProfilesByIdentity
+  type ProfileDraft
 } from "./profile";
 import { createJoltSdk } from "./jolt";
 import {
@@ -388,8 +383,6 @@ function App() {
   const [postAttachments, setPostAttachments] = useState<PendingImageAttachment[]>([]);
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [attachmentErrors, setAttachmentErrors] = useState<Record<string, string>>({});
-  const [feedIndex, setFeedIndex] = useState<SpokeFeedIndex | null>(null);
-  const [feed, setFeed] = useState<FeedItem[]>([]);
   const [repliesByPost, setRepliesByPost] = useState<RepliesByPost>({});
   const [conversations, setConversations] = useState<ConversationsById>({});
   const [activeView, setActiveView] = useState<AppView>("feed");
@@ -438,6 +431,19 @@ function App() {
   const jolt = useMemo(() => createJoltSdk(() => sessionToken), [sessionToken]);
   const localIdentity = session.identity || status?.identity_address || "";
   const canUseApp = Boolean(sessionToken && session.status === "active" && sessionValidated);
+
+  // The feed reads from the monotonic store through the query seam; the bridge
+  // enumeration discovers posts via the Spoke-maintained /spoke/feed index
+  // (swappable for J1 append-record enumeration in card 104).
+  const enumeration = useMemo(
+    () =>
+      createBridgeEnumeration(jolt, {
+        localIdentity,
+        listLocalPosts: () => listPublished(sessionToken)
+      }),
+    [jolt, localIdentity, sessionToken]
+  );
+  const feed = useFeed({ localIdentity, contacts });
 
   const localPosts = useMemo(
     () => feed.filter((item) => item.source === "local").length,
@@ -1289,24 +1295,6 @@ function App() {
     }));
   }
 
-  async function loadLocalFeed(published?: PublishedContent[]) {
-    let index: SpokeFeedIndex | null = null;
-    try {
-      const inventory = published || await listPublished(sessionToken);
-      const feedObject = latestPublishedByPath(inventory, "/spoke/feed");
-      index = feedObject
-        ? withLocalContentIds(
-            await fetchPublishedJson<SpokeFeedIndex>(feedObject.content_id),
-            inventory
-          )
-        : null;
-    } catch {
-      index = feedIndex;
-    }
-    setFeedIndex(index);
-    return index;
-  }
-
   async function publishPost() {
     await withBusy("post", async () => {
       const title = postDraft.title.trim();
@@ -1344,9 +1332,10 @@ function App() {
         threadPath: makeThreadPath(id),
         ...(attachments.length > 0 ? { attachments } : {})
       };
-      const index = await loadLocalFeed();
-      const publishedResult = await publishPostWithIndex(sessionToken, post, index);
-      setFeedIndex(publishedResult.feedIndex);
+      // Publish the post (Append Record), record it in the bridge index, and
+      // fold it into the store. The post appears in the feed Projection at once
+      // because the store update is synchronous after the publish resolves.
+      await publishPostCommand(jolt, enumeration, post);
       feedRefreshGeneration.current += 1;
       for (const attachment of attachments) {
         const pendingAttachment = postAttachments.find((item) => item.id === attachment.id);
@@ -1356,13 +1345,6 @@ function App() {
           setAttachmentUrls((current) => ({ ...current, [attachmentKey(attachment)]: url }));
         }
       }
-      setFeed((current) =>
-        addOptimisticLocalPost(
-          current,
-          post,
-          publishedResult.post.address || `${localIdentity}${post.path}`
-        )
-      );
       setPostDraft({ title: "", body: "" });
       for (const attachment of postAttachments) {
         URL.revokeObjectURL(attachment.previewUrl);
@@ -1390,13 +1372,6 @@ function App() {
     };
     const nextContacts = upsertContact(contacts, nextContact);
     setContacts(nextContacts);
-    setFeed((current) =>
-      current.map((item) =>
-        item.source === "contact" && item.contact?.identity === identity
-          ? { ...item, contact: nextContact }
-          : item
-      )
-    );
     setContactDraft({
       identity: "",
       displayName: ""
@@ -1434,11 +1409,6 @@ function App() {
       setFollowMessageDraft("");
       setNotice("Follow request sent through encrypted ingress.");
     });
-  }
-
-  async function fetchIndex(identity: string) {
-    const result = await fetchTarget(sessionToken, `${identity}/spoke/feed`);
-    return JSON.parse(decodeFetchData(result)) as SpokeFeedIndex;
   }
 
   useEffect(() => {
@@ -1483,13 +1453,6 @@ function App() {
     };
   }, [showContactsModal, canUseApp, jolt, sessionToken, contactDraft.identity]);
 
-  async function fetchPost(addressOrPath: string, owner: string) {
-    const target = addressOrPath.startsWith("/spoke/")
-      ? `${owner}${addressOrPath}`
-      : addressOrPath;
-    const result = await fetchTarget(sessionToken, target);
-    return JSON.parse(decodeFetchData(result)) as SpokePost;
-  }
 
   async function fetchReply(contentId: string) {
     const result = await fetchTarget(sessionToken, contentId);
@@ -1541,103 +1504,25 @@ function App() {
     const generation = ++feedRefreshGeneration.current;
     setFeedRefreshing(true);
     const nextPublished = await listPublished(sessionToken).catch(() => []);
-    const localIndex = await loadLocalFeed(nextPublished);
-    // Fold each fetched profile into the monotonic store; a stale or missing
-    // read can never drop a profile another reader already confirmed. The
-    // local map is only used to label this snapshot's posts before the store
-    // re-render lands.
-    const fetchedProfiles = await Promise.all(
-      [localIdentity, ...feedContacts.map((contact) => contact.identity)]
-        .filter(Boolean)
-        .map(async (identity) => {
-          const profile = await loadProfile(jolt, identity).catch(() => null);
-          return profile ? { identity, profile } : null;
-        })
+    const identities = [localIdentity, ...feedContacts.map((contact) => contact.identity)].filter(
+      Boolean
     );
-    const nextProfiles = fetchedProfiles.reduce<ProfilesByIdentity>((current, entry) => {
-      if (!entry) {
-        return current;
-      }
-      return {
-        ...current,
-        [profileCacheKey(entry.identity)]: entry.profile,
-        [profileCacheKey(entry.profile.identity)]: entry.profile
-      };
-    }, profileCache);
 
-    const localItems: Array<FeedItem | null> = await Promise.all(
-      localPostReferences(localIndex, nextPublished).map(async (item) => {
-        try {
-          const post = item.contentId
-            ? await fetchPublishedJson<SpokePost>(item.contentId)
-            : await fetchPost(item.address || item.path, localIdentity);
-          return {
-            source: "local" as const,
-            post,
-            address: item.address || `${localIdentity}${item.path}`
-          };
-        } catch {
-          // A stale feed entry should not block the rest of the timeline.
-          return null;
-        }
-      })
-    );
-    const nextLocalItems = localItems.filter(isFeedItem);
+    // Hydrate profiles (card 101) and posts (card 102) into the monotonic store
+    // through the loader seam. Both merges are additive and monotonic: a stale
+    // or incomplete read can never drop a record another reader confirmed, so
+    // the timeline no longer needs snapshot-merge gymnastics.
+    await Promise.all(identities.map((identity) => loadProfile(jolt, identity).catch(() => null)));
+    await loadFeed(jolt, enumeration, identities);
 
     if (generation === feedRefreshGeneration.current) {
-      setFeed((current) => mergeLocalFeedSnapshot(current, nextLocalItems));
       setFeedRefreshing(false);
     }
 
-    const contactItemGroups: Array<Array<FeedItem | null>> = await Promise.all(
-      feedContacts.map(async (contact) => {
-        try {
-          const index = await fetchIndex(contact.identity);
-          const contactForFeed = {
-            ...contact,
-            displayName: displayNameForProfileIdentity({
-              identity: contact.identity,
-              localIdentity,
-              localDisplayName: profileDraft.displayName,
-              contacts: nextContacts,
-              profiles: nextProfiles
-            })
-          };
-          return Promise.all(
-            index.posts.map(async (item) => {
-              try {
-                const post = item.contentId
-                  ? await fetchPublishedJson<SpokePost>(item.contentId)
-                  : await fetchPost(item.address || item.path, contact.identity);
-                return {
-                  source: "contact" as const,
-                  contact: contactForFeed,
-                  post,
-                  address: item.address || `${contact.identity}${item.path}`
-                };
-              } catch {
-                // Keep loading the rest of this contact's posts.
-                return null;
-              }
-            })
-          );
-        } catch {
-          // Contacts can be offline or unknown.
-          return [];
-        }
-      })
-    );
-
-    const nextItems: FeedItem[] = [
-      ...nextLocalItems,
-      ...contactItemGroups.flat().filter(isFeedItem)
-    ];
+    // Replies are still assembled in App state; this migrates to the seam in
+    // card 091. It reads the current feed Projection to discover threads.
     const spokeObjects = nextPublished.filter((item) => item.path?.startsWith("/spoke/"));
-
-    if (generation === feedRefreshGeneration.current) {
-      setFeed((current) => mergeFeedSnapshot(current, nextItems));
-      setFeedRefreshing(false);
-    }
+    const feedItems = readFeed({ localIdentity, contacts: nextContacts });
 
     const nextReplies: RepliesByPost = {};
     const acceptedReplies = await Promise.all(
@@ -1665,7 +1550,7 @@ function App() {
         })
     );
     const sharedThreadReplies = await Promise.all(
-      nextItems
+      feedItems
         .filter((item) => item.source === "contact")
         .map(async (item) => {
           try {
@@ -2651,8 +2536,9 @@ function App() {
                   renderAvatar={renderAvatar}
                   onOpen={() => openProfile(contact.identity)}
                   onRemove={() => {
+                    // Dropping the contact removes them from feed scope, so the
+                    // feed Projection excludes their posts on the next render.
                     setContacts((current) => current.filter((item) => item.identity !== contact.identity));
-                    setFeed((current) => removeContactFeedItems(current, contact.identity));
                   }}
                 />
               ))}

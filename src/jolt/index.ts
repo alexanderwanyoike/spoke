@@ -7,6 +7,7 @@
 // in docs/cards/100-spoke-architecture-refactor-epic.md.
 
 import {
+  decodeFetchData,
   fetchTarget,
   publishJson as transportPublishJson,
   resolveAddress,
@@ -27,17 +28,28 @@ export type PublishResult = {
   address: string | null;
 };
 
-export type ReadResult = {
+// A decoder is the domain's schema-level reader: it validates/normalizes an
+// already-parsed JSON value into a canonical type, or returns null. It knows
+// nothing about bytes or transport - that is the ACL's job.
+export type Decoder<T> = (value: unknown) => T | null;
+
+// A versioned, decoded publication: what a read hands back to the domain.
+export type Versioned<T> = {
+  ref: Reference;
+  value: T;
   latestSequence: number;
   contentId: string;
-  bytes: number[];
 };
 
 // The fakeable adapter. Commands and queries depend on this interface, never on
 // the concrete transport, so the domain layer is testable with a plain object.
+// The ACL owns marshalling: publishJson serializes, and read deserializes +
+// validates through the caller's Decoder so the domain never touches bytes.
 export interface JoltSdk {
   publishJson(path: string, body: object): Promise<PublishResult>;
-  read(ref: Reference): Promise<ReadResult>;
+  // Resolves, fetches, parses, and decodes. Returns null when the reference is
+  // missing/unreachable or the bytes do not decode to T.
+  read<T>(ref: Reference, decode: Decoder<T>): Promise<Versioned<T> | null>;
 }
 
 export function referenceKey(ref: Reference): string {
@@ -63,16 +75,33 @@ export function createJoltSdk(getSessionToken: () => string): JoltSdk {
       const response = await transportPublishJson(getSessionToken(), path, body);
       return toPublishResult(response, path);
     },
-    async read(ref) {
+    async read(ref, decode) {
       const token = getSessionToken();
-      // Resolve first so the store gets a real latest_sequence to version by,
-      // then fetch the content-addressed bytes.
-      const resolved = await resolveAddress(token, referenceTarget(ref));
-      const fetched = await fetchTarget(token, resolved.content_id);
+      let resolved;
+      let fetched;
+      try {
+        // Resolve first so the store gets a real latest_sequence to version by,
+        // then fetch the content-addressed bytes.
+        resolved = await resolveAddress(token, referenceTarget(ref));
+        fetched = await fetchTarget(token, resolved.content_id);
+      } catch {
+        return null; // missing or unreachable
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(decodeFetchData(fetched));
+      } catch {
+        return null; // unparseable bytes never poison a Projection
+      }
+      const value = decode(parsed);
+      if (value === null) {
+        return null;
+      }
       return {
+        ref,
+        value,
         latestSequence: resolved.latest_sequence,
-        contentId: resolved.content_id,
-        bytes: fetched.data
+        contentId: resolved.content_id
       };
     }
   };
