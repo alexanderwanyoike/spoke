@@ -124,6 +124,11 @@ export function normalizeReply(reply: SpokeReplyV2 | SpokeReply): ThreadReply {
   };
 }
 
+// Flatten a thread tree back into a list (e.g. to collect every reply author).
+export function flattenThread(nodes: ThreadNode[]): ThreadNode[] {
+  return nodes.flatMap((node) => [node, ...flattenThread(node.children)]);
+}
+
 // Assemble a nested tree from a flat list of replies, oldest-first at each
 // level. A reply is a root when its parent is the post (or an unknown reply).
 export function buildThreadTree(replies: ThreadReply[]): ThreadNode[] {

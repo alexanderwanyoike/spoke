@@ -64,3 +64,26 @@ export function useThread(scope: ThreadScope, store: Store = defaultStore): Thre
 export function readThread(scope: ThreadScope, store: Store = defaultStore): ThreadNode[] {
   return selectThread(store.getSnapshot(), scope);
 }
+
+function scopesKey(scopes: ThreadScope[]): string {
+  return scopes.map((s) => `${s.postId}@${s.postAuthor}#${s.localIdentity ?? ""}`).join("|");
+}
+
+// Project several threads at once (one store subscription) for a feed of posts.
+// Returns a map keyed by postId so a render loop can look each thread up without
+// calling a hook per item.
+export function useThreads(
+  scopes: ThreadScope[],
+  store: Store = defaultStore
+): Record<string, ThreadNode[]> {
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const key = scopesKey(scopes);
+  return useMemo(() => {
+    const byPost: Record<string, ThreadNode[]> = {};
+    for (const scope of scopes) {
+      byPost[scope.postId] = selectThread(snapshot, scope);
+    }
+    return byPost;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot, key]);
+}

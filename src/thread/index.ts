@@ -7,4 +7,4 @@ export { acceptanceDecision, type AcceptanceDecision } from "./policy";
 export { createThreadBridge, type ThreadEnumeration } from "./enumeration";
 export { submitReply, acceptReply, unacceptReply } from "./commands";
 export { loadThread } from "./loaders";
-export { selectThread, readThread, useThread, type ThreadScope } from "./queries";
+export { selectThread, readThread, useThread, useThreads, type ThreadScope } from "./queries";
