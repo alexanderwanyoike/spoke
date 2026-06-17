@@ -17,7 +17,7 @@ src/<feature>/              the public domain seam (CQRS), one folder per featur
   model.ts                    types + pure domain helpers / tolerant decoders
   index.ts                    barrel: the feature's only public surface
   ↓
-src/store.ts                PRIVATE to the domain. monotonic normalized cache.
+src/common/store.ts         PRIVATE to the domain. monotonic normalized cache.
   ↓                          React never imports or subscribes to it directly.
 src/jolt/ (SDK / ACL)       pure transport + protocol primitives, no social concepts
   ↓
@@ -35,9 +35,10 @@ truth.
 Each social feature owns a folder under `src/` (`src/profile/`, `src/feed/`,
 `src/message/`, ...) bundling its `model` / `commands` / `queries` and tests
 behind an `index.ts` barrel; consumers import only from `./<feature>`, never a
-file inside it. The store (`src/store.ts`) and Jolt SDK (`src/jolt/`) are shared
-infrastructure, not features, so they sit at the top level. Features are moved
-into this layout as their cards are worked, not all at once.
+file inside it. Shared, non-feature infrastructure lives outside the feature
+folders: the monotonic store in `src/common/`, and the Jolt SDK / ACL in
+`src/jolt/`. Features are moved into this layout as their cards are worked, not
+all at once.
 
 ## Glossary
 

@@ -54,7 +54,7 @@ never the source of social truth.
 
 | Card | Title | Track | Status | Depends on | PR |
 |------|-------|-------|--------|------------|----|
-| J1   | Jolt: append-record enumeration + append publish | jolt repo | not started | — | — |
+| J1   | Jolt: append-record enumeration + append publish | jolt repo | implemented (PR pending) | — | jolt `codex/device-writer-append-app-api` |
 | 101  | Spoke: Jolt SDK seam + monotonic store (profile tracer) | spoke | in progress | — | — |
 | 102  | Spoke: feed vertical | spoke | not started | 101 | — |
 | 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | needs rewrite | 101 | — |
@@ -86,6 +86,19 @@ single source of truth for "where are we."
   core. This is API surface only, not a new subsystem.
 - **Done when:** an app can publish an append record under a path, and can list
   a remote identity's append records under a prefix via the app API.
+- **Implemented** in jolt branch `codex/device-writer-append-app-api` (slice of
+  jolt card 094, off `dev`):
+  - `POST /app/v1/append` (multipart file+path, capability `publish:<path>`,
+    local identity) publishes a device-writer Append entry; it never writes the
+    last-writer-wins update log, so append records coexist.
+  - `POST /app/v1/enumerate` (`{ identity, path_prefix }`, capability
+    `resolve:public`) returns `[{ path, content_id, device_id, device_sequence,
+    created_at, entry_hash }]` for the prefix.
+  - Enumeration reads cached merged device-writer state (same boundary as
+    resolve). Live remote-identity device-writer sync is still a 094 follow-up;
+    until then the daemon must already hold the target's merged state.
+  - Spoke's SDK seam (card 101) should wrap these two routes as the
+    append-publish + Collection-read primitives behind `EnumerationSource`.
 
 ### 101 - Jolt SDK seam + monotonic store (profile tracer)
 - **Goal:** establish the seam. Create `src/jolt/` (pure transport ACL, strip

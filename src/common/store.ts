@@ -8,7 +8,7 @@
 //   - Reads are additive, never subtractive. A record leaves a Projection only
 //     via an explicit tombstone, never because a later fetch did not return it.
 
-import { referenceKey, type Reference } from "./jolt";
+import { referenceKey, type Reference } from "../jolt";
 
 export type StoreEntry = {
   identity: string;

@@ -5,7 +5,7 @@
 import type { JoltSdk } from "../jolt";
 import { normalizeIdentity } from "../follow";
 import { decodeProfile } from "./model";
-import { store as defaultStore, type Store } from "../store";
+import { store as defaultStore, type Store } from "../common/store";
 import type { SpokeProfile } from "../api";
 
 export const PROFILE_PATH = "/spoke/profile";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JoltSdk, Reference } from "../jolt";
-import { createStore } from "../store";
+import { createStore } from "../common/store";
 import { loadProfile, publishProfile, PROFILE_PATH } from "./commands";
 import { selectProfile, selectProfiles } from "./queries";
 import type { SpokeProfile } from "../api";
