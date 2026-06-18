@@ -5,7 +5,7 @@
 import type { JoltSdk } from "../jolt";
 import { normalizeIdentity } from "../follow";
 import { store as defaultStore, type Store } from "../common/store";
-import type { SpokePost } from "../api";
+import type { SpokePost } from "./model";
 import type { EnumerationSource } from "./enumeration";
 
 export async function publishPost(

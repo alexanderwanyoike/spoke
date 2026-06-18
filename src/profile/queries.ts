@@ -9,7 +9,7 @@ import { referenceKey } from "../jolt";
 import { normalizeIdentity } from "../follow";
 import { store as defaultStore, type Store, type StoreSnapshot } from "../common/store";
 import { PROFILE_PATH } from "./commands";
-import type { SpokeProfile } from "../api";
+import type { SpokeProfile } from "./model";
 import type { ProfilesByIdentity } from "./model";
 
 export function selectProfile(

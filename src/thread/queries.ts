@@ -7,7 +7,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { normalizeIdentity, sameIdentity } from "../follow";
 import { store as defaultStore, type Store, type StoreSnapshot } from "../common/store";
-import type { SpokeReply } from "../api";
+import type { SpokeReply } from "./model";
 import {
   ACCEPTED_PREFIX,
   REPLIES_PREFIX,

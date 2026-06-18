@@ -1,7 +1,24 @@
-import type { SpokeProfile } from "../api";
 import type { Decoder } from "../jolt";
+import type { SpokeAttachment } from "../media";
 import type { Contact } from "../feed";
 import { normalizeIdentity, sameIdentity } from "../follow";
+
+export type SpokeProfileLink = {
+  label: string;
+  url: string;
+};
+
+export type SpokeProfile = {
+  schema: "spoke.profile.v1" | "spoke.profile.v2";
+  identity: string;
+  displayName: string;
+  bio: string;
+  avatar?: SpokeAttachment;
+  links?: SpokeProfileLink[];
+  location?: string;
+  pronouns?: string;
+  updatedAt: string;
+};
 
 export type ProfilesByIdentity = Record<string, SpokeProfile>;
 

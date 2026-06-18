@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JoltSdk, Reference } from "../jolt";
 import { createStore } from "../common/store";
-import type { SpokeReply } from "../api";
+import type { SpokeReply } from "./model";
 import {
   makeReplyPath,
   type AcceptedReplyRef,

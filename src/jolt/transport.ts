@@ -1,7 +1,14 @@
+// Jolt transport (the wire layer of the ACL).
+//
+// This is the only module that talks to the Jolt daemon - over Tauri `invoke`
+// on desktop or `fetch` against the dev proxy on web. It owns the request core,
+// the wire DTOs, and the daemon operations (publish/resolve/fetch/encrypt/
+// ingress/session). It knows no Spoke domain types (those live in feature
+// models); the `/spoke/` namespace guard and capability list are app config.
+// Consumers import everything through the "./jolt" barrel, never this file
+// directly. See docs/cards/105-spoke-complete-jolt-sdk-seam.md.
+
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { SpokeFollowRequest, SpokeFollowResponse } from "./follow";
-import type { SpokeAttachment } from "./media";
-import type { SpokeMessage } from "./message";
 
 export type NodeStatus = {
   peer_id: string;
@@ -102,77 +109,6 @@ export type DecryptedEncryptedObject = {
   plaintext: number[];
   size: number;
   content_type: string;
-};
-
-export type SpokeProfileLink = {
-  label: string;
-  url: string;
-};
-
-export type SpokeProfile = {
-  schema: "spoke.profile.v1" | "spoke.profile.v2";
-  identity: string;
-  displayName: string;
-  bio: string;
-  avatar?: SpokeAttachment;
-  links?: SpokeProfileLink[];
-  location?: string;
-  pronouns?: string;
-  updatedAt: string;
-};
-
-export type SpokePost = {
-  schema: "spoke.post.v1" | "spoke.post.v2";
-  id: string;
-  author: string;
-  displayName?: string;
-  title: string;
-  body: string;
-  createdAt: string;
-  path: string;
-  threadPath?: string;
-  attachments?: SpokeAttachment[];
-};
-
-export type SpokeFeedIndex = {
-  schema: "spoke.feed.v1";
-  owner: string;
-  updatedAt: string;
-  posts: Array<{
-    id: string;
-    path: string;
-    contentId?: string;
-    address?: string | null;
-    title: string;
-    createdAt: string;
-  }>;
-};
-
-export type SpokeReply = {
-  schema: "spoke.reply.v1";
-  id: string;
-  sender: string;
-  postAuthor: string;
-  postAddress: string;
-  body: string;
-  createdAt: string;
-};
-
-export type SpokeThreadIndex = {
-  schema: "spoke.thread.v1";
-  id: string;
-  owner: string;
-  postAddress: string;
-  visibility: "public";
-  updatedAt: string;
-  replies: Array<{
-    id: string;
-    sender: string;
-    address?: string | null;
-    contentId?: string;
-    createdAt: string;
-    moderation: "accepted";
-  }>;
 };
 
 export const SPOKE_CAPABILITIES = [
@@ -407,33 +343,6 @@ export async function publishBinary(
   );
 }
 
-export async function publishPostWithIndex(
-  sessionToken: string,
-  post: SpokePost,
-  existingIndex: SpokeFeedIndex | null
-) {
-  assertSpokePath(post.path);
-  const publishedPost = await publishJson(sessionToken, post.path, post);
-  const nextIndex: SpokeFeedIndex = {
-    schema: "spoke.feed.v1",
-    owner: post.author,
-    updatedAt: new Date().toISOString(),
-    posts: [
-      {
-        id: post.id,
-        path: post.path,
-        contentId: publishedPost.content_id,
-        address: publishedPost.address,
-        title: post.title,
-        createdAt: post.createdAt
-      },
-      ...(existingIndex?.posts || []).filter((item) => item.id !== post.id)
-    ].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  };
-  const publishedIndex = await publishJson(sessionToken, "/spoke/feed", nextIndex);
-  return { post: publishedPost, index: publishedIndex, feedIndex: nextIndex };
-}
-
 export function publishEncryptedJson(
   sessionToken: string,
   path: string,
@@ -529,55 +438,6 @@ export function rejectIngress(sessionToken: string, ingressId: string) {
   );
 }
 
-export async function submitReplyByIdentity(
-  sessionToken: string,
-  receiverIdentity: string,
-  reply: SpokeReply
-) {
-  return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, reply.id, reply);
-}
-
-// Generic encrypted-ingress send for any identified Spoke object (e.g. a
-// spoke.reply.v2). Transport-level: it does not know the object's domain type.
-export function submitObjectByIdentity(
-  sessionToken: string,
-  receiverIdentity: string,
-  objectId: string,
-  body: object
-) {
-  return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, objectId, body);
-}
-
-export function submitFollowRequestByIdentity(
-  sessionToken: string,
-  receiverIdentity: string,
-  request: SpokeFollowRequest
-) {
-  return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, request.id, request);
-}
-
-export function submitFollowResponseByIdentity(
-  sessionToken: string,
-  receiverIdentity: string,
-  response: SpokeFollowResponse
-) {
-  return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, response.id, response);
-}
-
-export function submitMessageByIdentity(
-  sessionToken: string,
-  receiverIdentity: string,
-  message: SpokeMessage
-) {
-  return submitSpokeObjectByIdentity(
-    sessionToken,
-    receiverIdentity,
-    message.id,
-    message,
-    `/spoke/messages/outgoing/${message.id}`
-  );
-}
-
 // Encrypt-publish an object at `outgoingPath` (the sender's own copy) and
 // ingress-send the encrypted bytes to the recipient. Returns both the encrypted
 // publish result (so the sender can fold its own copy into the store with a
@@ -608,40 +468,12 @@ export async function sendObjectByIdentity(
   return { encryptedPublish, ingress };
 }
 
-async function submitSpokeObjectByIdentity(
-  sessionToken: string,
-  receiverIdentity: string,
-  objectId: string,
-  body: object,
-  path?: string
-) {
-  const outgoingPath = path || `/spoke/outgoing/${objectId}`;
-  const { ingress } = await sendObjectByIdentity(sessionToken, receiverIdentity, outgoingPath, body);
-  return ingress;
-}
-
 export function decodeFetchData(result: FetchResult) {
   return new TextDecoder().decode(new Uint8Array(result.data));
 }
 
 export function decodePlaintext(result: DecryptedIngress) {
   return new TextDecoder().decode(new Uint8Array(result.plaintext));
-}
-
-export function parseJsonBytes<T>(bytes: number[]) {
-  return JSON.parse(new TextDecoder().decode(new Uint8Array(bytes))) as T;
-}
-
-export function makePostPath(id: string) {
-  return `/spoke/posts/${id}`;
-}
-
-export function makeReplyPath(id: string) {
-  return `/spoke/replies/${id}`;
-}
-
-export function makeThreadPath(postId: string) {
-  return `/spoke/threads/${postId}`;
 }
 
 export function makeId(prefix: string) {

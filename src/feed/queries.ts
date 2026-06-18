@@ -5,7 +5,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { normalizeIdentity } from "../follow";
 import { store as defaultStore, type Store, type StoreSnapshot } from "../common/store";
-import type { SpokePost } from "../api";
+import type { SpokePost } from "./model";
 import { activeContacts, sortFeed, POSTS_PREFIX, type Contact, type FeedItem } from "./model";
 
 export type FeedScope = {

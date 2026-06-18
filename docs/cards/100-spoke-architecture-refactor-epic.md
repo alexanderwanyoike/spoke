@@ -63,7 +63,7 @@ never the source of social truth.
 | 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | done | 101 | #26 |
 | 103  | Spoke: messages + follows vertical | spoke | done | 101 | #27 |
 | 104  | Spoke: swap bridge enumeration → J1 door (now un-phased: J2 done) | spoke | not started | J1, J2, 102, 091 | — |
-| 105  | Spoke: complete the Jolt SDK seam (relocate transport, evict Spoke types from `api.ts`) | spoke | not started | 101 | — |
+| 105  | Spoke: complete the Jolt SDK seam (relocate transport, evict Spoke types from `api.ts`) | spoke | done | 101 | — |
 | 099  | Spoke: compatibility boundary (tolerant readers/strict writers) | spoke | exists on `codex/spoke-compatibility-boundary-card`, NOT on `dev` | — | #22 |
 
 Update the Status column and PR column as each card lands. This table is the

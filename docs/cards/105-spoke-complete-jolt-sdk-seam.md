@@ -2,9 +2,17 @@
 
 **Type:** AFK after design
 **Milestone:** Spoke Social Network (architecture refactor, epic 100)
-**Status:** Not started
+**Status:** Done
 **Depends on:** 101 (seam established)
 **Related:** 104 (enumeration DTO mapping is a slice of this), 099 (decoders)
+
+> **Done:** transport moved to `src/jolt/transport.ts` (private behind the
+> barrel); `api.ts` deleted; domain types live in feature models
+> (`SpokePost`/`SpokeFeedIndex`->feed, `SpokeProfile`->profile,
+> `SpokeReply`->thread); `api.test.ts` -> `src/jolt/transport.test.ts`. The app
+> shell still calls daemon ops (status/session/media) via the `./jolt` barrel;
+> dead wrappers (`publishPostWithIndex`, `submit*ByIdentity`, `parseJsonBytes`,
+> `SpokeThreadIndex`) were dropped.
 
 ## Why
 

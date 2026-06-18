@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { IngressRecord } from "../api";
+import type { IngressRecord } from "../jolt";
 import { createStore } from "../common/store";
 import type { ThreadEnumeration } from "../thread";
 import { acceptFollowRequest, readContacts, requestFollow } from "../follow";

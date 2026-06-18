@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SpokePost } from "../api";
+import type { SpokePost } from "./model";
 import {
   activeContacts,
   displayNameForFeedItem,

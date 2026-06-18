@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { JoltSdk, Reference } from "../jolt";
 import { createStore } from "../common/store";
-import type { SpokePost } from "../api";
+import type { SpokePost } from "./model";
 import type { Contact } from "./model";
 import { FEED_PATH } from "./model";
 import type { EnumerationSource, PostRef } from "./enumeration";

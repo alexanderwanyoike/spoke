@@ -4,7 +4,7 @@ import { createStore } from "../common/store";
 import { publishProfile, PROFILE_PATH } from "./commands";
 import { loadProfile } from "./loaders";
 import { selectProfile, selectProfiles } from "./queries";
-import type { SpokeProfile } from "../api";
+import type { SpokeProfile } from "./model";
 
 function profile(identity: string, displayName: string): SpokeProfile {
   return {

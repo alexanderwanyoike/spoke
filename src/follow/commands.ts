@@ -2,7 +2,7 @@
 // published encrypted to self (ADR 0004) and folded into the monotonic store;
 // follow requests/responses are sent to the peer through encrypted ingress.
 
-import { makeId } from "../api";
+import { makeId } from "../jolt";
 import type { JoltEncryptedSdk, JoltIngressSdk } from "../jolt";
 import { store as defaultStore, type Store } from "../common/store";
 import {
