@@ -63,6 +63,7 @@ never the source of social truth.
 | 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | done | 101 | #26 |
 | 103  | Spoke: messages + follows vertical | spoke | done | 101 | #27 |
 | 104  | Spoke: swap bridge enumeration → J1 door (now un-phased: J2 done) | spoke | not started | J1, J2, 102, 091 | — |
+| 105  | Spoke: complete the Jolt SDK seam (relocate transport, evict Spoke types from `api.ts`) | spoke | not started | 101 | — |
 | 099  | Spoke: compatibility boundary (tolerant readers/strict writers) | spoke | exists on `codex/spoke-compatibility-boundary-card`, NOT on `dev` | — | #22 |
 
 Update the Status column and PR column as each card lands. This table is the
@@ -182,6 +183,27 @@ single source of truth for "where are we."
   fields up (the deferred half of the ACL marshalling refactor).
 - **Done when:** both feed and thread Collections read via Jolt's enumeration
   API; bridge + the published index Singletons removed; DTO mapping in the ACL.
+
+### 105 - complete the Jolt SDK seam
+- **Goal:** finish card 101's stated-but-undelivered goal. Today `src/jolt/` is a
+  thin wrapper that delegates to `src/api.ts`, so the "pure transport boundary"
+  depends on `api.ts` instead of being it, and `api.ts` still mixes raw transport
+  with Spoke domain types.
+- **What:** (1) relocate the request core + all Jolt transport primitives and
+  DTOs into `src/jolt/` (private `transport.ts` behind the barrel); (2) evict
+  Spoke domain types (`SpokePost`/`SpokeProfile`/`SpokeReply`/`SpokeFeedIndex`)
+  into their feature models; (3) delete `api.ts` or shrink it to a documented
+  Spoke-only shim.
+- **Behavior-preserving:** lean on `api.test.ts` (moved alongside the relocated
+  transport) as the safety net; no publish/resolve/fetch/ingress/encryption
+  behavior changes.
+- **Relationship to 104:** 104's `AppendRecordInfo`/`PublishedContent` -> `PostRef`
+  DTO mapping is the enumeration slice of this same ACL work. Do 105 first, or
+  fold 104's mapping into it. Decide when 104 is picked up.
+- **Done when:** nothing in `src/jolt/` imports `api.ts`; no `Spoke*` type lives
+  in the transport layer; features touch transport only via the SDK interfaces;
+  `api.ts` is gone or a thin shim; suite + build green. See
+  `docs/cards/105-spoke-complete-jolt-sdk-seam.md`.
 
 ## How to resume in a fresh context
 
