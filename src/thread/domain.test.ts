@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { JoltSdk, Reference } from "../jolt";
+import type { JoltAppendSdk, JoltSdk, Reference } from "../jolt";
 import { createStore } from "../common/store";
 import type { SpokeReply } from "./model";
 import {
+  makeAcceptedPrefix,
+  makeAcceptedRefPath,
   makeReplyPath,
   type AcceptedReplyRef,
   type SpokeReplyV2
 } from "./model";
 import type { ThreadEnumeration } from "./enumeration";
-import { createThreadBridge } from "./enumeration";
+import { createJoltThreadEnumeration } from "./enumeration";
 import { acceptanceDecision } from "./policy";
 import { submitReply, acceptReply, unacceptReply } from "./commands";
 import { loadThread } from "./loaders";
@@ -62,10 +64,10 @@ function fakeSdk(
 }
 
 // A fixed-result enumeration for loader tests (lets us simulate stale reads).
-function staticEnumeration(entries: AcceptedReplyRef[], latestSequence: number): ThreadEnumeration {
+function staticEnumeration(refs: AcceptedReplyRef[], latestSequence: number): ThreadEnumeration {
   return {
     async listAccepted() {
-      return { entries, latestSequence };
+      return { entries: refs.map((ref) => ({ ref, latestSequence })) };
     },
     async recordAccepted() {
       return latestSequence;
@@ -73,13 +75,13 @@ function staticEnumeration(entries: AcceptedReplyRef[], latestSequence: number):
   };
 }
 
-// An in-memory accepted index for command tests.
+// An in-memory accepted Collection for command tests.
 function memoryEnumeration(): ThreadEnumeration {
   const byPost = new Map<string, AcceptedReplyRef[]>();
   let seq = 0;
   return {
     async listAccepted(_author, postId) {
-      return { entries: byPost.get(postId) ?? [], latestSequence: seq };
+      return { entries: (byPost.get(postId) ?? []).map((ref) => ({ ref, latestSequence: seq })) };
     },
     async recordAccepted(postId, ref) {
       seq += 1;
@@ -125,7 +127,7 @@ describe("thread commands", () => {
     await acceptReply(fakeSdk(), enumeration, reply, store);
 
     const accepted = await enumeration.listAccepted("alice.jolt", "p1");
-    expect(accepted.entries.map((e) => e.replyId)).toContain("r_bob");
+    expect(accepted.entries.map((e) => e.ref.replyId)).toContain("r_bob");
     // Now visible to a third party.
     const tree = selectThread(store.getSnapshot(), { postId: "p1", postAuthor: "alice.jolt", localIdentity: "carol.jolt" });
     expect(tree.map((n) => n.id)).toEqual(["r_bob"]);
@@ -230,32 +232,49 @@ describe("legacy compatibility", () => {
   });
 });
 
-describe("bridge enumeration", () => {
-  it("recordAccepted publishes the index and listAccepted reads it back", async () => {
-    const published: Array<{ path: string; body: any }> = [];
+describe("jolt thread enumeration", () => {
+  it("recordAccepted publishes an append record and listAccepted reads the prefix back", async () => {
     const reply = replyV2({ id: "r_bob", sender: "bob.jolt" });
-    let indexBytes: number[] | null = null;
-    const sdk: JoltSdk = {
-      async publishJson(path, body) {
-        published.push({ path, body });
-        indexBytes = encode(body);
-        return { contentId: "cidx", latestSequence: 4, path, address: null };
+    const ref = acceptedRef(reply);
+    const appendPath = makeAcceptedRefPath("p1", "r_bob");
+    const appended: Array<{ path: string; body: unknown }> = [];
+    const sdk: JoltSdk & JoltAppendSdk = {
+      async publishJson(path) {
+        return { contentId: "c", latestSequence: 1, path, address: null };
       },
-      async read(ref: Reference, decode) {
-        if (ref.path === "/spoke/threads/p1" && indexBytes) {
-          const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(indexBytes))));
-          return value === null ? null : { ref, value, latestSequence: 4, contentId: "cidx" };
-        }
-        return null;
+      async read(r: Reference, decode) {
+        if (r.path !== appendPath) return null;
+        const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(encode(ref)))));
+        return value === null ? null : { ref: r, value, latestSequence: 7, contentId: "cacc" };
+      },
+      async publishAppend(path, body) {
+        appended.push({ path, body });
+        return { contentId: "cacc", latestSequence: 7, path, address: null };
+      },
+      async enumerate(identity, prefix) {
+        return prefix === makeAcceptedPrefix("p1")
+          ? [
+              {
+                identity,
+                path: appendPath,
+                contentId: "cacc",
+                deviceId: "dev_1",
+                deviceSequence: 0,
+                createdAt: "2026-06-06T10:00:00.000Z",
+                entryHash: "hash_1"
+              }
+            ]
+          : [];
       }
     };
-    const bridge = createThreadBridge(sdk, { localIdentity: "alice.jolt" });
+    const enumeration = createJoltThreadEnumeration(sdk);
 
-    const seq = await bridge.recordAccepted("p1", acceptedRef(reply));
-    expect(seq).toBe(4);
-    expect(published[0].path).toBe("/spoke/threads/p1");
+    const seq = await enumeration.recordAccepted("p1", ref);
+    expect(seq).toBe(7);
+    expect(appended[0].path).toBe(appendPath);
 
-    const listed = await bridge.listAccepted("alice.jolt", "p1");
-    expect(listed.entries.map((e) => e.replyId)).toEqual(["r_bob"]);
+    const listed = await enumeration.listAccepted("alice.jolt", "p1");
+    expect(listed.entries.map((e) => e.ref.replyId)).toEqual(["r_bob"]);
+    expect(listed.entries[0].latestSequence).toBe(7);
   });
 });

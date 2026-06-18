@@ -113,11 +113,11 @@ import {
 } from "./follow";
 import {
   acceptReply,
-  createThreadBridge,
+  createJoltThreadEnumeration,
   flattenThread,
   isReplyV2,
   loadThread,
-  makeThreadIndexPath,
+  makeAcceptedPrefix,
   submitReply,
   useThreads,
   type SpokeReply,
@@ -455,10 +455,7 @@ function App() {
   // Threads are author-anchored: the bridge enumerates the post author's
   // accepted-reply Collection (swappable for J1 in card 104). useThreads
   // projects one nested tree per visible post from the monotonic store.
-  const threadBridge = useMemo(
-    () => createThreadBridge(jolt, { localIdentity }),
-    [jolt, localIdentity]
-  );
+  const threadBridge = useMemo(() => createJoltThreadEnumeration(jolt), [jolt]);
   const threadScopes = useMemo<ThreadScope[]>(
     () => feed.map((item) => ({ postId: item.post.id, postAuthor: item.post.author, localIdentity })),
     [feed, localIdentity]
@@ -1371,7 +1368,7 @@ function App() {
         body,
         createdAt: new Date().toISOString(),
         path: makePostPath(id),
-        threadPath: makeThreadIndexPath(id),
+        threadPath: makeAcceptedPrefix(id),
         ...(attachments.length > 0 ? { attachments } : {})
       };
       // Publish the post (Append Record), record it in the bridge index, and

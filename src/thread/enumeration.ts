@@ -1,60 +1,49 @@
-// Thread enumeration: the swappable seam for the accepted-reply Collection.
-//
-// Pre-J1, the post author maintains a per-post accepted-index Singleton at
-// /spoke/threads/{postId} listing the accepted references. It holds only
-// references to append-record replies (which live under the repliers), and the
-// monotonic store - not this index - is what guarantees an accepted reference
-// is never dropped. Card 104 swaps this module for J1 append-record
-// enumeration without touching commands/loaders/queries.
+// Thread enumeration: the accepted-reply Collection, read through Jolt's
+// append-record enumeration (J1). The post author publishes one accepted-reference
+// append record per accepted reply under /spoke/accepted/{postId}/{replyId};
+// listing that prefix is the Collection read. A tombstone (removed: true) is a
+// newer append record at the same path. The monotonic store - not the listing -
+// guarantees an accepted reference is never dropped. Replaces the pre-J1
+// /spoke/threads/{postId} Singleton index.
 
-import type { JoltSdk } from "../jolt";
+import type { JoltAppendSdk, JoltSdk } from "../jolt";
 import {
-  decodeAcceptedIndex,
-  makeThreadIndexPath,
-  type AcceptedReplyRef,
-  type SpokeAcceptedIndex
+  decodeAcceptedReplyRef,
+  makeAcceptedPrefix,
+  makeAcceptedRefPath,
+  type AcceptedReplyRef
 } from "./model";
 
 export interface ThreadEnumeration {
-  // List an author's accepted references for a post, with the index's version.
+  // List an author's accepted references for a post, with the version to fold
+  // each reference into the store at.
   listAccepted(
     postAuthor: string,
     postId: string
-  ): Promise<{ entries: AcceptedReplyRef[]; latestSequence: number }>;
-  // Record (or tombstone) an acceptance in the local author's index. Returns
-  // the index's new sequence so callers can version the store consistently.
+  ): Promise<{ entries: Array<{ ref: AcceptedReplyRef; latestSequence: number }> }>;
+  // Record (or tombstone) an acceptance as an append record under the author.
+  // Returns the record's sequence so callers can version the store consistently.
   recordAccepted(postId: string, ref: AcceptedReplyRef): Promise<number>;
 }
 
-export function createThreadBridge(
-  sdk: JoltSdk,
-  options: { localIdentity: string }
-): ThreadEnumeration {
+export function createJoltThreadEnumeration(sdk: JoltSdk & JoltAppendSdk): ThreadEnumeration {
   return {
     async listAccepted(postAuthor, postId) {
-      const hit = await sdk.read(
-        { identity: postAuthor, path: makeThreadIndexPath(postId) },
-        decodeAcceptedIndex
+      const records = await sdk.enumerate(postAuthor, makeAcceptedPrefix(postId));
+      const entries = await Promise.all(
+        records.map(async (record) => {
+          const hit = await sdk.read(
+            { identity: postAuthor, path: record.path },
+            decodeAcceptedReplyRef
+          );
+          if (!hit) return null;
+          return { ref: hit.value, latestSequence: hit.latestSequence };
+        })
       );
-      return { entries: hit?.value.entries ?? [], latestSequence: hit?.latestSequence ?? 0 };
+      return { entries: entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null) };
     },
     async recordAccepted(postId, ref) {
-      const hit = await sdk.read(
-        { identity: options.localIdentity, path: makeThreadIndexPath(postId) },
-        decodeAcceptedIndex
-      );
-      const entries = [
-        ref,
-        ...(hit?.value.entries ?? []).filter((entry) => entry.replyId !== ref.replyId)
-      ];
-      const nextIndex: SpokeAcceptedIndex = {
-        schema: "spoke.accepted_index.v1",
-        postId,
-        owner: options.localIdentity,
-        updatedAt: new Date().toISOString(),
-        entries
-      };
-      const published = await sdk.publishJson(makeThreadIndexPath(postId), nextIndex);
+      const published = await sdk.publishAppend(makeAcceptedRefPath(postId, ref.replyId), ref);
       return published.latestSequence;
     }
   };
