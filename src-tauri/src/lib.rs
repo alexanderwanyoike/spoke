@@ -94,6 +94,32 @@ async fn daemon_publish_bytes(
     parse_response(request.send().await).await
 }
 
+#[tauri::command]
+async fn daemon_append(
+    session_token: String,
+    path: String,
+    bytes: Vec<u8>,
+    file_name: String,
+    mime_type: String,
+) -> Result<Value, String> {
+    if !path.starts_with("/spoke/") {
+        return Err("Spoke can only publish under /spoke/".to_string());
+    }
+
+    let file = Part::bytes(bytes)
+        .file_name(file_name)
+        .mime_str(&mime_type)
+        .map_err(|error| format!("failed to prepare Spoke upload: {error}"))?;
+    let form = Form::new().part("file", file).text("path", path);
+    let request = reqwest::Client::new()
+        .post(daemon_url("/app/v1", "/append")?)
+        .header(ACCEPT, "application/json")
+        .header(AUTHORIZATION, format!("Bearer {session_token}"))
+        .multipart(form);
+
+    parse_response(request.send().await).await
+}
+
 async fn parse_response(
     response: Result<reqwest::Response, reqwest::Error>,
 ) -> Result<Value, String> {
@@ -176,7 +202,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             daemon_request,
             daemon_publish_bytes,
-            daemon_publish_json
+            daemon_publish_json,
+            daemon_append
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Spoke");

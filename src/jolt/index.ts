@@ -7,8 +7,10 @@
 
 import {
   acceptIngress as transportAcceptIngress,
+  appendPublishJson as transportAppendPublishJson,
   decodePlaintext,
   decryptEncryptedTarget,
+  enumerate as transportEnumerate,
   fetchTarget,
   listPendingIngress as transportListPendingIngress,
   listPublished as transportListPublished,
@@ -94,6 +96,28 @@ export interface JoltSdk {
   read<T>(ref: Reference, decode: Decoder<T>): Promise<Versioned<T> | null>;
 }
 
+// One append record, marshalled into the domain (camelCase) from the wire
+// AppendRecordInfo. A Collection is every record an identity has under a prefix.
+export type EnumeratedRecord = {
+  identity: string;
+  path: string;
+  contentId: string;
+  deviceId: string;
+  deviceSequence: number;
+  createdAt: string;
+  entryHash: string;
+};
+
+// Append-record publish + enumeration (J1). Replaces the Spoke-maintained bridge
+// index: a growing Collection is written as coexisting append records and read
+// by listing them, so concurrent writers never clobber each other.
+export interface JoltAppendSdk {
+  // Publish a coexisting device-writer append record at `path`.
+  publishAppend(path: string, body: object): Promise<PublishResult>;
+  // List an identity's append records under a path prefix (ACL-marshalled).
+  enumerate(identity: string, pathPrefix: string): Promise<EnumeratedRecord[]>;
+}
+
 // Encrypted publish/read primitives. Separate from the public JoltSdk so a
 // feature only depends on the capability it uses (and existing public-only test
 // fakes keep satisfying JoltSdk). The contact graph (ADR 0004) and the message
@@ -151,7 +175,7 @@ function toPublishResult(response: PublishResponse, path: string): PublishResult
 
 export function createJoltSdk(
   getSessionToken: () => string
-): JoltSdk & JoltEncryptedSdk & JoltIngressSdk {
+): JoltSdk & JoltEncryptedSdk & JoltIngressSdk & JoltAppendSdk {
   // Resolve a reference, hand the content-addressed plaintext bytes to `getBytes`
   // (a plain fetch for public publications, a decrypt for encrypted ones), then
   // parse + decode. Returns null on any missing/unreachable/undecodable step so
@@ -213,6 +237,24 @@ export function createJoltSdk(
     },
     async listPublished() {
       return transportListPublished(getSessionToken());
+    },
+    async publishAppend(path, body) {
+      const response = await transportAppendPublishJson(getSessionToken(), path, body);
+      return toPublishResult(response, path);
+    },
+    async enumerate(identity, pathPrefix) {
+      const records = await transportEnumerate(getSessionToken(), identity, pathPrefix);
+      // ACL marshalling: snake_case wire DTO -> camelCase domain record, so no
+      // transport field shape leaks into the enumeration seam above.
+      return records.map((record) => ({
+        identity,
+        path: record.path,
+        contentId: record.content_id,
+        deviceId: record.device_id,
+        deviceSequence: record.device_sequence,
+        createdAt: record.created_at,
+        entryHash: record.entry_hash
+      }));
     },
     async sendObject(recipient, path, body) {
       const { encryptedPublish } = await sendObjectByIdentity(

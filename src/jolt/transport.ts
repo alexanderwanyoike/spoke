@@ -323,6 +323,59 @@ export async function publishBinary(
   );
 }
 
+// One device-writer append record as the daemon's enumeration returns it (J1).
+export type AppendRecordInfo = {
+  path: string;
+  content_id: string;
+  device_id: string;
+  device_sequence: number;
+  created_at: string;
+  entry_hash: string;
+};
+
+// J1 append publish: write a coexisting device-writer append entry at `path`
+// (never the last-writer-wins update log), so concurrent records survive. JSON
+// body sent as the multipart file, mirroring publishJson.
+export async function appendPublishJson<T extends object>(
+  sessionToken: string,
+  path: string,
+  body: T
+) {
+  const jsonText = JSON.stringify(body, null, 2);
+  const fileName = `${path.split("/").pop() || "object"}.json`;
+
+  if (isDesktopRuntime()) {
+    return invoke<PublishResponse>("daemon_append", {
+      sessionToken,
+      path,
+      bytes: Array.from(new TextEncoder().encode(jsonText)),
+      fileName,
+      mimeType: "application/json"
+    });
+  }
+
+  const form = new FormData();
+  form.append("file", new Blob([jsonText], { type: "application/json" }), fileName);
+  form.append("path", path);
+
+  return request<PublishResponse>(
+    "/jolt-api",
+    "/append",
+    bearerInit(sessionToken, { method: "POST", body: form })
+  );
+}
+
+// J1 enumeration: list a (remote or local) identity's append records under a
+// path prefix. Capability resolve:public; works for any identity now that J2
+// syncs remote device-writer state.
+export function enumerate(sessionToken: string, identity: string, pathPrefix: string) {
+  return request<AppendRecordInfo[]>(
+    "/jolt-api",
+    "/enumerate",
+    jsonInit(sessionToken, { identity, path_prefix: pathPrefix })
+  );
+}
+
 export function publishEncryptedJson(
   sessionToken: string,
   path: string,
