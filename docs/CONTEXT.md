@@ -11,11 +11,16 @@ never learn about posts, replies, or audiences.
 ```
 UI (React, thin)            knows ONLY the command + query seams. Nothing below.
   ↓
-queries.ts / commands.ts    the public domain seam (CQRS)
-  ↓                          queries expose projection subscription hooks
-store.ts                    PRIVATE to the domain. monotonic normalized cache.
+src/<feature>/              the public domain seam (CQRS), one folder per feature
+  commands.ts                 mutations: create/change durable social truth on Jolt
+  loaders.ts                  read-path: async fetch-from-Jolt + monotonic merge into store
+  queries.ts                  projection subscription hooks + selectors (sync, pure)
+  model.ts                    types + pure domain helpers / tolerant decoders
+  index.ts                    barrel: the feature's only public surface
+  ↓
+src/common/store.ts         PRIVATE to the domain. monotonic normalized cache.
   ↓                          React never imports or subscribes to it directly.
-Jolt SDK / ACL (src/jolt/)  pure transport + protocol primitives, no social concepts
+src/jolt/ (SDK / ACL)       pure transport + protocol primitives, no social concepts
   ↓
 Jolt daemon (../../jolt)    identity, publish, resolve, fetch, encrypt, ingress
 ```
@@ -25,6 +30,31 @@ React depends on commands (mutations) and query hooks (`useThread`, `useFeed`,
 wiring live behind the query seam and are swappable without touching components.
 `useState` is for UI-only concerns (drafts, modals, active tab), never social
 truth.
+
+### File organization
+
+Each social feature owns a folder under `src/` (`src/profile/`, `src/feed/`,
+`src/message/`, ...) bundling its `model` / `commands` / `loaders` / `queries`
+and tests behind an `index.ts` barrel; consumers import only from `./<feature>`,
+never a file inside it. The three seam roles are kept distinct: a **command**
+creates durable social truth on Jolt; a **loader** hydrates the cache by
+fetching truth that already exists and merging it monotonically (the read-side
+of ADR 0003); a **query** is a synchronous, side-effect-free Projection read. Shared, non-feature infrastructure lives outside the feature
+folders: the monotonic store in `src/common/`, and the Jolt SDK / ACL in
+`src/jolt/`. Features are moved into this layout as their cards are worked, not
+all at once.
+
+### Marshalling lives in the ACL
+
+The Jolt SDK owns the wire format. `publishJson(path, body)` serialises; `read`
+takes a `Decoder<T>` (`(value: unknown) => T | null`), resolves, fetches,
+parses, and validates, returning a `Versioned<T>` (value + `latestSequence` +
+`contentId`) or `null` when the reference is missing, unreachable, or does not
+decode. The domain never sees bytes: a feature's `model.ts` only supplies pure
+schema-level decoders (`decodePost`, `decodeProfile`, ...), and loaders fold the
+returned `value`/version straight into the store. This keeps the
+tolerant-reader policy at the boundary and stops transport DTOs (raw bytes,
+snake_case daemon fields) from leaking up into the domain.
 
 ## Glossary
 
@@ -40,7 +70,9 @@ element is its own object at its own path; the set is never encoded as a single
 rewritten object. Multiple writers (and multiple devices of one writer) can
 append concurrently and all valid records coexist. Maps onto Jolt's append
 operation class. Spoke examples: a post, a reply, an accepted-reply reference, a
-message.
+message, a contact edge. A Collection may be public (posts, replies) or
+encrypted to self (the contact graph, ADR 0004); encryption is an ACL concern
+and does not change how records are modelled, stored, or projected.
 
 **Core data-modelling rule:** anything that *grows* is modelled as Append
 Records, never as a rewritten Singleton Object. This is what makes Spoke correct

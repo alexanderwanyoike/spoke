@@ -7,10 +7,10 @@ import {
   requestContactFromDraft,
   sameIdentity,
   upsertContact,
+  type Contact,
   type SpokeFollowRequest,
   type SpokeFollowResponse
-} from "./follow";
-import type { Contact } from "./feed";
+} from "./model";
 
 function request(overrides: Partial<SpokeFollowRequest>): SpokeFollowRequest {
   return {

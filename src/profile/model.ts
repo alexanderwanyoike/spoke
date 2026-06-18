@@ -1,6 +1,24 @@
-import type { SpokeProfile } from "./api";
-import type { Contact } from "./feed";
-import { normalizeIdentity, sameIdentity } from "./follow";
+import type { Decoder } from "../jolt";
+import type { SpokeAttachment } from "../media";
+import type { Contact } from "../feed";
+import { normalizeIdentity, sameIdentity } from "../follow";
+
+export type SpokeProfileLink = {
+  label: string;
+  url: string;
+};
+
+export type SpokeProfile = {
+  schema: "spoke.profile.v1" | "spoke.profile.v2";
+  identity: string;
+  displayName: string;
+  bio: string;
+  avatar?: SpokeAttachment;
+  links?: SpokeProfileLink[];
+  location?: string;
+  pronouns?: string;
+  updatedAt: string;
+};
 
 export type ProfilesByIdentity = Record<string, SpokeProfile>;
 
@@ -55,6 +73,20 @@ export function displayNameForProfileIdentity(input: {
 export function profileCacheKey(identity: string) {
   return normalizeIdentity(identity);
 }
+
+export function isSpokeProfile(value: unknown): value is SpokeProfile {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const schema = (value as { schema?: unknown }).schema;
+  return schema === "spoke.profile.v1" || schema === "spoke.profile.v2";
+}
+
+// Tolerant reader: validate an already-parsed JSON value into a canonical
+// profile, or null if unrecoverable. The ACL handles bytes -> JSON; this is the
+// schema-level decoder (see docs/CONTEXT.md "Tolerant readers, strict writers").
+export const decodeProfile: Decoder<SpokeProfile> = (value) =>
+  isSpokeProfile(value) ? value : null;
 
 export function profileLinksFromDraft(links: ProfileDraftLink[]) {
   return links

@@ -1,7 +1,14 @@
+// Jolt transport (the wire layer of the ACL).
+//
+// This is the only module that talks to the Jolt daemon - over Tauri `invoke`
+// on desktop or `fetch` against the dev proxy on web. It owns the request core,
+// the wire DTOs, and the daemon operations (publish/resolve/fetch/encrypt/
+// ingress/session). It is app-agnostic: no Spoke domain types, namespaces, or
+// capabilities live here - those belong to the feature models and src/session.ts.
+// Consumers import everything through the "./jolt" barrel, never this file
+// directly. See docs/cards/105-spoke-complete-jolt-sdk-seam.md.
+
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { SpokeFollowRequest, SpokeFollowResponse } from "./follow";
-import type { SpokeAttachment } from "./media";
-import type { SpokeMessage } from "./message";
 
 export type NodeStatus = {
   peer_id: string;
@@ -104,95 +111,6 @@ export type DecryptedEncryptedObject = {
   content_type: string;
 };
 
-export type SpokeProfileLink = {
-  label: string;
-  url: string;
-};
-
-export type SpokeProfile = {
-  schema: "spoke.profile.v1" | "spoke.profile.v2";
-  identity: string;
-  displayName: string;
-  bio: string;
-  avatar?: SpokeAttachment;
-  links?: SpokeProfileLink[];
-  location?: string;
-  pronouns?: string;
-  updatedAt: string;
-};
-
-export type SpokePost = {
-  schema: "spoke.post.v1" | "spoke.post.v2";
-  id: string;
-  author: string;
-  displayName?: string;
-  title: string;
-  body: string;
-  createdAt: string;
-  path: string;
-  threadPath?: string;
-  attachments?: SpokeAttachment[];
-};
-
-export type SpokeFeedIndex = {
-  schema: "spoke.feed.v1";
-  owner: string;
-  updatedAt: string;
-  posts: Array<{
-    id: string;
-    path: string;
-    contentId?: string;
-    address?: string | null;
-    title: string;
-    createdAt: string;
-  }>;
-};
-
-export type SpokeReply = {
-  schema: "spoke.reply.v1";
-  id: string;
-  sender: string;
-  postAuthor: string;
-  postAddress: string;
-  body: string;
-  createdAt: string;
-};
-
-export type SpokeThreadIndex = {
-  schema: "spoke.thread.v1";
-  id: string;
-  owner: string;
-  postAddress: string;
-  visibility: "public";
-  updatedAt: string;
-  replies: Array<{
-    id: string;
-    sender: string;
-    address?: string | null;
-    contentId?: string;
-    createdAt: string;
-    moderation: "accepted";
-  }>;
-};
-
-export const SPOKE_CAPABILITIES = [
-  "resolve:public",
-  "fetch:public",
-  "publish:/spoke/*",
-  "publish:encrypted:/spoke/*",
-  "inventory:/spoke/*",
-  "pin:own:/spoke/*",
-  "encrypt:/spoke/*",
-  "decrypt:/spoke/*",
-  "ingress:send",
-  "ingress:read",
-  "ingress:decide"
-] as const;
-
-const SPOKE_APP_ID = "spoke.local";
-const SPOKE_APP_NAME = "Spoke";
-const SPOKE_APP_ORIGIN = "http://127.0.0.1:5178";
-const SPOKE_PATH_PREFIX = "/spoke/";
 const APP_API_BASE = "/app/v1";
 const DAEMON_API_BASE = "/api/v1";
 const WEB_APP_PROXY_BASE = "/jolt-api";
@@ -293,15 +211,9 @@ function jsonInit(sessionToken: string | null, body: unknown): RequestInit {
   };
 }
 
-function assertSpokePath(path: string) {
-  if (!path.startsWith(SPOKE_PATH_PREFIX)) {
-    throw new Error("Spoke can only publish under /spoke/");
-  }
-}
-
 export function apiErrorMessage(error: unknown) {
   if (error instanceof TypeError) {
-    return "Cannot reach the Spoke dev proxy or Jolt daemon.";
+    return "Cannot reach the dev proxy or Jolt daemon.";
   }
 
   if (error instanceof Error) {
@@ -318,19 +230,27 @@ export function getStatus() {
   return request<NodeStatus>("/jolt-daemon", "/status");
 }
 
-export function requestSpokeSession(identity: string) {
-  const appOrigin =
-    typeof window === "undefined" ? SPOKE_APP_ORIGIN : window.location.origin;
+// What an app needs to declare to open a Jolt session. The app's identity,
+// name, origin, and requested capabilities are the caller's concern, not the
+// transport's - Spoke supplies them in src/session.ts.
+export type SessionRequest = {
+  appId: string;
+  appName: string;
+  appOrigin: string;
+  identity: string;
+  capabilities: readonly string[];
+};
 
+export function requestSession(req: SessionRequest) {
   return request<AppSessionRequestResponse>(
     "/jolt-api",
     "/sessions/request",
     jsonInit(null, {
-      app_id: SPOKE_APP_ID,
-      app_name: SPOKE_APP_NAME,
-      app_origin: appOrigin,
-      requested_identity: identity,
-      requested_capabilities: SPOKE_CAPABILITIES
+      app_id: req.appId,
+      app_name: req.appName,
+      app_origin: req.appOrigin,
+      requested_identity: req.identity,
+      requested_capabilities: req.capabilities
     })
   );
 }
@@ -348,8 +268,6 @@ export function listPublished(sessionToken: string) {
 }
 
 export function publishJson<T extends object>(sessionToken: string, path: string, body: T) {
-  assertSpokePath(path);
-
   const jsonText = JSON.stringify(body, null, 2);
 
   if (isDesktopRuntime()) {
@@ -362,7 +280,7 @@ export function publishJson<T extends object>(sessionToken: string, path: string
 
   const form = new FormData();
   const file = new Blob([jsonText], { type: "application/json" });
-  form.append("file", file, `${path.split("/").pop() || "spoke"}.json`);
+  form.append("file", file, `${path.split("/").pop() || "object"}.json`);
   form.append("path", path);
 
   return request<PublishResponse>(
@@ -381,8 +299,6 @@ export async function publishBinary(
   file: File | Blob,
   options: { fileName: string; mimeType: string }
 ) {
-  assertSpokePath(path);
-
   if (isDesktopRuntime()) {
     return invoke<PublishResponse>("daemon_publish_bytes", {
       sessionToken,
@@ -407,35 +323,57 @@ export async function publishBinary(
   );
 }
 
-export function publishProfile(sessionToken: string, profile: SpokeProfile) {
-  return publishJson(sessionToken, "/spoke/profile", profile);
+// One device-writer append record as the daemon's enumeration returns it (J1).
+export type AppendRecordInfo = {
+  path: string;
+  content_id: string;
+  device_id: string;
+  device_sequence: number;
+  created_at: string;
+  entry_hash: string;
+};
+
+// J1 append publish: write a coexisting device-writer append entry at `path`
+// (never the last-writer-wins update log), so concurrent records survive. JSON
+// body sent as the multipart file, mirroring publishJson.
+export async function appendPublishJson<T extends object>(
+  sessionToken: string,
+  path: string,
+  body: T
+) {
+  const jsonText = JSON.stringify(body, null, 2);
+  const fileName = `${path.split("/").pop() || "object"}.json`;
+
+  if (isDesktopRuntime()) {
+    return invoke<PublishResponse>("daemon_append", {
+      sessionToken,
+      path,
+      bytes: Array.from(new TextEncoder().encode(jsonText)),
+      fileName,
+      mimeType: "application/json"
+    });
+  }
+
+  const form = new FormData();
+  form.append("file", new Blob([jsonText], { type: "application/json" }), fileName);
+  form.append("path", path);
+
+  return request<PublishResponse>(
+    "/jolt-api",
+    "/append",
+    bearerInit(sessionToken, { method: "POST", body: form })
+  );
 }
 
-export async function publishPostWithIndex(
-  sessionToken: string,
-  post: SpokePost,
-  existingIndex: SpokeFeedIndex | null
-) {
-  assertSpokePath(post.path);
-  const publishedPost = await publishJson(sessionToken, post.path, post);
-  const nextIndex: SpokeFeedIndex = {
-    schema: "spoke.feed.v1",
-    owner: post.author,
-    updatedAt: new Date().toISOString(),
-    posts: [
-      {
-        id: post.id,
-        path: post.path,
-        contentId: publishedPost.content_id,
-        address: publishedPost.address,
-        title: post.title,
-        createdAt: post.createdAt
-      },
-      ...(existingIndex?.posts || []).filter((item) => item.id !== post.id)
-    ].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  };
-  const publishedIndex = await publishJson(sessionToken, "/spoke/feed", nextIndex);
-  return { post: publishedPost, index: publishedIndex, feedIndex: nextIndex };
+// J1 enumeration: list a (remote or local) identity's append records under a
+// path prefix. Capability resolve:public; works for any identity now that J2
+// syncs remote device-writer state.
+export function enumerate(sessionToken: string, identity: string, pathPrefix: string) {
+  return request<AppendRecordInfo[]>(
+    "/jolt-api",
+    "/enumerate",
+    jsonInit(sessionToken, { identity, path_prefix: pathPrefix })
+  );
 }
 
 export function publishEncryptedJson(
@@ -460,8 +398,6 @@ export function publishEncryptedBytes(
   contentType: string,
   recipients: string[]
 ) {
-  assertSpokePath(path);
-
   return request<EncryptedPublishResponse>(
     "/jolt-api",
     "/encrypted/publish",
@@ -533,56 +469,25 @@ export function rejectIngress(sessionToken: string, ingressId: string) {
   );
 }
 
-export async function submitReplyByIdentity(
+// Encrypt-publish an object at `outgoingPath` (the sender's own copy) and
+// ingress-send the encrypted bytes to the recipient. Returns both the encrypted
+// publish result (so the sender can fold its own copy into the store with a
+// version) and the resulting ingress record. The receiver's URL is never
+// exposed to the app; it only learns the recipient identity.
+export async function sendObjectByIdentity(
   sessionToken: string,
   receiverIdentity: string,
-  reply: SpokeReply
-) {
-  return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, reply.id, reply);
-}
-
-export function submitFollowRequestByIdentity(
-  sessionToken: string,
-  receiverIdentity: string,
-  request: SpokeFollowRequest
-) {
-  return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, request.id, request);
-}
-
-export function submitFollowResponseByIdentity(
-  sessionToken: string,
-  receiverIdentity: string,
-  response: SpokeFollowResponse
-) {
-  return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, response.id, response);
-}
-
-export function submitMessageByIdentity(
-  sessionToken: string,
-  receiverIdentity: string,
-  message: SpokeMessage
-) {
-  return submitSpokeObjectByIdentity(
+  outgoingPath: string,
+  body: object
+): Promise<{ encryptedPublish: EncryptedPublishResponse; ingress: IngressRecord }> {
+  const encryptedPublish = await publishEncryptedJson(
     sessionToken,
-    receiverIdentity,
-    message.id,
-    message,
-    `/spoke/messages/outgoing/${message.id}`
+    outgoingPath,
+    body,
+    [receiverIdentity]
   );
-}
-
-async function submitSpokeObjectByIdentity(
-  sessionToken: string,
-  receiverIdentity: string,
-  objectId: string,
-  body: object,
-  path?: string
-) {
-  const outgoingPath = path || `/spoke/outgoing/${objectId}`;
-  const encrypted = await publishEncryptedJson(sessionToken, outgoingPath, body, [receiverIdentity]);
-  const encryptedBytes = await fetchTarget(sessionToken, encrypted.content_id);
-
-  return request<IngressRecord>(
+  const encryptedBytes = await fetchTarget(sessionToken, encryptedPublish.content_id);
+  const ingress = await request<IngressRecord>(
     "/jolt-api",
     "/ingress/send",
     jsonInit(sessionToken, {
@@ -591,6 +496,7 @@ async function submitSpokeObjectByIdentity(
       expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
     })
   );
+  return { encryptedPublish, ingress };
 }
 
 export function decodeFetchData(result: FetchResult) {
@@ -599,22 +505,6 @@ export function decodeFetchData(result: FetchResult) {
 
 export function decodePlaintext(result: DecryptedIngress) {
   return new TextDecoder().decode(new Uint8Array(result.plaintext));
-}
-
-export function parseJsonBytes<T>(bytes: number[]) {
-  return JSON.parse(new TextDecoder().decode(new Uint8Array(bytes))) as T;
-}
-
-export function makePostPath(id: string) {
-  return `/spoke/posts/${id}`;
-}
-
-export function makeReplyPath(id: string) {
-  return `/spoke/replies/${id}`;
-}
-
-export function makeThreadPath(postId: string) {
-  return `/spoke/threads/${postId}`;
 }
 
 export function makeId(prefix: string) {
