@@ -61,7 +61,7 @@ never the source of social truth.
 | 101  | Spoke: Jolt SDK seam + monotonic store (profile tracer) | spoke | done | — | #24 |
 | 102  | Spoke: feed vertical | spoke | done | 101 | #25 |
 | 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | done | 101 | #26 |
-| 103  | Spoke: messages + follows vertical | spoke | done | 101 | (branch `spoke/103-messages-follows-vertical`) |
+| 103  | Spoke: messages + follows vertical | spoke | done | 101 | #27 |
 | 104  | Spoke: swap bridge enumeration → J1 door (now un-phased: J2 done) | spoke | not started | J1, J2, 102, 091 | — |
 | 099  | Spoke: compatibility boundary (tolerant readers/strict writers) | spoke | exists on `codex/spoke-compatibility-boundary-card`, NOT on `dev` | — | #22 |
 
