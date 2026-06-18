@@ -190,20 +190,6 @@ describe("Spoke daemon API client", () => {
     );
   });
 
-  it("does not publish outside the Spoke namespace", async () => {
-    expect(() => publishJson("token-1", "/profile", { nope: true })).toThrow(
-      "Spoke can only publish under /spoke/"
-    );
-    await expect(
-      publishBinary("token-1", "/media/media_1", new Blob(["nope"]), {
-        fileName: "nope.png",
-        mimeType: "image/png"
-      })
-    ).rejects.toThrow("Spoke can only publish under /spoke/");
-
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
   it("decrypts encrypted outgoing objects through the app API", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       jsonResponse({

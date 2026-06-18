@@ -3,8 +3,8 @@
 // This is the only module that talks to the Jolt daemon - over Tauri `invoke`
 // on desktop or `fetch` against the dev proxy on web. It owns the request core,
 // the wire DTOs, and the daemon operations (publish/resolve/fetch/encrypt/
-// ingress/session). It knows no Spoke domain types (those live in feature
-// models); the `/spoke/` namespace guard and capability list are app config.
+// ingress/session). It is app-agnostic: no Spoke domain types, namespaces, or
+// capabilities live here - those belong to the feature models and src/session.ts.
 // Consumers import everything through the "./jolt" barrel, never this file
 // directly. See docs/cards/105-spoke-complete-jolt-sdk-seam.md.
 
@@ -111,7 +111,6 @@ export type DecryptedEncryptedObject = {
   content_type: string;
 };
 
-const SPOKE_PATH_PREFIX = "/spoke/";
 const APP_API_BASE = "/app/v1";
 const DAEMON_API_BASE = "/api/v1";
 const WEB_APP_PROXY_BASE = "/jolt-api";
@@ -212,15 +211,9 @@ function jsonInit(sessionToken: string | null, body: unknown): RequestInit {
   };
 }
 
-function assertSpokePath(path: string) {
-  if (!path.startsWith(SPOKE_PATH_PREFIX)) {
-    throw new Error("Spoke can only publish under /spoke/");
-  }
-}
-
 export function apiErrorMessage(error: unknown) {
   if (error instanceof TypeError) {
-    return "Cannot reach the Spoke dev proxy or Jolt daemon.";
+    return "Cannot reach the dev proxy or Jolt daemon.";
   }
 
   if (error instanceof Error) {
@@ -275,8 +268,6 @@ export function listPublished(sessionToken: string) {
 }
 
 export function publishJson<T extends object>(sessionToken: string, path: string, body: T) {
-  assertSpokePath(path);
-
   const jsonText = JSON.stringify(body, null, 2);
 
   if (isDesktopRuntime()) {
@@ -289,7 +280,7 @@ export function publishJson<T extends object>(sessionToken: string, path: string
 
   const form = new FormData();
   const file = new Blob([jsonText], { type: "application/json" });
-  form.append("file", file, `${path.split("/").pop() || "spoke"}.json`);
+  form.append("file", file, `${path.split("/").pop() || "object"}.json`);
   form.append("path", path);
 
   return request<PublishResponse>(
@@ -308,8 +299,6 @@ export async function publishBinary(
   file: File | Blob,
   options: { fileName: string; mimeType: string }
 ) {
-  assertSpokePath(path);
-
   if (isDesktopRuntime()) {
     return invoke<PublishResponse>("daemon_publish_bytes", {
       sessionToken,
@@ -356,8 +345,6 @@ export function publishEncryptedBytes(
   contentType: string,
   recipients: string[]
 ) {
-  assertSpokePath(path);
-
   return request<EncryptedPublishResponse>(
     "/jolt-api",
     "/encrypted/publish",
