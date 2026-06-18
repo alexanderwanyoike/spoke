@@ -6,7 +6,7 @@
 // Attachments are resolved by the caller (media layer) before the message is
 // built; this seam only moves the message object.
 
-import type { JoltInboxSdk, JoltSdk } from "../jolt";
+import type { JoltIngressSdk, JoltSdk } from "../jolt";
 import { normalizeIdentity } from "../follow";
 import { store as defaultStore, type Store } from "../common/store";
 import { makeOutgoingPath, makeReceivedPath, messageBelongsToConversation, type SpokeMessage } from "./model";
@@ -28,7 +28,7 @@ function foldMessage(
 }
 
 export async function sendMessage(
-  sdk: JoltInboxSdk,
+  sdk: JoltIngressSdk,
   message: SpokeMessage,
   store: Store = defaultStore
 ): Promise<SpokeMessage> {

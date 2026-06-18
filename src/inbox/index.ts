@@ -8,10 +8,10 @@
 // the records left for manual review.
 
 import type { IngressRecord } from "../api";
-import type { JoltEncryptedSdk, JoltInboxSdk, JoltSdk } from "../jolt";
+import type { JoltEncryptedSdk, JoltIngressSdk, JoltSdk } from "../jolt";
 import type { Store } from "../common/store";
 
-export type InboxSdk = JoltSdk & JoltEncryptedSdk & JoltInboxSdk;
+export type InboxSdk = JoltSdk & JoltEncryptedSdk & JoltIngressSdk;
 
 // "auto": apply now without asking the user. "manual": leave it in the review
 // queue. Auto-classification is conservative; anything uncertain is manual.
@@ -58,9 +58,9 @@ function isAlreadyHandled(err: unknown) {
 
 // Accept a pending ingress record, tolerating a concurrent poll that already
 // accepted it (so a double-process is not an error).
-async function acceptTolerant(sdk: JoltInboxSdk, ingressId: string) {
+async function acceptTolerant(sdk: JoltIngressSdk, ingressId: string) {
   try {
-    await sdk.acceptInbox(ingressId);
+    await sdk.acceptIngress(ingressId);
   } catch (err) {
     if (!isAlreadyHandled(err)) throw err;
   }
@@ -77,7 +77,7 @@ export async function processInbox(
   handlers: InboxHandler[],
   ctx: InboxContext
 ): Promise<ProcessInboxResult> {
-  const records = await sdk.listInbox();
+  const records = await sdk.listPendingIngress();
   const visible: IngressRecord[] = [];
   const autoHandled: IngressRecord[] = [];
 
@@ -88,7 +88,7 @@ export async function processInbox(
     }
     let payload: unknown = null;
     try {
-      payload = await sdk.openInbox(record.ingress_id);
+      payload = await sdk.openIngress(record.ingress_id);
     } catch {
       payload = null;
     }
@@ -131,7 +131,7 @@ export async function rejectInboxRecord(
   payload: unknown,
   ctx: InboxContext
 ): Promise<void> {
-  await sdk.rejectInbox(ingressId);
+  await sdk.rejectIngress(ingressId);
   await handlerFor(handlers, payload)?.reject?.(sdk, payload, ctx);
 }
 

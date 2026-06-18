@@ -306,7 +306,7 @@ function isAnyReply(payload: unknown): payload is SpokeReply | SpokeReplyV2 {
   return isSpokeReply(payload) || isReplyV2(payload);
 }
 
-// Validate an already-parsed ingress payload (from jolt.openInbox) into a known
+// Validate an already-parsed ingress payload (from jolt.openIngress) into a known
 // Spoke incoming object for display/review, or null if unrecognised.
 function asIncomingPayload(value: unknown): SpokeIncomingPayload | null {
   if (
@@ -1735,7 +1735,7 @@ function App() {
       [record.ingress_id]: { loading: true }
     }));
     try {
-      const payload = asIncomingPayload(await jolt.openInbox(record.ingress_id));
+      const payload = asIncomingPayload(await jolt.openIngress(record.ingress_id));
       if (!payload) {
         throw new Error("Unsupported Spoke incoming object.");
       }
@@ -1772,7 +1772,7 @@ function App() {
     await withBusy(`accept:${record.ingress_id}`, async () => {
       const opened =
         review[record.ingress_id]?.opened ??
-        asIncomingPayload(await jolt.openInbox(record.ingress_id)) ??
+        asIncomingPayload(await jolt.openIngress(record.ingress_id)) ??
         undefined;
       // The matching inbox handler records the contact / persists the message /
       // accepts the reply and folds it into the store; the query hooks re-render.
@@ -1789,7 +1789,7 @@ function App() {
     await withBusy(`reject:${record.ingress_id}`, async () => {
       const opened =
         review[record.ingress_id]?.opened ??
-        asIncomingPayload(await jolt.openInbox(record.ingress_id).catch(() => null)) ??
+        asIncomingPayload(await jolt.openIngress(record.ingress_id).catch(() => null)) ??
         undefined;
       await rejectInboxRecord(jolt, inboxHandlers, record.ingress_id, opened, inboxContext);
       setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));

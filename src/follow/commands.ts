@@ -3,7 +3,7 @@
 // follow requests/responses are sent to the peer through encrypted ingress.
 
 import { makeId } from "../api";
-import type { JoltEncryptedSdk, JoltInboxSdk } from "../jolt";
+import type { JoltEncryptedSdk, JoltIngressSdk } from "../jolt";
 import { store as defaultStore, type Store } from "../common/store";
 import {
   makeContactPath,
@@ -88,7 +88,7 @@ export async function addContact(
 
 // Send a follow request to a peer and record a local "requested" edge.
 export async function requestFollow(
-  sdk: JoltEncryptedSdk & JoltInboxSdk,
+  sdk: JoltEncryptedSdk & JoltIngressSdk,
   localIdentity: string,
   params: { identity: string; displayName?: string; message?: string; fromDisplayName?: string },
   store: Store = defaultStore
@@ -116,7 +116,7 @@ export async function requestFollow(
 
 // Send a follow response (accepted/rejected) to the requester.
 export async function sendFollowResponse(
-  sdk: JoltInboxSdk,
+  sdk: JoltIngressSdk,
   localIdentity: string,
   request: SpokeFollowRequest,
   decision: SpokeFollowResponse["decision"]
@@ -138,7 +138,7 @@ export async function sendFollowResponse(
 // requester. The peer becomes an active contact (auto-accepts their replies and
 // messages per ADR 0002).
 export async function acceptFollowRequest(
-  sdk: JoltEncryptedSdk & JoltInboxSdk,
+  sdk: JoltEncryptedSdk & JoltIngressSdk,
   localIdentity: string,
   request: SpokeFollowRequest,
   store: Store = defaultStore

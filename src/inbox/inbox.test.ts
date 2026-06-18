@@ -77,13 +77,13 @@ function fakeJolt(localIdentity: string) {
       sent.push({ recipient, body });
       return publish(path, body);
     },
-    async listInbox() {
+    async listPendingIngress() {
       return [...inbox.values()].filter((e) => e.record.status === "pending").map((e) => e.record);
     },
-    async openInbox(ingressId) {
+    async openIngress(ingressId) {
       return inbox.get(ingressId)?.payload ?? null;
     },
-    async acceptInbox(ingressId) {
+    async acceptIngress(ingressId) {
       const entry = inbox.get(ingressId);
       if (!entry || entry.record.status !== "pending") {
         throw new Error("ingress envelope is not pending");
@@ -91,7 +91,7 @@ function fakeJolt(localIdentity: string) {
       entry.record.status = "accepted";
       accepted.push(ingressId);
     },
-    async rejectInbox(ingressId) {
+    async rejectIngress(ingressId) {
       const entry = inbox.get(ingressId);
       if (entry) entry.record.status = "rejected";
       rejected.push(ingressId);

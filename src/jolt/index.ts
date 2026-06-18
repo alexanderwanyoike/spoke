@@ -7,16 +7,16 @@
 // in docs/cards/100-spoke-architecture-refactor-epic.md.
 
 import {
-  acceptIngress,
+  acceptIngress as transportAcceptIngress,
   decodePlaintext,
   decryptEncryptedTarget,
   fetchTarget,
-  listPendingIngress,
+  listPendingIngress as transportListPendingIngress,
   listPublished as transportListPublished,
-  openIngress,
+  openIngress as transportOpenIngress,
   publishEncryptedJson as transportPublishEncryptedJson,
   publishJson as transportPublishJson,
-  rejectIngress,
+  rejectIngress as transportRejectIngress,
   resolveAddress,
   sendObjectByIdentity,
   type IngressRecord,
@@ -84,19 +84,20 @@ export interface JoltEncryptedSdk {
 }
 
 // The recipient-controlled ingress door: send an identified object to a
-// recipient, and review the pending inbox. Pure transport - it knows nothing
-// about follows, messages, or replies; the inbox seam classifies payloads.
-export interface JoltInboxSdk {
+// recipient, and review pending ingress. Pure transport in Jolt's own
+// vocabulary - it knows nothing about follows, messages, or replies; Spoke's
+// inbox seam classifies the payloads.
+export interface JoltIngressSdk {
   // Encrypt-publish the object at `path` (the sender's own copy) and ingress-send
   // it to the recipient. Returns the publish result so the sender can fold its
   // own copy into the store with a version.
   sendObject(recipient: string, path: string, body: object): Promise<PublishResult>;
-  listInbox(): Promise<IngressRecord[]>;
-  // Open (decrypt) a pending record and return its parsed JSON payload, or null
-  // when it cannot be decrypted/parsed.
-  openInbox(ingressId: string): Promise<unknown>;
-  acceptInbox(ingressId: string): Promise<void>;
-  rejectInbox(ingressId: string): Promise<void>;
+  listPendingIngress(): Promise<IngressRecord[]>;
+  // Open (decrypt) a pending ingress record and return its parsed JSON payload,
+  // or null when it cannot be decrypted/parsed.
+  openIngress(ingressId: string): Promise<unknown>;
+  acceptIngress(ingressId: string): Promise<void>;
+  rejectIngress(ingressId: string): Promise<void>;
 }
 
 export function referenceKey(ref: Reference): string {
@@ -118,7 +119,7 @@ function toPublishResult(response: PublishResponse, path: string): PublishResult
 
 export function createJoltSdk(
   getSessionToken: () => string
-): JoltSdk & JoltEncryptedSdk & JoltInboxSdk {
+): JoltSdk & JoltEncryptedSdk & JoltIngressSdk {
   // Resolve a reference, hand the content-addressed plaintext bytes to `getBytes`
   // (a plain fetch for public publications, a decrypt for encrypted ones), then
   // parse + decode. Returns null on any missing/unreachable/undecodable step so
@@ -190,22 +191,22 @@ export function createJoltSdk(
       );
       return toPublishResult(encryptedPublish, path);
     },
-    async listInbox() {
-      return listPendingIngress(getSessionToken());
+    async listPendingIngress() {
+      return transportListPendingIngress(getSessionToken());
     },
-    async openInbox(ingressId) {
-      const opened = await openIngress(getSessionToken(), ingressId);
+    async openIngress(ingressId) {
+      const opened = await transportOpenIngress(getSessionToken(), ingressId);
       try {
         return JSON.parse(decodePlaintext(opened)) as unknown;
       } catch {
         return null;
       }
     },
-    async acceptInbox(ingressId) {
-      await acceptIngress(getSessionToken(), ingressId);
+    async acceptIngress(ingressId) {
+      await transportAcceptIngress(getSessionToken(), ingressId);
     },
-    async rejectInbox(ingressId) {
-      await rejectIngress(getSessionToken(), ingressId);
+    async rejectIngress(ingressId) {
+      await transportRejectIngress(getSessionToken(), ingressId);
     }
   };
 }

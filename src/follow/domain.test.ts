@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { JoltEncryptedSdk, JoltInboxSdk, PublishResult } from "../jolt";
+import type { JoltEncryptedSdk, JoltIngressSdk, PublishResult } from "../jolt";
 import { createStore, type Store } from "../common/store";
 import {
   acceptFollowRequest,
@@ -28,7 +28,7 @@ function fakeJolt(localIdentity: string) {
     return { contentId, latestSequence: seq, path, address: `${localIdentity}${path}` };
   }
 
-  const sdk: JoltEncryptedSdk & JoltInboxSdk = {
+  const sdk: JoltEncryptedSdk & JoltIngressSdk = {
     async publishEncryptedJson(path, body, recipients) {
       encrypted.push({ path, recipients });
       return publish(path, body);
@@ -52,14 +52,14 @@ function fakeJolt(localIdentity: string) {
       sent.push({ recipient, path, body });
       return publish(path, body);
     },
-    async listInbox() {
+    async listPendingIngress() {
       return [];
     },
-    async openInbox() {
+    async openIngress() {
       return null;
     },
-    async acceptInbox() {},
-    async rejectInbox() {}
+    async acceptIngress() {},
+    async rejectIngress() {}
   };
 
   return { sdk, sent, encrypted };
