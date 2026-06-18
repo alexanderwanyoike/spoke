@@ -18,7 +18,10 @@ async function loadAuthorPosts(
   const refs = await enumeration.listPosts(identity);
   await Promise.all(
     refs.map(async (ref) => {
-      const hit = await sdk.read({ identity, path: ref.path }, decodePost);
+      const logicalRef = { identity, path: ref.path };
+      const hit = ref.contentId
+        ? await sdk.readContent(ref.contentId, logicalRef, ref.latestSequence ?? 0, decodePost)
+        : await sdk.read(logicalRef, decodePost);
       if (!hit) return; // missing, unreachable, or not a post
       store.upsert({
         identity: normalizeIdentity(identity),

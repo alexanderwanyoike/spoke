@@ -104,6 +104,7 @@ import {
   isSpokeFollowResponse,
   loadContacts,
   publishContact,
+  readContacts,
   removeContact,
   requestFollow,
   sameIdentity,
@@ -687,9 +688,12 @@ function App() {
     void (async () => {
       await migrateLegacyContacts();
       if (cancelled) return;
+      await loadContacts(jolt, localIdentity).catch(() => {});
+      if (cancelled) return;
+      const hydratedContacts = readContacts(localIdentity);
       await Promise.all([
-        loadContacts(jolt, localIdentity).catch(() => {}),
-        loadConversations(jolt, localIdentity).catch(() => {})
+        loadConversations(jolt, localIdentity).catch(() => {}),
+        loadFeedSnapshot(hydratedContacts).catch(() => {})
       ]);
     })();
     return () => {

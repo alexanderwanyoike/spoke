@@ -34,10 +34,12 @@ function contact(identity: string, overrides: Partial<Contact> = {}): Contact {
 // its append-record enumeration returns; `reads` holds the post bytes.
 function fakeSdk(opts: {
   reads?: Record<string, { latestSequence: number; contentId: string; bytes: number[] }>;
+  contentReads?: Record<string, { latestSequence: number; bytes: number[] }>;
   enumerations?: Record<string, string[]>;
   onPublishAppend?: (path: string, body: object) => void;
 }): JoltSdk & JoltAppendSdk {
   const reads = opts.reads || {};
+  const contentReads = opts.contentReads || {};
   const enumerations = opts.enumerations || {};
   return {
     async publishJson(path) {
@@ -51,6 +53,14 @@ function fakeSdk(opts: {
         ? null
         : { ref, value, latestSequence: hit.latestSequence, contentId: hit.contentId };
     },
+    async readContent(contentId, ref, latestSequence, decode) {
+      const hit = contentReads[contentId] || Object.values(reads).find((item) => item.contentId === contentId);
+      if (!hit) return null;
+      const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(hit.bytes))));
+      return value === null
+        ? null
+        : { ref, value, latestSequence, contentId };
+    },
     async publishAppend(path, body) {
       opts.onPublishAppend?.(path, body);
       return { contentId: `cid_${path}`, latestSequence: 1, path, address: null };
@@ -62,9 +72,9 @@ function fakeSdk(opts: {
           (path, index): EnumeratedRecord => ({
             identity,
             path,
-            contentId: `cid_${path}`,
+            contentId: reads[`${identity}${path}`]?.contentId || `cid_${path}`,
             deviceId: "dev_1",
-            deviceSequence: index,
+            deviceSequence: reads[`${identity}${path}`]?.latestSequence ?? contentReads[`cid_${path}`]?.latestSequence ?? index,
             createdAt: "2026-06-06T00:00:00.000Z",
             entryHash: `hash_${path}`
           })
@@ -112,6 +122,37 @@ describe("feed loaders", () => {
     });
     expect(feed.map((item) => item.post.id)).toEqual(["p_local", "p_bob"]);
     expect(feed.find((item) => item.post.id === "p_bob")?.contact?.displayName).toBe("Bob");
+  });
+
+  it("loads append-enumerated posts by content id instead of resolving singleton path state", async () => {
+    const store = createStore();
+    const bob = post({
+      id: "p_bob",
+      author: "bob.jolt",
+      path: "/spoke/posts/p_bob",
+      createdAt: "2026-06-06T11:00:00.000Z"
+    });
+    const sdk = fakeSdk({
+      // No path-addressable read exists for this append record. This mirrors
+      // Jolt J1: enumeration gives the durable CID, while resolve(identity+path)
+      // is singleton state and returns no content path for append records.
+      reads: {},
+      contentReads: {
+        "cid_/spoke/posts/p_bob": { latestSequence: 4, bytes: encode(bob) }
+      },
+      enumerations: {
+        "bob.jolt": ["/spoke/posts/p_bob"]
+      }
+    });
+
+    await loadFeed(sdk, createJoltEnumeration(sdk), ["bob.jolt"], store);
+
+    const feed = selectFeed(store.getSnapshot(), {
+      localIdentity: "alice.jolt",
+      contacts: [contact("bob.jolt", { displayName: "Bob" })]
+    });
+    expect(feed.map((item) => item.post.id)).toEqual(["p_bob"]);
+    expect(store.get({ identity: "bob", path: "/spoke/posts/p_bob" })?.latestSequence).toBe(4);
   });
 
   it("skips objects that do not decode as posts", async () => {
