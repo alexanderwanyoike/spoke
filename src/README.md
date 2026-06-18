@@ -21,40 +21,35 @@ Everything below exists to make that rule structurally impossible to break.
 
 ## Layered architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│ React UI  (App.tsx, components/)                                      │
-│   Knows ONLY commands (mutations) + query hooks (useFeed, useThread…) │
-│   useState is for UI-only concerns (drafts, modals, active tab).      │
-└───────────────────────────────┬───────────────────────────────────────┘
-                                 │  import from "./<feature>" only
-┌───────────────────────────────▼───────────────────────────────────────┐
-│ Feature seams  (one folder each: feed/ thread/ message/ follow/        │
-│                 profile/, plus inbox/)                                  │
-│                                                                         │
-│   commands.ts   write durable social truth on Jolt, fold into store    │
-│   loaders.ts    fetch truth that already exists, fold into store       │
-│   queries.ts    project the store into view models (sync hooks)        │
-│   model.ts      types + pure helpers + tolerant decoders               │
-│   index.ts      barrel: the feature's only public surface              │
-└───────────────────────────────┬───────────────────────────────────────┘
-                                 │  commands write ▼      ▲ queries read
-┌───────────────────────────────▼───────────────────────────────────────┐
-│ src/common/store.ts   Monotonic projection cache (PRIVATE to domain)   │
-│   keyed by Reference (identity, path); upsert-by-version; tombstones.  │
-│   React subscribes here via useSyncExternalStore (behind queries).     │
-└───────────────────────────────┬───────────────────────────────────────┘
-                                 │  the only I/O boundary
-┌───────────────────────────────▼───────────────────────────────────────┐
-│ src/jolt/   The SDK / ACL seam (pure transport, no Spoke concepts)     │
-│   index.ts      fakeable SDK interfaces + createJoltSdk + DTO mapping  │
-│   transport.ts  the actual HTTP (web proxy) / Tauri (desktop) calls    │
-└───────────────────────────────┬───────────────────────────────────────┘
-                                 │  /jolt-api → /app/v1   (Tauri: invoke)
-┌───────────────────────────────▼───────────────────────────────────────┐
-│ Jolt daemon   identity · publish · append · enumerate · resolve ·      │
-│               fetch · encrypt/decrypt · recipient-controlled ingress   │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    UI["<b>React UI</b> — App.tsx, components/<br/>knows only commands + query hooks; useState is UI-only"]
+
+    subgraph FEAT["<b>Feature seams</b> — feed/ thread/ message/ follow/ profile/ inbox/"]
+      direction LR
+      CMD["commands.ts<br/><i>writes</i>"]
+      LOAD["loaders.ts<br/><i>fetch → cache</i>"]
+      QRY["queries.ts<br/><i>projections (hooks)</i>"]
+      MODEL["model.ts<br/><i>types + decoders</i>"]
+    end
+
+    STORE["<b>src/common/store.ts</b> — monotonic projection cache (private)<br/>keyed by Reference (identity, path); upsert-by-version; tombstones"]
+
+    subgraph JOLT["<b>src/jolt</b> — SDK / ACL seam (no Spoke concepts)"]
+      direction LR
+      IDX["index.ts<br/><i>fakeable SDK + DTO mapping</i>"]
+      TRANS["transport.ts<br/><i>HTTP (web) / Tauri (desktop)</i>"]
+    end
+
+    DAEMON["<b>Jolt daemon</b><br/>identity · publish · append · enumerate · resolve · fetch · encrypt · ingress"]
+
+    UI -->|"import from ./feature"| FEAT
+    CMD -->|"write"| STORE
+    LOAD -->|"fold"| STORE
+    STORE -->|"read (useSyncExternalStore)"| QRY
+    FEAT -->|"the only I/O boundary"| IDX
+    IDX --> TRANS
+    TRANS -->|"/jolt-api → /app/v1 (Tauri: invoke)"| DAEMON
 ```
 
 Each social feature is the **same four files doing the same four jobs**. Learn
@@ -65,24 +60,48 @@ card is worked, not all at once.
 
 ### Write path (e.g. publish a post)
 
-```
-App.tsx publishPost()
-  └─ feed/commands.ts  publishPost(sdk, post)
-       ├─ sdk.publishAppend("/spoke/posts/{id}", post)   → Jolt append record
-       └─ store.upsert({ (author,path), latestSequence, value: post })
-            └─ useFeed re-projects → UI updates   (no setState for social data)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as App.tsx
+    participant CMD as feed/commands
+    participant SDK as jolt SDK
+    participant Jolt as Jolt daemon
+    participant Store as store
+    participant Q as useFeed
+    UI->>CMD: publishPost(sdk, post)
+    CMD->>SDK: publishAppend("/spoke/posts/{id}", post)
+    SDK->>Jolt: POST /app/v1/append
+    Jolt-->>SDK: PublishResponse
+    CMD->>Store: upsert((author, path), seq, post)
+    Store-->>Q: notify (subscription)
+    Q-->>UI: re-projected FeedItem[]
 ```
 
 ### Read path (e.g. load the feed)
 
-```
-App.tsx loadFeedSnapshot()
-  └─ feed/loaders.ts  loadFeed(sdk, enumeration, identities)
-       ├─ enumeration.listPosts(id) → sdk.enumerate(id, "/spoke/posts/")  (J1)
-       ├─ for each ref: sdk.read({id, path}, decodePost)
-       └─ store.upsert(...)  (monotonic: a partial list can't drop known posts)
-            ▲
-  feed/queries.ts  useFeed() → selectFeed(snapshot, scope) → sorted FeedItem[]
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as App.tsx
+    participant LOAD as feed/loaders
+    participant ENUM as enumeration
+    participant SDK as jolt SDK
+    participant Jolt as Jolt daemon
+    participant Store as store
+    participant Q as useFeed
+    UI->>LOAD: loadFeed(sdk, enumeration, ids)
+    LOAD->>ENUM: listPosts(identity)
+    ENUM->>SDK: enumerate(identity, "/spoke/posts/")
+    SDK->>Jolt: POST /app/v1/enumerate
+    Jolt-->>SDK: AppendRecordInfo[]
+    loop each post ref
+      LOAD->>SDK: read({identity, path}, decodePost)
+      SDK->>Jolt: resolve + fetch
+      LOAD->>Store: upsert (monotonic — a partial list can't drop known posts)
+    end
+    Store-->>Q: notify (subscription)
+    Q-->>UI: selectFeed → sorted FeedItem[]
 ```
 
 Writes flow **down** through commands; reads come **up** through loaders → store
