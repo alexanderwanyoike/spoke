@@ -1,5 +1,12 @@
-import { sameIdentity } from "./follow";
-import type { SpokeMessageAttachment } from "./media";
+// Message model: types + pure domain helpers and tolerant decoders. A direct
+// message is an Append Record: the sender keeps an encrypted outgoing copy under
+// /spoke/messages/outgoing/{id} and the recipient keeps a received copy under
+// /spoke/messages/received/{id}. A conversation is a Projection folded from both
+// halves out of the monotonic store; React never holds the messages directly.
+
+import type { Decoder } from "../jolt";
+import { sameIdentity } from "../follow";
+import type { SpokeMessageAttachment } from "../media";
 
 export type SpokeMessage = {
   schema: "spoke.message.v1" | "spoke.message.v2";
@@ -28,6 +35,27 @@ export type Conversation = {
 
 export type ConversationsById = Record<string, Conversation>;
 
+export const MESSAGES_PREFIX = "/spoke/messages/";
+export const MESSAGES_OUTGOING_PREFIX = "/spoke/messages/outgoing/";
+export const MESSAGES_RECEIVED_PREFIX = "/spoke/messages/received/";
+
+export function makeOutgoingPath(messageId: string) {
+  return `${MESSAGES_OUTGOING_PREFIX}${messageId}`;
+}
+
+export function makeReceivedPath(messageId: string) {
+  return `${MESSAGES_RECEIVED_PREFIX}${messageId}`;
+}
+
+// Which half of a conversation a stored message copy represents, by its path.
+// The sender's outgoing copy projects as "sent"; the recipient's received copy
+// as "received". Any other path is not a conversation message.
+export function directionForPath(path: string): MessageDirection | null {
+  if (path.startsWith(MESSAGES_OUTGOING_PREFIX)) return "sent";
+  if (path.startsWith(MESSAGES_RECEIVED_PREFIX)) return "received";
+  return null;
+}
+
 export function normalizeConversationParticipant(identity: string) {
   return identity.trim().replace(/\.jolt$/, "");
 }
@@ -52,6 +80,10 @@ export function messageBelongsToConversation(message: SpokeMessage) {
   }
 }
 
+export function messageTargetsIdentity(message: SpokeMessage, identity: string) {
+  return message.recipients.some((recipient) => sameIdentity(recipient, identity));
+}
+
 export function isSpokeMessage(value: unknown): value is SpokeMessage {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -59,6 +91,10 @@ export function isSpokeMessage(value: unknown): value is SpokeMessage {
   const schema = (value as { schema?: unknown }).schema;
   return schema === "spoke.message.v1" || schema === "spoke.message.v2";
 }
+
+// Tolerant reader: validate an already-parsed JSON value into a message, or null.
+export const decodeMessage: Decoder<SpokeMessage> = (value) =>
+  isSpokeMessage(value) ? value : null;
 
 export function messagePreview(message: SpokeMessage) {
   if (message.body.trim()) {

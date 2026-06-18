@@ -70,7 +70,9 @@ element is its own object at its own path; the set is never encoded as a single
 rewritten object. Multiple writers (and multiple devices of one writer) can
 append concurrently and all valid records coexist. Maps onto Jolt's append
 operation class. Spoke examples: a post, a reply, an accepted-reply reference, a
-message.
+message, a contact edge. A Collection may be public (posts, replies) or
+encrypted to self (the contact graph, ADR 0004); encryption is an ACL concern
+and does not change how records are modelled, stored, or projected.
 
 **Core data-modelling rule:** anything that *grows* is modelled as Append
 Records, never as a rewritten Singleton Object. This is what makes Spoke correct

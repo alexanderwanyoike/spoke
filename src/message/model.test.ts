@@ -8,7 +8,7 @@ import {
   upsertConversationMessage,
   type Conversation,
   type SpokeMessage
-} from "./message";
+} from "./model";
 
 function message(overrides: Partial<SpokeMessage>): SpokeMessage {
   return {

@@ -32,6 +32,8 @@ set-as-rewritten-blob lossy at the data layer, not just the cache layer.
 - `docs/adr/0002` - threads are author-anchored; post author is sole gatekeeper;
   auto-accept from contacts, manual review for strangers.
 - `docs/adr/0003` - domain-private monotonic projection store with tombstones.
+- `docs/adr/0004` - contact graph = append-record Collection encrypted to self;
+  friends-of-friends deferred to a future opt-in public-discovery card.
 
 Architecture:
 
@@ -59,8 +61,9 @@ never the source of social truth.
 | 101  | Spoke: Jolt SDK seam + monotonic store (profile tracer) | spoke | done | — | #24 |
 | 102  | Spoke: feed vertical | spoke | done | 101 | #25 |
 | 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | done | 101 | #26 |
-| 103  | Spoke: messages + follows vertical | spoke | not started | 101 | — |
+| 103  | Spoke: messages + follows vertical | spoke | done | 101 | #27 |
 | 104  | Spoke: swap bridge enumeration → J1 door (now un-phased: J2 done) | spoke | not started | J1, J2, 102, 091 | — |
+| 105  | Spoke: complete the Jolt SDK seam (relocate transport, evict Spoke types from `api.ts`) | spoke | not started | 101 | — |
 | 099  | Spoke: compatibility boundary (tolerant readers/strict writers) | spoke | exists on `codex/spoke-compatibility-boundary-card`, NOT on `dev` | — | #22 |
 
 Update the Status column and PR column as each card lands. This table is the
@@ -139,6 +142,24 @@ single source of truth for "where are we."
 - **Goal:** conversations and follow requests through the new layers.
 - **Done when:** message/follow read/write go through the seam; remaining
   protocol code leaves `App.tsx`.
+- **Landed:**
+  - SDK seam gained encrypted + inbox capability interfaces (`JoltEncryptedSdk`:
+    `publishEncryptedJson`/`readEncrypted`/`listPublished`; `JoltInboxSdk`:
+    `sendObject`/`listInbox`/`openInbox`/`acceptInbox`/`rejectInbox`).
+  - `src/follow/` - contact graph is an append-record Collection **encrypted to
+    self** (ADR 0004); `useContacts` projects it; commands `addContact`,
+    `requestFollow`, `acceptFollowRequest`, `applyIncomingResponse`,
+    `removeContact` (tombstone). Friends-of-friends deferred to a future opt-in
+    public-discovery card.
+  - `src/message/` - `sendMessage`/`acceptReceivedMessage`, `loadConversations`,
+    `useConversations` (direction by path prefix). Received copies remain
+    plaintext in the recipient's namespace (pre-existing; flagged for a privacy
+    follow-up - encrypt-to-self with a legacy plaintext fallback).
+  - `src/inbox/` - thin ingress loop dispatching to per-feature handlers
+    (follow/message/thread); `processInbox` + manual `acceptInboxRecord`/
+    `rejectInboxRecord`.
+  - `App.tsx` contacts/conversations are now store-backed query hooks; legacy
+    `localStorage` contacts are back-filled into the Collection once on load.
 
 ### 104 - swap bridge enumeration → J1 door
 - **Goal:** replace the bridge enumeration implementation with the J1-backed
@@ -162,6 +183,27 @@ single source of truth for "where are we."
   fields up (the deferred half of the ACL marshalling refactor).
 - **Done when:** both feed and thread Collections read via Jolt's enumeration
   API; bridge + the published index Singletons removed; DTO mapping in the ACL.
+
+### 105 - complete the Jolt SDK seam
+- **Goal:** finish card 101's stated-but-undelivered goal. Today `src/jolt/` is a
+  thin wrapper that delegates to `src/api.ts`, so the "pure transport boundary"
+  depends on `api.ts` instead of being it, and `api.ts` still mixes raw transport
+  with Spoke domain types.
+- **What:** (1) relocate the request core + all Jolt transport primitives and
+  DTOs into `src/jolt/` (private `transport.ts` behind the barrel); (2) evict
+  Spoke domain types (`SpokePost`/`SpokeProfile`/`SpokeReply`/`SpokeFeedIndex`)
+  into their feature models; (3) delete `api.ts` or shrink it to a documented
+  Spoke-only shim.
+- **Behavior-preserving:** lean on `api.test.ts` (moved alongside the relocated
+  transport) as the safety net; no publish/resolve/fetch/ingress/encryption
+  behavior changes.
+- **Relationship to 104:** 104's `AppendRecordInfo`/`PublishedContent` -> `PostRef`
+  DTO mapping is the enumeration slice of this same ACL work. Do 105 first, or
+  fold 104's mapping into it. Decide when 104 is picked up.
+- **Done when:** nothing in `src/jolt/` imports `api.ts`; no `Spoke*` type lives
+  in the transport layer; features touch transport only via the SDK interfaces;
+  `api.ts` is gone or a thin shim; suite + build green. See
+  `docs/cards/105-spoke-complete-jolt-sdk-seam.md`.
 
 ## How to resume in a fresh context
 
