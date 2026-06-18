@@ -55,11 +55,12 @@ never the source of social truth.
 | Card | Title | Track | Status | Depends on | PR |
 |------|-------|-------|--------|------------|----|
 | J1   | Jolt: append-record enumeration + append publish | jolt repo | done (merged to jolt `dev`) | — | jolt #155 |
+| J2   | Jolt: live remote-identity device-writer sync (094 follow-up) | jolt repo | done (merged to jolt `dev`) | J1 | jolt #156 |
 | 101  | Spoke: Jolt SDK seam + monotonic store (profile tracer) | spoke | done | — | #24 |
 | 102  | Spoke: feed vertical | spoke | done | 101 | #25 |
-| 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | in progress | 101 | — |
+| 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | done | 101 | #26 |
 | 103  | Spoke: messages + follows vertical | spoke | not started | 101 | — |
-| 104  | Spoke: swap bridge enumeration → J1 door | spoke | not started | J1, 102, 091 | — |
+| 104  | Spoke: swap bridge enumeration → J1 door (now un-phased: J2 done) | spoke | not started | J1, J2, 102, 091 | — |
 | 099  | Spoke: compatibility boundary (tolerant readers/strict writers) | spoke | exists on `codex/spoke-compatibility-boundary-card`, NOT on `dev` | — | #22 |
 
 Update the Status column and PR column as each card lands. This table is the
@@ -151,17 +152,16 @@ single source of truth for "where are we."
     `resolve:public`, any identity. Returns `AppendRecordInfo[]`
     `{ path, content_id, device_id, device_sequence, created_at, entry_hash }`.
     Spoke already holds both capabilities; no session change needed.
-- **Caveat (drives phasing):** enumerate reads *cached* merged device-writer
-  state; live remote-identity device-writer sync is a jolt 094 follow-up. So
-  J1-back the **local** identity first; keep the `/spoke/feed` bridge for
-  **remote** contacts (per-identity inside the same seam) until remote sync
-  lands, or remote feeds regress.
+- **No longer phased (J2 merged, jolt #156):** remote-identity device-writer
+  sync now lands live, so `enumerate` is correct for remote identities too. 104
+  can delete the bridge **entirely** (local + remote) - both the `/spoke/feed`
+  and `/spoke/threads/{postId}` index Singletons - not just the local half.
 - **Also here:** add `publishAppend`/`enumerate` to the Jolt SDK and map the
   `AppendRecordInfo` (and local `PublishedContent`) DTOs to a domain `PostRef`
   in the ACL, so neither the bridge nor the J1 adapter leaks snake_case wire
   fields up (the deferred half of the ACL marshalling refactor).
-- **Done when:** local Collections read via Jolt's enumeration API; bridge
-  retained only where remote sync is not yet available; DTO mapping in the ACL.
+- **Done when:** both feed and thread Collections read via Jolt's enumeration
+  API; bridge + the published index Singletons removed; DTO mapping in the ACL.
 
 ## How to resume in a fresh context
 
