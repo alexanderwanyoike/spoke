@@ -7,10 +7,20 @@
 // in docs/cards/100-spoke-architecture-refactor-epic.md.
 
 import {
-  decodeFetchData,
+  acceptIngress,
+  decodePlaintext,
+  decryptEncryptedTarget,
   fetchTarget,
+  listPendingIngress,
+  listPublished as transportListPublished,
+  openIngress,
+  publishEncryptedJson as transportPublishEncryptedJson,
   publishJson as transportPublishJson,
+  rejectIngress,
   resolveAddress,
+  sendObjectByIdentity,
+  type IngressRecord,
+  type PublishedContent,
   type PublishResponse
 } from "../api";
 
@@ -52,6 +62,43 @@ export interface JoltSdk {
   read<T>(ref: Reference, decode: Decoder<T>): Promise<Versioned<T> | null>;
 }
 
+// Encrypted publish/read primitives. Separate from the public JoltSdk so a
+// feature only depends on the capability it uses (and existing public-only test
+// fakes keep satisfying JoltSdk). The contact graph (ADR 0004) and the message
+// outbox publish encrypted; createJoltSdk implements this alongside JoltSdk.
+export interface JoltEncryptedSdk {
+  // Publish a JSON body encrypted to the given recipients. Use [self] for an
+  // encrypt-to-self publication (the contact graph). The publisher can always
+  // decrypt its own publications, so readEncrypted reads them back.
+  publishEncryptedJson(
+    path: string,
+    body: object,
+    recipients: string[]
+  ): Promise<PublishResult>;
+  // Resolve + decrypt + parse + decode an encrypted publication. Returns null
+  // when missing/unreachable or the plaintext does not decode to T.
+  readEncrypted<T>(ref: Reference, decode: Decoder<T>): Promise<Versioned<T> | null>;
+  // The local node's published inventory, used to enumerate a locally-owned
+  // Collection (e.g. the contact graph and the message outbox) pre-J1.
+  listPublished(): Promise<PublishedContent[]>;
+}
+
+// The recipient-controlled ingress door: send an identified object to a
+// recipient, and review the pending inbox. Pure transport - it knows nothing
+// about follows, messages, or replies; the inbox seam classifies payloads.
+export interface JoltInboxSdk {
+  // Encrypt-publish the object at `path` (the sender's own copy) and ingress-send
+  // it to the recipient. Returns the publish result so the sender can fold its
+  // own copy into the store with a version.
+  sendObject(recipient: string, path: string, body: object): Promise<PublishResult>;
+  listInbox(): Promise<IngressRecord[]>;
+  // Open (decrypt) a pending record and return its parsed JSON payload, or null
+  // when it cannot be decrypted/parsed.
+  openInbox(ingressId: string): Promise<unknown>;
+  acceptInbox(ingressId: string): Promise<void>;
+  rejectInbox(ingressId: string): Promise<void>;
+}
+
 export function referenceKey(ref: Reference): string {
   return `${ref.identity}\u0000${ref.path}`;
 }
@@ -69,40 +116,96 @@ function toPublishResult(response: PublishResponse, path: string): PublishResult
   };
 }
 
-export function createJoltSdk(getSessionToken: () => string): JoltSdk {
+export function createJoltSdk(
+  getSessionToken: () => string
+): JoltSdk & JoltEncryptedSdk & JoltInboxSdk {
+  // Resolve a reference, hand the content-addressed plaintext bytes to `getBytes`
+  // (a plain fetch for public publications, a decrypt for encrypted ones), then
+  // parse + decode. Returns null on any missing/unreachable/undecodable step so
+  // a bad object never poisons a Projection (tolerant readers).
+  async function resolveDecode<T>(
+    ref: Reference,
+    getBytes: (token: string, contentId: string) => Promise<number[]>,
+    decode: Decoder<T>
+  ): Promise<Versioned<T> | null> {
+    const token = getSessionToken();
+    let resolved;
+    let bytes: number[];
+    try {
+      resolved = await resolveAddress(token, referenceTarget(ref));
+      bytes = await getBytes(token, resolved.content_id);
+    } catch {
+      return null; // missing or unreachable
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes)));
+    } catch {
+      return null; // unparseable bytes never poison a Projection
+    }
+    const value = decode(parsed);
+    if (value === null) {
+      return null;
+    }
+    return { ref, value, latestSequence: resolved.latest_sequence, contentId: resolved.content_id };
+  }
+
   return {
     async publishJson(path, body) {
       const response = await transportPublishJson(getSessionToken(), path, body);
       return toPublishResult(response, path);
     },
     async read(ref, decode) {
-      const token = getSessionToken();
-      let resolved;
-      let fetched;
+      return resolveDecode(
+        ref,
+        async (token, contentId) => (await fetchTarget(token, contentId)).data,
+        decode
+      );
+    },
+    async publishEncryptedJson(path, body, recipients) {
+      const response = await transportPublishEncryptedJson(
+        getSessionToken(),
+        path,
+        body,
+        recipients
+      );
+      return toPublishResult(response, path);
+    },
+    async readEncrypted(ref, decode) {
+      return resolveDecode(
+        ref,
+        async (token, contentId) => (await decryptEncryptedTarget(token, contentId)).plaintext,
+        decode
+      );
+    },
+    async listPublished() {
+      return transportListPublished(getSessionToken());
+    },
+    async sendObject(recipient, path, body) {
+      const { encryptedPublish } = await sendObjectByIdentity(
+        getSessionToken(),
+        recipient,
+        path,
+        body
+      );
+      return toPublishResult(encryptedPublish, path);
+    },
+    async listInbox() {
+      return listPendingIngress(getSessionToken());
+    },
+    async openInbox(ingressId) {
+      const opened = await openIngress(getSessionToken(), ingressId);
       try {
-        // Resolve first so the store gets a real latest_sequence to version by,
-        // then fetch the content-addressed bytes.
-        resolved = await resolveAddress(token, referenceTarget(ref));
-        fetched = await fetchTarget(token, resolved.content_id);
+        return JSON.parse(decodePlaintext(opened)) as unknown;
       } catch {
-        return null; // missing or unreachable
-      }
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(decodeFetchData(fetched));
-      } catch {
-        return null; // unparseable bytes never poison a Projection
-      }
-      const value = decode(parsed);
-      if (value === null) {
         return null;
       }
-      return {
-        ref,
-        value,
-        latestSequence: resolved.latest_sequence,
-        contentId: resolved.content_id
-      };
+    },
+    async acceptInbox(ingressId) {
+      await acceptIngress(getSessionToken(), ingressId);
+    },
+    async rejectInbox(ingressId) {
+      await rejectIngress(getSessionToken(), ingressId);
     }
   };
 }

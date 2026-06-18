@@ -578,18 +578,25 @@ export function submitMessageByIdentity(
   );
 }
 
-async function submitSpokeObjectByIdentity(
+// Encrypt-publish an object at `outgoingPath` (the sender's own copy) and
+// ingress-send the encrypted bytes to the recipient. Returns both the encrypted
+// publish result (so the sender can fold its own copy into the store with a
+// version) and the resulting ingress record. The receiver's URL is never
+// exposed to the app; it only learns the recipient identity.
+export async function sendObjectByIdentity(
   sessionToken: string,
   receiverIdentity: string,
-  objectId: string,
-  body: object,
-  path?: string
-) {
-  const outgoingPath = path || `/spoke/outgoing/${objectId}`;
-  const encrypted = await publishEncryptedJson(sessionToken, outgoingPath, body, [receiverIdentity]);
-  const encryptedBytes = await fetchTarget(sessionToken, encrypted.content_id);
-
-  return request<IngressRecord>(
+  outgoingPath: string,
+  body: object
+): Promise<{ encryptedPublish: EncryptedPublishResponse; ingress: IngressRecord }> {
+  const encryptedPublish = await publishEncryptedJson(
+    sessionToken,
+    outgoingPath,
+    body,
+    [receiverIdentity]
+  );
+  const encryptedBytes = await fetchTarget(sessionToken, encryptedPublish.content_id);
+  const ingress = await request<IngressRecord>(
     "/jolt-api",
     "/ingress/send",
     jsonInit(sessionToken, {
@@ -598,6 +605,19 @@ async function submitSpokeObjectByIdentity(
       expires_at: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
     })
   );
+  return { encryptedPublish, ingress };
+}
+
+async function submitSpokeObjectByIdentity(
+  sessionToken: string,
+  receiverIdentity: string,
+  objectId: string,
+  body: object,
+  path?: string
+) {
+  const outgoingPath = path || `/spoke/outgoing/${objectId}`;
+  const { ingress } = await sendObjectByIdentity(sessionToken, receiverIdentity, outgoingPath, body);
+  return ingress;
 }
 
 export function decodeFetchData(result: FetchResult) {

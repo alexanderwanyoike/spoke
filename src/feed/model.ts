@@ -1,12 +1,12 @@
 import type { PublishedContent, SpokeFeedIndex, SpokePost } from "../api";
 import type { Decoder } from "../jolt";
+// The contact graph belongs to the follow feature (ADR 0004). Re-exported here
+// so existing feed consumers keep importing Contact/activeContacts from "@/feed".
+import { activeContacts } from "../follow";
+import type { Contact } from "../follow";
 
-export type Contact = {
-  identity: string;
-  /** Local nickname chosen by this user. */
-  displayName: string;
-  relationship?: "local" | "requested" | "accepted";
-};
+export { activeContacts };
+export type { Contact };
 
 export type FeedItem = {
   source: "local" | "contact";
@@ -25,10 +25,6 @@ export function displayNameForFeedItem(item: FeedItem) {
   }
 
   return item.post.displayName || item.post.author;
-}
-
-export function activeContacts(contacts: Contact[]) {
-  return contacts.filter((contact) => contact.relationship !== "requested");
 }
 
 export function latestPublishedByPath(items: PublishedContent[], path: string) {
