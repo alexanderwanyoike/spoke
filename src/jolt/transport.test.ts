@@ -9,7 +9,6 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import {
-  SPOKE_CAPABILITIES,
   acceptIngress,
   decryptEncryptedTarget,
   fetchTarget,
@@ -20,7 +19,7 @@ import {
   publishEncryptedBinary,
   publishJson,
   rejectIngress,
-  requestSpokeSession,
+  requestSession,
   sendObjectByIdentity,
   type IngressRecord
 } from "./transport";
@@ -46,15 +45,20 @@ describe("Spoke daemon API client", () => {
     vi.unstubAllGlobals();
   });
 
-  it("requests a Spoke app session with social and ingress capabilities", async () => {
+  it("requests a session with the caller's app identity and capabilities", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       jsonResponse({ request_id: "req_1", status: "pending" })
     );
 
-    await expect(requestSpokeSession("alice.jolt")).resolves.toEqual({
-      request_id: "req_1",
-      status: "pending"
-    });
+    await expect(
+      requestSession({
+        appId: "app.example",
+        appName: "Example",
+        appOrigin: "http://example",
+        identity: "alice.jolt",
+        capabilities: ["resolve:public", "ingress:read"]
+      })
+    ).resolves.toEqual({ request_id: "req_1", status: "pending" });
 
     expect(fetch).toHaveBeenCalledWith(
       "/jolt-api/sessions/request",
@@ -62,11 +66,11 @@ describe("Spoke daemon API client", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          app_id: "spoke.local",
-          app_name: "Spoke",
-          app_origin: "http://127.0.0.1:5178",
+          app_id: "app.example",
+          app_name: "Example",
+          app_origin: "http://example",
           requested_identity: "alice.jolt",
-          requested_capabilities: SPOKE_CAPABILITIES
+          requested_capabilities: ["resolve:public", "ingress:read"]
         })
       })
     );

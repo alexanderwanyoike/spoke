@@ -111,23 +111,6 @@ export type DecryptedEncryptedObject = {
   content_type: string;
 };
 
-export const SPOKE_CAPABILITIES = [
-  "resolve:public",
-  "fetch:public",
-  "publish:/spoke/*",
-  "publish:encrypted:/spoke/*",
-  "inventory:/spoke/*",
-  "pin:own:/spoke/*",
-  "encrypt:/spoke/*",
-  "decrypt:/spoke/*",
-  "ingress:send",
-  "ingress:read",
-  "ingress:decide"
-] as const;
-
-const SPOKE_APP_ID = "spoke.local";
-const SPOKE_APP_NAME = "Spoke";
-const SPOKE_APP_ORIGIN = "http://127.0.0.1:5178";
 const SPOKE_PATH_PREFIX = "/spoke/";
 const APP_API_BASE = "/app/v1";
 const DAEMON_API_BASE = "/api/v1";
@@ -254,19 +237,27 @@ export function getStatus() {
   return request<NodeStatus>("/jolt-daemon", "/status");
 }
 
-export function requestSpokeSession(identity: string) {
-  const appOrigin =
-    typeof window === "undefined" ? SPOKE_APP_ORIGIN : window.location.origin;
+// What an app needs to declare to open a Jolt session. The app's identity,
+// name, origin, and requested capabilities are the caller's concern, not the
+// transport's - Spoke supplies them in src/session.ts.
+export type SessionRequest = {
+  appId: string;
+  appName: string;
+  appOrigin: string;
+  identity: string;
+  capabilities: readonly string[];
+};
 
+export function requestSession(req: SessionRequest) {
   return request<AppSessionRequestResponse>(
     "/jolt-api",
     "/sessions/request",
     jsonInit(null, {
-      app_id: SPOKE_APP_ID,
-      app_name: SPOKE_APP_NAME,
-      app_origin: appOrigin,
-      requested_identity: identity,
-      requested_capabilities: SPOKE_CAPABILITIES
+      app_id: req.appId,
+      app_name: req.appName,
+      app_origin: req.appOrigin,
+      requested_identity: req.identity,
+      requested_capabilities: req.capabilities
     })
   );
 }

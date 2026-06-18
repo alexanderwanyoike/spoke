@@ -166,7 +166,6 @@ import {
   type SpokeProfileLink
 } from "./profile";
 import {
-  SPOKE_CAPABILITIES,
   apiErrorMessage,
   createJoltSdk,
   decodeFetchData,
@@ -179,11 +178,11 @@ import {
   makeId,
   publishBinary,
   publishEncryptedBinary,
-  requestSpokeSession,
   type AppSessionStatus,
   type IngressRecord,
   type NodeStatus
 } from "./jolt";
+import { SPOKE_CAPABILITIES, requestSpokeSession } from "./session";
 import {
   tauriSpokeUpdateClient,
   type SpokeUpdateCheck,

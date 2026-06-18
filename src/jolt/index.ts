@@ -1,11 +1,9 @@
 // Jolt SDK / ACL seam.
 //
-// This is the pure transport + protocol boundary. It knows nothing about Spoke
-// social concepts (profiles, posts, replies, threads). The wire layer lives in
-// the private ./transport module; this barrel exposes the fakeable SDK
-// (References + versioned publish/read primitives) plus the transport functions
-// and DTOs the app shell still calls directly. Everything social lives above it
-// in the command/query layer. See docs/CONTEXT.md ("Jolt SDK / ACL").
+// The pure transport + protocol boundary. The wire layer lives in the private
+// ./transport module; this barrel exposes the fakeable SDK (References +
+// versioned publish/read primitives) plus the transport functions and DTOs the
+// app shell still calls directly. See docs/CONTEXT.md ("Jolt SDK / ACL").
 
 import {
   acceptIngress as transportAcceptIngress,
@@ -31,7 +29,6 @@ import {
 // bootstrap, session, and media that are not part of the social command/query
 // surface.
 export {
-  SPOKE_CAPABILITIES,
   apiErrorMessage,
   decodeFetchData,
   decryptEncryptedTarget,
@@ -43,7 +40,7 @@ export {
   makeId,
   publishBinary,
   publishEncryptedBinary,
-  requestSpokeSession
+  requestSession
 } from "./transport";
 export type {
   AppSessionStatus,
@@ -55,7 +52,8 @@ export type {
   NodeStatus,
   PublishedContent,
   PublishResponse,
-  ResolveResponse
+  ResolveResponse,
+  SessionRequest
 } from "./transport";
 
 // The stable identity of a publication: (identity, path), versioned by Jolt's
