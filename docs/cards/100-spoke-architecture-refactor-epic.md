@@ -57,7 +57,7 @@ never the source of social truth.
 | J1   | Jolt: append-record enumeration + append publish | jolt repo | done (merged to jolt `dev`) | — | jolt #155 |
 | 101  | Spoke: Jolt SDK seam + monotonic store (profile tracer) | spoke | done | — | #24 |
 | 102  | Spoke: feed vertical | spoke | done | 101 | #25 |
-| 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | needs rewrite | 101 | — |
+| 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | in progress | 101 | — |
 | 103  | Spoke: messages + follows vertical | spoke | not started | 101 | — |
 | 104  | Spoke: swap bridge enumeration → J1 door | spoke | not started | J1, 102, 091 | — |
 | 099  | Spoke: compatibility boundary (tolerant readers/strict writers) | spoke | exists on `codex/spoke-compatibility-boundary-card`, NOT on `dev` | — | #22 |

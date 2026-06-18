@@ -537,6 +537,17 @@ export async function submitReplyByIdentity(
   return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, reply.id, reply);
 }
 
+// Generic encrypted-ingress send for any identified Spoke object (e.g. a
+// spoke.reply.v2). Transport-level: it does not know the object's domain type.
+export function submitObjectByIdentity(
+  sessionToken: string,
+  receiverIdentity: string,
+  objectId: string,
+  body: object
+) {
+  return submitSpokeObjectByIdentity(sessionToken, receiverIdentity, objectId, body);
+}
+
 export function submitFollowRequestByIdentity(
   sessionToken: string,
   receiverIdentity: string,
