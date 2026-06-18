@@ -62,7 +62,7 @@ never the source of social truth.
 | 102  | Spoke: feed vertical | spoke | done | 101 | #25 |
 | 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | done | 101 | #26 |
 | 103  | Spoke: messages + follows vertical | spoke | done | 101 | #27 |
-| 104  | Spoke: swap bridge enumeration → J1 door (now un-phased: J2 done) | spoke | not started | J1, J2, 102, 091 | — |
+| 104  | Spoke: swap bridge enumeration → J1 door (now un-phased: J2 done) | spoke | done | J1, J2, 102, 091 | — |
 | 105  | Spoke: complete the Jolt SDK seam (relocate transport, evict Spoke types from `api.ts`) | spoke | done | 101 | — |
 | 099  | Spoke: compatibility boundary (tolerant readers/strict writers) | spoke | exists on `codex/spoke-compatibility-boundary-card`, NOT on `dev` | — | #22 |
 
@@ -183,6 +183,15 @@ single source of truth for "where are we."
   fields up (the deferred half of the ACL marshalling refactor).
 - **Done when:** both feed and thread Collections read via Jolt's enumeration
   API; bridge + the published index Singletons removed; DTO mapping in the ACL.
+- **Landed:** transport gained `appendPublishJson` + `enumerate` and the
+  `AppendRecordInfo` wire type; SDK gained `JoltAppendSdk { publishAppend,
+  enumerate }` mapping `AppendRecordInfo` -> camelCase `EnumeratedRecord` in the
+  ACL; Tauri `daemon_append` command for desktop multipart. Feed: `publishPost`
+  writes via append, `createJoltEnumeration` lists `/spoke/posts/`; `/spoke/feed`
+  index gone. Thread: accepted refs are append records under
+  `/spoke/accepted/{postId}/`, `createJoltThreadEnumeration` lists the prefix;
+  `/spoke/threads` index gone. **Runtime deps to verify:** a J1-capable daemon
+  (append/enumerate endpoints) and a real desktop build of `daemon_append`.
 
 ### 105 - complete the Jolt SDK seam
 - **Goal:** finish card 101's stated-but-undelivered goal. Today `src/jolt/` is a

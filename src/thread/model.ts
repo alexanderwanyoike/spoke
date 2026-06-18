@@ -45,16 +45,6 @@ export type AcceptedReplyRef = {
   removed?: boolean;
 };
 
-// The bridge index Singleton the post author maintains per post (the swappable
-// enumeration of accepted references; card 104 replaces it with J1).
-export type SpokeAcceptedIndex = {
-  schema: "spoke.accepted_index.v1";
-  postId: string;
-  owner: string;
-  updatedAt: string;
-  entries: AcceptedReplyRef[];
-};
-
 // A reply normalized for the Projection (unifies v1 + v2).
 export type ThreadReply = {
   id: string;
@@ -76,8 +66,11 @@ export function makeAcceptedRefPath(postId: string, replyId: string) {
   return `${ACCEPTED_PREFIX}${postId}/${replyId}`;
 }
 
-export function makeThreadIndexPath(postId: string) {
-  return `/spoke/threads/${postId}`;
+// The accepted-reply Collection prefix for a post: the post author publishes one
+// accepted-reference append record per accepted reply under here, and a reader
+// enumerates the prefix (J1). Replaces the per-post /spoke/threads index.
+export function makeAcceptedPrefix(postId: string) {
+  return `${ACCEPTED_PREFIX}${postId}/`;
 }
 
 export function postIdFromPostAddress(postAddress: string): string {
@@ -98,13 +91,14 @@ export function isReplyV1(value: unknown): value is SpokeReply {
     (value as { schema?: unknown }).schema === "spoke.reply.v1";
 }
 
-export function isAcceptedIndex(value: unknown): value is SpokeAcceptedIndex {
+export function isAcceptedReplyRef(value: unknown): value is AcceptedReplyRef {
   return typeof value === "object" && value !== null &&
-    (value as { schema?: unknown }).schema === "spoke.accepted_index.v1";
+    (value as { schema?: unknown }).schema === "spoke.accepted_reply.v1";
 }
 
 export const decodeReplyV2: Decoder<SpokeReplyV2> = (v) => (isReplyV2(v) ? v : null);
-export const decodeAcceptedIndex: Decoder<SpokeAcceptedIndex> = (v) => (isAcceptedIndex(v) ? v : null);
+export const decodeAcceptedReplyRef: Decoder<AcceptedReplyRef> = (v) =>
+  isAcceptedReplyRef(v) ? v : null;
 
 // A reply can arrive as v2 or as a legacy flat v1; both normalize to ThreadReply.
 export const decodeAnyReply: Decoder<SpokeReplyV2 | SpokeReply> = (v) =>

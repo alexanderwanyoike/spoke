@@ -10,7 +10,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 import {
   acceptIngress,
+  appendPublishJson,
   decryptEncryptedTarget,
+  enumerate,
   fetchTarget,
   getStatus,
   listPendingIngress,
@@ -321,6 +323,58 @@ describe("Spoke daemon API client", () => {
       4,
       "/jolt-api/ingress/ing_2/reject",
       expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  it("publishes an append record via the web append endpoint", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ content_id: "cid_post", size: 10, address: "alice.jolt/spoke/posts/post_1" })
+    );
+
+    await appendPublishJson("token-1", "/spoke/posts/post_1", { schema: "spoke.post.v2", id: "post_1" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/jolt-api/append",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Authorization: "Bearer token-1" },
+        body: expect.any(FormData)
+      })
+    );
+  });
+
+  it("enumerates an identity's append records under a path prefix", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse([
+        {
+          path: "/spoke/posts/post_1",
+          content_id: "cid_post",
+          device_id: "dev_1",
+          device_sequence: 3,
+          created_at: "2026-06-18T10:00:00.000Z",
+          entry_hash: "hash_1"
+        }
+      ])
+    );
+
+    await expect(enumerate("token-1", "alice.jolt", "/spoke/posts/")).resolves.toEqual([
+      {
+        path: "/spoke/posts/post_1",
+        content_id: "cid_post",
+        device_id: "dev_1",
+        device_sequence: 3,
+        created_at: "2026-06-18T10:00:00.000Z",
+        entry_hash: "hash_1"
+      }
+    ]);
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/jolt-api/enumerate",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Authorization: "Bearer token-1", "Content-Type": "application/json" },
+        body: JSON.stringify({ identity: "alice.jolt", path_prefix: "/spoke/posts/" })
+      })
     );
   });
 });

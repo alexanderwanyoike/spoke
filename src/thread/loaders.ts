@@ -16,11 +16,11 @@ export async function loadThread(
   postId: string,
   store: Store = defaultStore
 ): Promise<void> {
-  const { entries, latestSequence } = await enumeration.listAccepted(postAuthor, postId);
+  const { entries } = await enumeration.listAccepted(postAuthor, postId);
   const authorKey = normalizeIdentity(postAuthor);
 
   await Promise.all(
-    entries.map(async (ref) => {
+    entries.map(async ({ ref, latestSequence }) => {
       // Fold the accepted reference (tombstone carries through as removal).
       store.upsert({
         identity: authorKey,
