@@ -61,7 +61,7 @@ never the source of social truth.
 | 101  | Spoke: Jolt SDK seam + monotonic store (profile tracer) | spoke | done | — | #24 |
 | 102  | Spoke: feed vertical | spoke | done | 101 | #25 |
 | 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | done | 101 | #26 |
-| 103  | Spoke: messages + follows vertical | spoke | in progress | 101 | — |
+| 103  | Spoke: messages + follows vertical | spoke | done | 101 | (branch `spoke/103-messages-follows-vertical`) |
 | 104  | Spoke: swap bridge enumeration → J1 door (now un-phased: J2 done) | spoke | not started | J1, J2, 102, 091 | — |
 | 099  | Spoke: compatibility boundary (tolerant readers/strict writers) | spoke | exists on `codex/spoke-compatibility-boundary-card`, NOT on `dev` | — | #22 |
 
@@ -141,6 +141,24 @@ single source of truth for "where are we."
 - **Goal:** conversations and follow requests through the new layers.
 - **Done when:** message/follow read/write go through the seam; remaining
   protocol code leaves `App.tsx`.
+- **Landed:**
+  - SDK seam gained encrypted + inbox capability interfaces (`JoltEncryptedSdk`:
+    `publishEncryptedJson`/`readEncrypted`/`listPublished`; `JoltInboxSdk`:
+    `sendObject`/`listInbox`/`openInbox`/`acceptInbox`/`rejectInbox`).
+  - `src/follow/` - contact graph is an append-record Collection **encrypted to
+    self** (ADR 0004); `useContacts` projects it; commands `addContact`,
+    `requestFollow`, `acceptFollowRequest`, `applyIncomingResponse`,
+    `removeContact` (tombstone). Friends-of-friends deferred to a future opt-in
+    public-discovery card.
+  - `src/message/` - `sendMessage`/`acceptReceivedMessage`, `loadConversations`,
+    `useConversations` (direction by path prefix). Received copies remain
+    plaintext in the recipient's namespace (pre-existing; flagged for a privacy
+    follow-up - encrypt-to-self with a legacy plaintext fallback).
+  - `src/inbox/` - thin ingress loop dispatching to per-feature handlers
+    (follow/message/thread); `processInbox` + manual `acceptInboxRecord`/
+    `rejectInboxRecord`.
+  - `App.tsx` contacts/conversations are now store-backed query hooks; legacy
+    `localStorage` contacts are back-filled into the Collection once on load.
 
 ### 104 - swap bridge enumeration → J1 door
 - **Goal:** replace the bridge enumeration implementation with the J1-backed
