@@ -58,6 +58,9 @@ function fakeJolt(localIdentity: string) {
     async read(ref, decode) {
       return readHit(ref, decode) as never;
     },
+    async readContent(_contentId, ref, _latestSequence, decode) {
+      return readHit(ref, decode) as never;
+    },
     async publishEncryptedJson(path, body) {
       return publish(path, body);
     },

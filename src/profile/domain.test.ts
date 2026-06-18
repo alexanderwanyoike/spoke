@@ -42,6 +42,16 @@ function fakeSdk(
         ? null
         : { ref, value, latestSequence: hit.latestSequence, contentId: hit.contentId };
     },
+    async readContent(contentId, ref, latestSequence, decode) {
+      const hit = Object.values(reads).find((item) => item.contentId === contentId);
+      if (!hit) {
+        return null;
+      }
+      const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(hit.bytes))));
+      return value === null
+        ? null
+        : { ref, value, latestSequence, contentId };
+    },
     ...overrides
   };
 }

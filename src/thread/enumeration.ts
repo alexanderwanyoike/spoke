@@ -3,8 +3,7 @@
 // append record per accepted reply under /spoke/accepted/{postId}/{replyId};
 // listing that prefix is the Collection read. A tombstone (removed: true) is a
 // newer append record at the same path. The monotonic store - not the listing -
-// guarantees an accepted reference is never dropped. Replaces the pre-J1
-// /spoke/threads/{postId} Singleton index.
+// guarantees an accepted reference is never dropped.
 
 import type { JoltAppendSdk, JoltSdk } from "../jolt";
 import {
@@ -32,8 +31,11 @@ export function createJoltThreadEnumeration(sdk: JoltSdk & JoltAppendSdk): Threa
       const records = await sdk.enumerate(postAuthor, makeAcceptedPrefix(postId));
       const entries = await Promise.all(
         records.map(async (record) => {
-          const hit = await sdk.read(
-            { identity: postAuthor, path: record.path },
+          const logicalRef = { identity: postAuthor, path: record.path };
+          const hit = await sdk.readContent(
+            record.contentId,
+            logicalRef,
+            record.deviceSequence,
             decodeAcceptedReplyRef
           );
           if (!hit) return null;

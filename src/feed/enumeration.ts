@@ -12,6 +12,7 @@ export type PostRef = {
   path: string;
   author: string;
   contentId?: string;
+  latestSequence?: number;
   createdAt?: string;
 };
 
@@ -35,6 +36,7 @@ function postRefFromRecord(identity: string, record: EnumeratedRecord): PostRef 
     path: record.path,
     author: identity,
     contentId: record.contentId,
+    latestSequence: record.deviceSequence,
     createdAt: record.createdAt
   };
 }

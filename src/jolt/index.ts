@@ -94,6 +94,16 @@ export interface JoltSdk {
   // Resolves, fetches, parses, and decodes. Returns null when the reference is
   // missing/unreachable or the bytes do not decode to T.
   read<T>(ref: Reference, decode: Decoder<T>): Promise<Versioned<T> | null>;
+  // Fetches a known content id from an enumerated append record, then parses and
+  // decodes it against the supplied logical Reference. Append records are
+  // enumerable by path prefix, but are not singleton path state and therefore
+  // must not be read back through resolve(identity + path).
+  readContent<T>(
+    contentId: string,
+    ref: Reference,
+    latestSequence: number,
+    decode: Decoder<T>
+  ): Promise<Versioned<T> | null>;
 }
 
 // One append record, marshalled into the domain (camelCase) from the wire
@@ -207,6 +217,61 @@ export function createJoltSdk(
     return { ref, value, latestSequence: resolved.latest_sequence, contentId: resolved.content_id };
   }
 
+  async function fetchDecode<T>(
+    contentId: string,
+    ref: Reference,
+    latestSequence: number,
+    decode: Decoder<T>
+  ): Promise<Versioned<T> | null> {
+    let bytes: number[];
+    try {
+      bytes = (await fetchTarget(getSessionToken(), contentId)).data;
+    } catch {
+      return null;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes)));
+    } catch {
+      return null;
+    }
+    const value = decode(parsed);
+    if (value === null) {
+      return null;
+    }
+    return { ref, value, latestSequence, contentId };
+  }
+
+  async function readEncryptedReference<T>(
+    ref: Reference,
+    decode: Decoder<T>
+  ): Promise<Versioned<T> | null> {
+    const token = getSessionToken();
+    const target = referenceTarget(ref);
+    let resolved;
+    let plaintext: number[];
+    let contentId: string;
+    try {
+      resolved = await resolveAddress(token, target);
+      const decrypted = await decryptEncryptedTarget(token, target);
+      plaintext = decrypted.plaintext;
+      contentId = decrypted.content_id || resolved.content_id;
+    } catch {
+      return null;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(new Uint8Array(plaintext)));
+    } catch {
+      return null;
+    }
+    const value = decode(parsed);
+    if (value === null) {
+      return null;
+    }
+    return { ref, value, latestSequence: resolved.latest_sequence, contentId };
+  }
+
   return {
     async publishJson(path, body) {
       const response = await transportPublishJson(getSessionToken(), path, body);
@@ -219,6 +284,9 @@ export function createJoltSdk(
         decode
       );
     },
+    async readContent(contentId, ref, latestSequence, decode) {
+      return fetchDecode(contentId, ref, latestSequence, decode);
+    },
     async publishEncryptedJson(path, body, recipients) {
       const response = await transportPublishEncryptedJson(
         getSessionToken(),
@@ -229,11 +297,7 @@ export function createJoltSdk(
       return toPublishResult(response, path);
     },
     async readEncrypted(ref, decode) {
-      return resolveDecode(
-        ref,
-        async (token, contentId) => (await decryptEncryptedTarget(token, contentId)).plaintext,
-        decode
-      );
+      return readEncryptedReference(ref, decode);
     },
     async listPublished() {
       return transportListPublished(getSessionToken());

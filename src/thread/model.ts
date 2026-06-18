@@ -68,7 +68,7 @@ export function makeAcceptedRefPath(postId: string, replyId: string) {
 
 // The accepted-reply Collection prefix for a post: the post author publishes one
 // accepted-reference append record per accepted reply under here, and a reader
-// enumerates the prefix (J1). Replaces the per-post /spoke/threads index.
+// enumerates the prefix (J1). Replaces the pre-J1 /spoke/threads index.
 export function makeAcceptedPrefix(postId: string) {
   return `${ACCEPTED_PREFIX}${postId}/`;
 }

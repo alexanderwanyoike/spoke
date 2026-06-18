@@ -59,6 +59,12 @@ function fakeSdk(
       if (!hit) return null;
       const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(hit.bytes))));
       return value === null ? null : { ref, value, latestSequence: hit.latestSequence, contentId: hit.contentId };
+    },
+    async readContent(contentId, ref, latestSequence, decode) {
+      const hit = Object.values(reads).find((item) => item.contentId === contentId);
+      if (!hit) return null;
+      const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(hit.bytes))));
+      return value === null ? null : { ref, value, latestSequence, contentId };
     }
   };
 }
@@ -247,6 +253,11 @@ describe("jolt thread enumeration", () => {
         const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(encode(ref)))));
         return value === null ? null : { ref: r, value, latestSequence: 7, contentId: "cacc" };
       },
+      async readContent(contentId, r, latestSequence, decode) {
+        if (contentId !== "cacc" || r.path !== appendPath) return null;
+        const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(encode(ref)))));
+        return value === null ? null : { ref: r, value, latestSequence, contentId };
+      },
       async publishAppend(path, body) {
         appended.push({ path, body });
         return { contentId: "cacc", latestSequence: 7, path, address: null };
@@ -259,7 +270,7 @@ describe("jolt thread enumeration", () => {
                 path: appendPath,
                 contentId: "cacc",
                 deviceId: "dev_1",
-                deviceSequence: 0,
+                deviceSequence: 7,
                 createdAt: "2026-06-06T10:00:00.000Z",
                 entryHash: "hash_1"
               }
