@@ -3,7 +3,6 @@ import type { SpokePost } from "./model";
 import {
   activeContacts,
   displayNameForFeedItem,
-  latestPublishedByPath,
   type Contact,
   type FeedItem
 } from "./model";
@@ -49,31 +48,5 @@ describe("Spoke feed helpers", () => {
         contact({ identity: "bob.jolt", displayName: "Bob", relationship: "requested" })
       ]).map((item) => item.identity)
     ).toEqual(["alice.jolt"]);
-  });
-
-  it("selects the newest locally published object for a path", () => {
-    const result = latestPublishedByPath(
-      [
-        {
-          content_id: "cid_old",
-          size: 1,
-          path: "/spoke/feed",
-          address: "alice.jolt/spoke/feed",
-          local_sequence: 1,
-          pin_state: "local"
-        },
-        {
-          content_id: "cid_new",
-          size: 1,
-          path: "/spoke/feed",
-          address: "alice.jolt/spoke/feed",
-          local_sequence: 3,
-          pin_state: "local"
-        }
-      ],
-      "/spoke/feed"
-    );
-
-    expect(result?.content_id).toBe("cid_new");
   });
 });

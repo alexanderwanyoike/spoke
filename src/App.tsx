@@ -86,7 +86,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
-  createBridgeEnumeration,
+  createJoltEnumeration,
   displayNameForFeedItem,
   loadFeed,
   makePostPath,
@@ -174,7 +174,6 @@ import {
   getCurrentSession,
   getSessionRequestStatus,
   getStatus,
-  listPublished,
   makeId,
   publishBinary,
   publishEncryptedBinary,
@@ -448,17 +447,9 @@ function App() {
   const contacts = useContacts(localIdentity);
   const conversations = useConversations(localIdentity);
 
-  // The feed reads from the monotonic store through the query seam; the bridge
-  // enumeration discovers posts via the Spoke-maintained /spoke/feed index
-  // (swappable for J1 append-record enumeration in card 104).
-  const enumeration = useMemo(
-    () =>
-      createBridgeEnumeration(jolt, {
-        localIdentity,
-        listLocalPosts: () => listPublished(sessionToken)
-      }),
-    [jolt, localIdentity, sessionToken]
-  );
+  // The feed reads from the monotonic store through the query seam; enumeration
+  // discovers posts via Jolt's append-record enumeration (J1, card 104).
+  const enumeration = useMemo(() => createJoltEnumeration(jolt), [jolt]);
   const feed = useFeed({ localIdentity, contacts });
 
   // Threads are author-anchored: the bridge enumerates the post author's
@@ -1386,7 +1377,7 @@ function App() {
       // Publish the post (Append Record), record it in the bridge index, and
       // fold it into the store. The post appears in the feed Projection at once
       // because the store update is synchronous after the publish resolves.
-      await publishPostCommand(jolt, enumeration, post);
+      await publishPostCommand(jolt, post);
       feedRefreshGeneration.current += 1;
       for (const attachment of attachments) {
         const pendingAttachment = postAttachments.find((item) => item.id === attachment.id);
