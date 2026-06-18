@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default desktop permissions for the Spoke window.",
   "windows": ["main"],
-  "permissions": ["core:default", "process:default", "updater:default"]
+  "permissions": ["core:default", "process:default", "updater:default", "dialog:default"]
 }

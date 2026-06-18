@@ -1,4 +1,4 @@
-import type { ChangeEvent, KeyboardEvent } from "react";
+import type { KeyboardEvent } from "react";
 import { ArrowLeft, ImagePlus, MessageCircle, RefreshCw, Search, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { messagePreview, type ConversationMessage } from "@/message";
 import type { SpokeMessageAttachment } from "@/media";
 import { AttachmentDraftRow } from "./attachment-draft-row";
 import { EmptyState } from "./empty-state";
+import { ImagePickerButton } from "./image-picker-button";
 import { MediaFrame } from "./media-frame";
 import type { AvatarRenderer, MessageThread, PendingImageAttachment } from "./types";
 
@@ -35,7 +36,8 @@ type MessagesViewProps = {
   onOpenProfile: (identity: string) => void;
   onMessageDraftChange: (identity: string, value: string) => void;
   onMessageKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>, contact: Contact) => void;
-  onAddMessageAttachments: (identity: string, event: ChangeEvent<HTMLInputElement>) => void;
+  onAddMessageAttachments: (identity: string, files: File[]) => void;
+  onAttachmentError?: (message: string) => void;
   onSendMessage: (contact: Contact) => void;
   onUpdateMessageAttachmentAlt: (identity: string, attachmentId: string, alt: string) => void;
   onRemoveMessageAttachment: (identity: string, attachmentId: string) => void;
@@ -65,6 +67,7 @@ export function MessagesView({
   onMessageDraftChange,
   onMessageKeyDown,
   onAddMessageAttachments,
+  onAttachmentError,
   onSendMessage,
   onUpdateMessageAttachmentAlt,
   onRemoveMessageAttachment,
@@ -220,17 +223,15 @@ export function MessagesView({
                 />
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <Button asChild variant="outline" size="icon" title="Attach images">
-                      <label>
-                        <ImagePlus className="size-4" />
-                        <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          onChange={(event) => onAddMessageAttachments(activeThread.contact.identity, event)}
-                        />
-                      </label>
-                    </Button>
+                    <ImagePickerButton
+                      multiple
+                      size="icon"
+                      title="Attach images"
+                      onFiles={(files) => onAddMessageAttachments(activeThread.contact.identity, files)}
+                      onError={onAttachmentError}
+                    >
+                      <ImagePlus className="size-4" />
+                    </ImagePickerButton>
                     <span className="text-xs text-muted-foreground">Images are encrypted with the message thread</span>
                   </div>
                   <Button

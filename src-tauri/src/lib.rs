@@ -120,6 +120,34 @@ async fn daemon_append(
     parse_response(request.send().await).await
 }
 
+// Read a file the user selected through the native OS image dialog and hand its
+// bytes back to the web layer (name + inferred MIME + raw bytes), so the
+// attachment pipeline can build a File from a native picker the same way it does
+// from an <input type=file>. The native dialog (tauri-plugin-dialog) is what
+// gives the OS file chooser with image thumbnails/previews.
+#[tauri::command]
+fn read_picked_image(path: String) -> Result<Value, String> {
+    let bytes = std::fs::read(&path).map_err(|error| format!("failed to read {path}: {error}"))?;
+    let file_path = std::path::Path::new(&path);
+    let name = file_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("image")
+        .to_string();
+    let mime = match file_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        _ => "application/octet-stream",
+    };
+    Ok(serde_json::json!({ "name": name, "mimeType": mime, "bytes": bytes }))
+}
+
 async fn parse_response(
     response: Result<reqwest::Response, reqwest::Error>,
 ) -> Result<Value, String> {
@@ -197,13 +225,15 @@ fn request_timeout(base_path: &str, path: &str) -> Duration {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             daemon_request,
             daemon_publish_bytes,
             daemon_publish_json,
-            daemon_append
+            daemon_append,
+            read_picked_image
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Spoke");

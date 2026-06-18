@@ -1,5 +1,4 @@
 import {
-  type ChangeEvent,
   type KeyboardEvent,
   useEffect,
   useMemo,
@@ -38,6 +37,7 @@ import {
 } from "lucide-react";
 import { AttachmentDraftRow } from "@/components/spoke/attachment-draft-row";
 import { EmptyState } from "@/components/spoke/empty-state";
+import { ImagePickerButton } from "@/components/spoke/image-picker-button";
 import { MediaFrame } from "@/components/spoke/media-frame";
 import { MessagesView } from "@/components/spoke/messages-view";
 import { PersonRow } from "@/components/spoke/person-row";
@@ -1192,9 +1192,7 @@ function App() {
     }
   }
 
-  async function addPostAttachments(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.currentTarget.files || []);
-    event.currentTarget.value = "";
+  async function addPostAttachments(files: File[]) {
     if (files.length === 0) {
       return;
     }
@@ -1212,17 +1210,16 @@ function App() {
     setPostAttachments((current) => [...current, ...nextAttachments]);
   }
 
-  async function addProfileAvatar(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.currentTarget.files || []).slice(0, 1);
-    event.currentTarget.value = "";
-    if (files.length === 0) {
+  async function addProfileAvatar(files: File[]) {
+    const selected = files.slice(0, 1);
+    if (selected.length === 0) {
       return;
     }
 
     setError("");
     setNotice("");
     try {
-      const [nextAvatar] = await prepareImageAttachments(files);
+      const [nextAvatar] = await prepareImageAttachments(selected);
       setProfileAvatar((current) => {
         if (current) {
           URL.revokeObjectURL(current.previewUrl);
@@ -1276,9 +1273,7 @@ function App() {
     }));
   }
 
-  async function addMessageAttachments(identity: string, event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.currentTarget.files || []);
-    event.currentTarget.value = "";
+  async function addMessageAttachments(identity: string, files: File[]) {
     if (files.length === 0) {
       return;
     }
@@ -1970,13 +1965,10 @@ function App() {
               <p className="text-xs text-muted-foreground">Use a square JPEG, PNG, or WebP image.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button asChild variant="outline" size="sm">
-                <label>
-                  <ImagePlus className="size-4" />
-                  Choose avatar
-                  <input type="file" accept="image/*" onChange={addProfileAvatar} />
-                </label>
-              </Button>
+              <ImagePickerButton size="sm" onFiles={addProfileAvatar} onError={setError}>
+                <ImagePlus className="size-4" />
+                Choose avatar
+              </ImagePickerButton>
               {(profileAvatar || profileDraft.avatar) ? (
                 <Button type="button" variant="ghost" size="sm" onClick={removeProfileAvatar}>
                   <Trash2 className="size-4" />
@@ -2201,13 +2193,10 @@ function App() {
             placeholder="Write a note for known contacts"
           />
           <div className="flex flex-wrap items-center gap-3">
-            <Button asChild variant="outline" size="sm">
-              <label>
-                <ImagePlus className="size-4" />
-                Add images
-                <input type="file" accept="image/*" multiple onChange={addPostAttachments} />
-              </label>
-            </Button>
+            <ImagePickerButton multiple size="sm" onFiles={addPostAttachments} onError={setError}>
+              <ImagePlus className="size-4" />
+              Add images
+            </ImagePickerButton>
             <span className="text-xs text-muted-foreground">JPEG, PNG, or WebP up to 5 MB each</span>
           </div>
           {postAttachments.length > 0 ? (
@@ -2763,6 +2752,7 @@ function App() {
                 threadSearch={threadSearch}
                 visibleMessageThreads={visibleMessageThreads}
                 onAddMessageAttachments={addMessageAttachments}
+                onAttachmentError={setError}
                 onBackToFeed={() => setActiveView("feed")}
                 onMessageDraftChange={(identity, value) =>
                   setMessageDrafts((current) => ({ ...current, [identity]: value }))
