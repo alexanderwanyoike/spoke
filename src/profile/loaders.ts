@@ -11,7 +11,7 @@ import { normalizeIdentity } from "../follow";
 import { decodeProfile } from "./model";
 import { store as defaultStore, type Store } from "../common/store";
 import { PROFILE_PATH } from "./commands";
-import type { SpokeProfile } from "../api";
+import type { SpokeProfile } from "./model";
 
 // Read a remote (or own) profile through the SDK and fold it into the store.
 // Returns the decoded profile, or null if it was missing or not a profile.

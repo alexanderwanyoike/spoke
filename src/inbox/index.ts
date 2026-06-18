@@ -7,7 +7,7 @@
 // (src/follow, src/message, src/thread). App only kicks processInbox and renders
 // the records left for manual review.
 
-import type { IngressRecord } from "../api";
+import type { IngressRecord } from "../jolt";
 import type { JoltEncryptedSdk, JoltIngressSdk, JoltSdk } from "../jolt";
 import type { Store } from "../common/store";
 

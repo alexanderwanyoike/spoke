@@ -4,7 +4,18 @@
 // the post author. Legacy spoke.reply.v1 normalizes into the same Projection.
 
 import type { Decoder } from "../jolt";
-import type { SpokeReply } from "../api"; // legacy v1
+
+// Legacy v1 reply, retained read-only (tolerant readers). New replies are
+// spoke.reply.v2 (defined below as SpokeReplyV2).
+export type SpokeReply = {
+  schema: "spoke.reply.v1";
+  id: string;
+  sender: string;
+  postAuthor: string;
+  postAddress: string;
+  body: string;
+  createdAt: string;
+};
 
 export const REPLIES_PREFIX = "/spoke/replies/";
 export const ACCEPTED_PREFIX = "/spoke/accepted/";

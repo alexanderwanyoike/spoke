@@ -86,40 +86,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
-  SPOKE_CAPABILITIES,
-  apiErrorMessage,
-  decodeFetchData,
-  decryptEncryptedTarget,
-  fetchTarget,
-  getCurrentSession,
-  getSessionRequestStatus,
-  getStatus,
-  listPublished,
-  makeId,
-  makePostPath,
-  makeThreadPath,
-  publishBinary,
-  publishEncryptedBinary,
-  requestSpokeSession,
-  submitObjectByIdentity,
-  type AppSessionStatus,
-  type IngressRecord,
-  type NodeStatus,
-  type SpokePost,
-  type SpokeProfile,
-  type SpokeProfileLink,
-  type SpokeReply
-} from "./api";
-import {
   createBridgeEnumeration,
   displayNameForFeedItem,
   loadFeed,
+  makePostPath,
   publishPost as publishPostCommand,
   readFeed,
   useFeed,
   activeContacts,
   type Contact,
-  type FeedItem
+  type FeedItem,
+  type SpokePost
 } from "./feed";
 import {
   addContact as addContactCommand,
@@ -140,8 +117,10 @@ import {
   flattenThread,
   isReplyV2,
   loadThread,
+  makeThreadIndexPath,
   submitReply,
   useThreads,
+  type SpokeReply,
   type SpokeReplyV2,
   type ThreadNode,
   type ThreadScope
@@ -182,9 +161,28 @@ import {
   profileLinksFromDraft,
   publishProfile,
   useProfiles,
-  type ProfileDraft
+  type ProfileDraft,
+  type SpokeProfile,
+  type SpokeProfileLink
 } from "./profile";
-import { createJoltSdk } from "./jolt";
+import {
+  apiErrorMessage,
+  createJoltSdk,
+  decodeFetchData,
+  decryptEncryptedTarget,
+  fetchTarget,
+  getCurrentSession,
+  getSessionRequestStatus,
+  getStatus,
+  listPublished,
+  makeId,
+  publishBinary,
+  publishEncryptedBinary,
+  type AppSessionStatus,
+  type IngressRecord,
+  type NodeStatus
+} from "./jolt";
+import { SPOKE_CAPABILITIES, requestSpokeSession } from "./session";
 import {
   tauriSpokeUpdateClient,
   type SpokeUpdateCheck,
@@ -1382,7 +1380,7 @@ function App() {
         body,
         createdAt: new Date().toISOString(),
         path: makePostPath(id),
-        threadPath: makeThreadPath(id),
+        threadPath: makeThreadIndexPath(id),
         ...(attachments.length > 0 ? { attachments } : {})
       };
       // Publish the post (Append Record), record it in the bridge index, and
@@ -1604,7 +1602,7 @@ function App() {
         setNotice("Reply published to your thread.");
       } else {
         // Notify the post author so their device can gate acceptance.
-        await submitObjectByIdentity(sessionToken, item.post.author, reply.id, reply);
+        await jolt.sendObject(item.post.author, `/spoke/outgoing/${reply.id}`, reply);
         setNotice("Encrypted reply submitted to the post author.");
       }
       setReplyDrafts((current) => ({ ...current, [draftKey]: "" }));

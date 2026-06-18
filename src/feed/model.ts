@@ -1,5 +1,5 @@
-import type { PublishedContent, SpokeFeedIndex, SpokePost } from "../api";
-import type { Decoder } from "../jolt";
+import type { Decoder, PublishedContent } from "../jolt";
+import type { SpokeAttachment } from "../media";
 // The contact graph belongs to the follow feature (ADR 0004). Re-exported here
 // so existing feed consumers keep importing Contact/activeContacts from "@/feed".
 import { activeContacts } from "../follow";
@@ -7,6 +7,33 @@ import type { Contact } from "../follow";
 
 export { activeContacts };
 export type { Contact };
+
+export type SpokePost = {
+  schema: "spoke.post.v1" | "spoke.post.v2";
+  id: string;
+  author: string;
+  displayName?: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  path: string;
+  threadPath?: string;
+  attachments?: SpokeAttachment[];
+};
+
+export type SpokeFeedIndex = {
+  schema: "spoke.feed.v1";
+  owner: string;
+  updatedAt: string;
+  posts: Array<{
+    id: string;
+    path: string;
+    contentId?: string;
+    address?: string | null;
+    title: string;
+    createdAt: string;
+  }>;
+};
 
 export type FeedItem = {
   source: "local" | "contact";
@@ -35,6 +62,10 @@ export function latestPublishedByPath(items: PublishedContent[], path: string) {
 
 export const FEED_PATH = "/spoke/feed";
 export const POSTS_PREFIX = "/spoke/posts/";
+
+export function makePostPath(id: string) {
+  return `${POSTS_PREFIX}${id}`;
+}
 
 export function isSpokePost(value: unknown): value is SpokePost {
   if (typeof value !== "object" || value === null) {

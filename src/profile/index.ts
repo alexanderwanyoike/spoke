@@ -11,7 +11,9 @@ export {
   profileLinksFromDraft,
   type ProfileDraft,
   type ProfileDraftLink,
-  type ProfilesByIdentity
+  type ProfilesByIdentity,
+  type SpokeProfile,
+  type SpokeProfileLink
 } from "./model";
 export { publishProfile, PROFILE_PATH } from "./commands";
 export { loadProfile } from "./loaders";

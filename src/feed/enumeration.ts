@@ -9,7 +9,8 @@
 // touching commands/loaders/queries.
 
 import type { JoltSdk, PublishResult } from "../jolt";
-import type { PublishedContent, SpokeFeedIndex, SpokePost } from "../api";
+import type { PublishedContent } from "../jolt";
+import type { SpokeFeedIndex, SpokePost } from "./model";
 import { sameIdentity } from "../follow";
 import { decodeFeedIndex, feedIndexWithPost, FEED_PATH, POSTS_PREFIX } from "./model";
 
