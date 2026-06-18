@@ -225,7 +225,7 @@ export function MessagesView({
                         <ImagePlus className="size-4" />
                         <input
                           type="file"
-                          accept="image/jpeg,image/png,image/webp"
+                          accept="image/*"
                           multiple
                           onChange={(event) => onAddMessageAttachments(activeThread.contact.identity, event)}
                         />

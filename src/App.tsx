@@ -1974,7 +1974,7 @@ function App() {
                 <label>
                   <ImagePlus className="size-4" />
                   Choose avatar
-                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={addProfileAvatar} />
+                  <input type="file" accept="image/*" onChange={addProfileAvatar} />
                 </label>
               </Button>
               {(profileAvatar || profileDraft.avatar) ? (
@@ -2205,7 +2205,7 @@ function App() {
               <label>
                 <ImagePlus className="size-4" />
                 Add images
-                <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={addPostAttachments} />
+                <input type="file" accept="image/*" multiple onChange={addPostAttachments} />
               </label>
             </Button>
             <span className="text-xs text-muted-foreground">JPEG, PNG, or WebP up to 5 MB each</span>
@@ -2654,7 +2654,7 @@ function App() {
             <SidebarRail />
           </Sidebar>
           <SidebarInset>
-            <header className="sticky top-0 z-20 border-b spoke-border bg-background/90 shadow-sm shadow-foreground/5 backdrop-blur">
+            <header className="sticky top-0 z-20 border-b spoke-border bg-background shadow-sm shadow-foreground/5">
               <div className="flex min-h-20 flex-wrap items-center justify-between gap-3 px-4 py-3 lg:px-8">
                 <div className="flex min-w-0 items-center gap-3">
                   <SidebarTrigger className="md:hidden" />
