@@ -13,6 +13,8 @@ export const SPOKE_CAPABILITIES = [
   "pin:own:/spoke/*",
   "encrypt:/spoke/*",
   "decrypt:/spoke/*",
+  "enumerate:self:/spoke/*",
+  "enumerate:any:/spoke/*",
   "ingress:send",
   "ingress:read",
   "ingress:decide"
