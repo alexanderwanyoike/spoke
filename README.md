@@ -1,12 +1,37 @@
 # Spoke
 
-Spoke is a small Jolt social PoC for known identities. It keeps social concepts in app-owned JSON objects under `/spoke/*`:
+Spoke is a small social app built on
+[Jolt](https://github.com/alexanderwanyoike/jolt): profiles, posts, a feed of
+known identities, and encrypted replies. It exists to prove that a third-party
+app can deliver a real social experience without owning identity,
+distribution, or the user's keys. Spoke never sees a private key; it requests
+scoped capabilities from the local Jolt daemon, and the user approves or
+revokes that session in Jolt Console.
+
+![Spoke feed with two identities posting from independent nodes](docs/assets/spoke-feed.png)
+
+*Two identities on two independent daemons: each post is signed content
+fetched from the identity that authored it, and the reply traveled between
+nodes as an encrypted object through recipient-controlled ingress.*
+
+What Spoke exercises at the Jolt boundary:
+
+- scoped app sessions (capability grants approved and revoked in Console);
+- posts as append records, discovered by enumerating each author's identity;
+- an encrypted contact graph (follow edges encrypted to the owner);
+- encrypted replies delivered through recipient-controlled ingress.
+
+Spoke keeps social concepts in app-owned JSON objects under `/spoke/*`:
 
 - `/spoke/profile` for the local display profile
-- `/spoke/posts/{id}` for public posts
-- `/spoke/feed` for the app-level feed index
+- `/spoke/posts/{id}` for public posts (append records)
+- `/spoke/contacts/{identity}` for encrypted follow edges
 - `/spoke/outgoing/{id}` for encrypted outbound reply envelopes
 - `/spoke/replies/{id}` for accepted incoming replies
+
+The Jolt protocol knows nothing about any of these: posts, profiles, contacts,
+and replies are Spoke's application schema over Jolt's signed paths, append
+records, encrypted envelopes, and ingress primitives.
 
 ## Run
 

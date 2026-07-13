@@ -9,24 +9,22 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import {
-  SPOKE_CAPABILITIES,
   acceptIngress,
+  appendPublishJson,
   decryptEncryptedTarget,
+  enumerate,
   fetchTarget,
   getStatus,
   listPendingIngress,
-  makePostPath,
   openIngress,
-  publishPostWithIndex,
-  publishProfile,
+  publishBinary,
+  publishEncryptedBinary,
   publishJson,
   rejectIngress,
-  requestSpokeSession,
-  submitReplyByIdentity,
-  type SpokePost,
-  type SpokeProfile,
-  type SpokeReply
-} from "./api";
+  requestSession,
+  sendObjectByIdentity,
+  type IngressRecord
+} from "./transport";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -49,15 +47,20 @@ describe("Spoke daemon API client", () => {
     vi.unstubAllGlobals();
   });
 
-  it("requests a Spoke app session with social and ingress capabilities", async () => {
+  it("requests a session with the caller's app identity and capabilities", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       jsonResponse({ request_id: "req_1", status: "pending" })
     );
 
-    await expect(requestSpokeSession("alice.jolt")).resolves.toEqual({
-      request_id: "req_1",
-      status: "pending"
-    });
+    await expect(
+      requestSession({
+        appId: "app.example",
+        appName: "Example",
+        appOrigin: "http://example",
+        identity: "alice.jolt",
+        capabilities: ["resolve:public", "ingress:read"]
+      })
+    ).resolves.toEqual({ request_id: "req_1", status: "pending" });
 
     expect(fetch).toHaveBeenCalledWith(
       "/jolt-api/sessions/request",
@@ -65,11 +68,11 @@ describe("Spoke daemon API client", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          app_id: "spoke.local",
-          app_name: "Spoke",
-          app_origin: "http://127.0.0.1:5178",
+          app_id: "app.example",
+          app_name: "Example",
+          app_origin: "http://example",
           requested_identity: "alice.jolt",
-          requested_capabilities: SPOKE_CAPABILITIES
+          requested_capabilities: ["resolve:public", "ingress:read"]
         })
       })
     );
@@ -132,44 +135,34 @@ describe("Spoke daemon API client", () => {
     });
   });
 
-  it("publishes profile and posts only under /spoke", async () => {
-    const profile: SpokeProfile = {
+  it("uses a Tauri daemon command for desktop binary publishing", async () => {
+    isTauriMock.mockReturnValue(true);
+    invokeMock.mockResolvedValueOnce({ content_id: "cid_media", size: 3 });
+
+    await publishBinary("token-1", "/spoke/media/media_1", new Blob([new Uint8Array([1, 2, 3])]), {
+      fileName: "photo.png",
+      mimeType: "image/png"
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(invokeMock).toHaveBeenCalledWith("daemon_publish_bytes", {
+      sessionToken: "token-1",
+      path: "/spoke/media/media_1",
+      bytes: [1, 2, 3],
+      fileName: "photo.png",
+      mimeType: "image/png"
+    });
+  });
+
+  it("publishes JSON under /spoke through the web publish endpoint", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ content_id: "cid_profile", size: 10 }));
+
+    await publishJson("token-1", "/spoke/profile", {
       schema: "spoke.profile.v1",
-      identity: "alice.jolt",
-      displayName: "Alice",
-      bio: "Local-first notes",
-      updatedAt: "2026-06-06T10:00:00.000Z"
-    };
-    const post: SpokePost = {
-      schema: "spoke.post.v1",
-      id: "post_1",
-      author: "alice.jolt",
-      displayName: "Alice",
-      title: "Hello",
-      body: "First post",
-      createdAt: "2026-06-06T10:01:00.000Z",
-      path: makePostPath("post_1")
-    };
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(jsonResponse({ content_id: "cid_profile", size: 10 }))
-      .mockResolvedValueOnce(jsonResponse({ content_id: "cid_post", size: 10, address: "alice.jolt/spoke/posts/post_1" }))
-      .mockResolvedValueOnce(jsonResponse({ content_id: "cid_feed", size: 10, address: "alice.jolt/spoke/feed" }));
+      displayName: "Alice"
+    });
 
-    await publishProfile("token-1", profile);
-    const result = await publishPostWithIndex("token-1", post, null);
-
-    expect(result.feedIndex.posts).toEqual([
-      {
-        id: "post_1",
-        path: "/spoke/posts/post_1",
-        contentId: "cid_post",
-        address: "alice.jolt/spoke/posts/post_1",
-        title: "Hello",
-        createdAt: "2026-06-06T10:01:00.000Z"
-      }
-    ]);
-    expect(fetch).toHaveBeenNthCalledWith(
-      1,
+    expect(fetch).toHaveBeenCalledWith(
       "/jolt-api/publish",
       expect.objectContaining({
         method: "POST",
@@ -177,30 +170,26 @@ describe("Spoke daemon API client", () => {
         body: expect.any(FormData)
       })
     );
-    expect(fetch).toHaveBeenNthCalledWith(
-      2,
-      "/jolt-api/publish",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.any(FormData)
-      })
-    );
-    expect(fetch).toHaveBeenNthCalledWith(
-      3,
-      "/jolt-api/publish",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.any(FormData)
-      })
-    );
   });
 
-  it("does not publish outside the Spoke namespace", () => {
-    expect(() => publishJson("token-1", "/profile", { nope: true })).toThrow(
-      "Spoke can only publish under /spoke/"
+  it("publishes binary media under the Spoke namespace", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ content_id: "cid_media", size: 3, address: "alice.jolt/spoke/media/media_1" })
     );
 
-    expect(fetch).not.toHaveBeenCalled();
+    await publishBinary("token-1", "/spoke/media/media_1", new Blob([new Uint8Array([1, 2, 3])]), {
+      fileName: "photo.webp",
+      mimeType: "image/webp"
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/jolt-api/publish",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Authorization: "Bearer token-1" },
+        body: expect.any(FormData)
+      })
+    );
   });
 
   it("decrypts encrypted outgoing objects through the app API", async () => {
@@ -229,24 +218,16 @@ describe("Spoke daemon API client", () => {
     );
   });
 
-  it("sends encrypted replies by recipient identity without exposing receiver URLs to the app", async () => {
-    const reply: SpokeReply = {
-      schema: "spoke.reply.v1",
-      id: "reply_1",
-      sender: "alice.jolt",
-      postAuthor: "bob.jolt",
-      postAddress: "bob.jolt/spoke/posts/post_1",
-      body: "Nice post",
-      createdAt: "2026-06-06T10:02:00.000Z"
-    };
+  it("sends an encrypted object to a recipient through ingress without exposing receiver URLs", async () => {
+    const object = { schema: "spoke.reply.v2", id: "obj_1", sender: "alice.jolt" };
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-06T10:00:00.000Z"));
     vi.mocked(fetch)
-      .mockResolvedValueOnce(jsonResponse({ content_id: "cid_reply", size: 400, recipient_count: 1 }))
-      .mockResolvedValueOnce(jsonResponse({ data: [1, 2, 3], content_id: "cid_reply", size: 3 }))
-      .mockResolvedValueOnce(jsonResponse({ ingress_id: "ing_1", status: "pending" }));
+      .mockResolvedValueOnce(jsonResponse({ content_id: "cid_obj", size: 400, recipient_count: 1 }))
+      .mockResolvedValueOnce(jsonResponse({ data: [1, 2, 3], content_id: "cid_obj", size: 3 }))
+      .mockResolvedValueOnce(jsonResponse({ ingress_id: "ing_1", status: "pending" } satisfies Partial<IngressRecord>));
 
-    await submitReplyByIdentity("token-1", "bob.jolt", reply);
+    await sendObjectByIdentity("token-1", "bob.jolt", "/spoke/outgoing/obj_1", object);
 
     expect(fetch).toHaveBeenNthCalledWith(
       1,
@@ -258,8 +239,8 @@ describe("Spoke daemon API client", () => {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          path: "/spoke/outgoing/reply_1",
-          plaintext: Array.from(new TextEncoder().encode(JSON.stringify(reply))),
+          path: "/spoke/outgoing/obj_1",
+          plaintext: Array.from(new TextEncoder().encode(JSON.stringify(object))),
           content_type: "application/json",
           recipients: ["bob.jolt"]
         })
@@ -268,26 +249,44 @@ describe("Spoke daemon API client", () => {
     expect(fetch).toHaveBeenNthCalledWith(
       2,
       "/jolt-api/fetch",
-      expect.objectContaining({
-        body: JSON.stringify({ target: "cid_reply" })
-      })
+      expect.objectContaining({ body: JSON.stringify({ target: "cid_obj" }) })
     );
-    expect(fetch).toHaveBeenNthCalledWith(
-      3,
-      "/jolt-api/ingress/send",
-      expect.objectContaining({
-        method: "POST",
-        headers: {
-          Authorization: "Bearer token-1",
-          "Content-Type": "application/json"
-        }
-      })
-    );
+    // The app only learns the recipient identity, never the receiver's URL.
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[2][1]?.body))).toEqual({
       recipient: "bob.jolt",
       encrypted_object: [1, 2, 3],
       expires_at: Math.floor(new Date("2026-06-13T10:00:00.000Z").getTime() / 1000)
     });
+  });
+
+  it("publishes encrypted image bytes for message attachments", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        content_id: "cid_image",
+        size: 3,
+        path: "/spoke/messages/media/msg_1/media_1",
+        recipient_count: 2
+      })
+    );
+
+    await publishEncryptedBinary(
+      "token-1",
+      "/spoke/messages/media/msg_1/media_1",
+      new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
+      { mimeType: "image/png", recipients: ["bob.jolt", "alice.jolt"] }
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/jolt-api/encrypted/publish",
+      expect.objectContaining({
+        body: JSON.stringify({
+          path: "/spoke/messages/media/msg_1/media_1",
+          plaintext: [1, 2, 3],
+          content_type: "image/png",
+          recipients: ["bob.jolt", "alice.jolt"]
+        })
+      })
+    );
   });
 
   it("reviews and decides local ingress with app capabilities", async () => {
@@ -324,6 +323,58 @@ describe("Spoke daemon API client", () => {
       4,
       "/jolt-api/ingress/ing_2/reject",
       expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  it("publishes an append record via the web append endpoint", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ content_id: "cid_post", size: 10, address: "alice.jolt/spoke/posts/post_1" })
+    );
+
+    await appendPublishJson("token-1", "/spoke/posts/post_1", { schema: "spoke.post.v2", id: "post_1" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/jolt-api/append",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Authorization: "Bearer token-1" },
+        body: expect.any(FormData)
+      })
+    );
+  });
+
+  it("enumerates an identity's append records under a path prefix", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse([
+        {
+          path: "/spoke/posts/post_1",
+          content_id: "cid_post",
+          device_id: "dev_1",
+          device_sequence: 3,
+          created_at: "2026-06-18T10:00:00.000Z",
+          entry_hash: "hash_1"
+        }
+      ])
+    );
+
+    await expect(enumerate("token-1", "alice.jolt", "/spoke/posts/")).resolves.toEqual([
+      {
+        path: "/spoke/posts/post_1",
+        content_id: "cid_post",
+        device_id: "dev_1",
+        device_sequence: 3,
+        created_at: "2026-06-18T10:00:00.000Z",
+        entry_hash: "hash_1"
+      }
+    ]);
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/jolt-api/enumerate",
+      expect.objectContaining({
+        method: "POST",
+        headers: { Authorization: "Bearer token-1", "Content-Type": "application/json" },
+        body: JSON.stringify({ identity: "alice.jolt", path_prefix: "/spoke/posts/" })
+      })
     );
   });
 });
