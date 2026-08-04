@@ -270,6 +270,14 @@
             <p>The macOS build is not yet notarized. If it is blocked after installation, allow it under Privacy &amp; Security.</p>
             <span><a href="https://alexanderwanyoike.github.io/jolt/#download">Get Jolt first →</a><a href="https://github.com/alexanderwanyoike/spoke/releases/tag/__VERSION__">Release notes ↗</a></span>
           </div>
+
+          <aside class="macos-help reveal" aria-label="Opening the unsigned macOS build">
+            <span>macOS help</span>
+            <div>
+              <p>If macOS says Spoke is damaged after you drag it to Applications, open Terminal and clear the download quarantine:</p>
+              <code>xattr -dr com.apple.quarantine "/Applications/Spoke.app"</code>
+            </div>
+          </aside>
         </div>
       </section>
     </main>

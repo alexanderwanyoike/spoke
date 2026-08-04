@@ -110,6 +110,7 @@ required_download_contract=(
   'https://github.com/alexanderwanyoike/spoke/releases/download/__VERSION__/spoke-x86_64.AppImage'
   'https://github.com/alexanderwanyoike/spoke/releases/download/__VERSION__/spoke-aarch64.dmg'
   'https://github.com/alexanderwanyoike/spoke/releases/download/__VERSION__/spoke-x86_64-setup.exe'
+  'xattr -dr com.apple.quarantine "/Applications/Spoke.app"'
 )
 
 for value in "${required_download_contract[@]}"; do

@@ -244,6 +244,10 @@ h1 em { color: var(--primary); font-style: normal; font-weight: 500; }
 .download-foot p { max-width: 650px; margin: 0; line-height: 1.6; }
 .download-foot > span { display: flex; gap: 24px; white-space: nowrap; }
 .download-foot a { color: var(--primary); font-weight: 600; }
+.macos-help { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 32px; margin-top: 30px; padding: 24px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.macos-help > span { padding-top: 3px; color: var(--primary); font: 700 9px monospace; letter-spacing: .12em; text-transform: uppercase; }
+.macos-help p { max-width: 760px; margin: 0 0 13px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+.macos-help code { display: block; width: fit-content; max-width: 100%; overflow-x: auto; padding: 10px 13px; border: 1px solid var(--line); color: var(--primary-ink); background: var(--primary-soft); font: 11px monospace; white-space: nowrap; user-select: all; }
 
 .site-footer { min-height: 120px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; color: var(--muted); font-size: 12px; }
 .site-footer p { margin: 0; }
@@ -299,6 +303,7 @@ h1 em { color: var(--primary); font-style: normal; font-weight: 500; }
   .download-action b { margin: 0; font-size: 16px; }
   .download-foot { align-items: flex-start; flex-direction: column; }
   .download-foot > span { align-items: flex-start; flex-direction: column; gap: 12px; white-space: normal; }
+  .macos-help { grid-template-columns: 1fr; gap: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
