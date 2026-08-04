@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Spoke is social software built above Jolt, where the identity and signed content do not belong to the app." />
+    <meta name="theme-color" content="#faf8f2" />
+    <meta property="og:title" content="Spoke — the social app is a view, not the owner" />
+    <meta property="og:description" content="Profiles, posts, threads, and encrypted messages above an identity-owned protocol." />
+    <title>Spoke — Social software without a platform account</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header page-width">
+      <a class="brand" href="#overview"><img class="brand-mark" src="favicon.svg" alt="" width="32" height="32" /><strong>Spoke</strong></a>
+      <nav aria-label="Primary navigation"><a href="#why">Why</a><a href="#features">Features</a><a href="#architecture">Architecture</a><a href="#download">Download</a></nav>
+      <div class="header-actions"><span><i></i> experimental</span><a href="https://github.com/alexanderwanyoike/spoke">GitHub ↗</a></div>
+    </header>
+
+    <main id="main">
+      <section class="hero page-width" id="overview">
+        <div class="hero-copy reveal">
+          <p class="eyebrow">Social software · built on Jolt</p>
+          <h1>The app is<br />a view.<br /><em>Not the owner.</em></h1>
+          <p class="lede">Spoke is a social app for people you know. Make a profile, share posts, reply in threads, and send private messages—without creating an account that belongs to Spoke.</p>
+          <div class="actions"><a class="button primary" href="#download">Download Spoke ↓</a><a class="text-link" href="#why">See why it exists <span>↓</span></a></div>
+        </div>
+
+        <figure class="hero-visual spoke-hero-visual reveal">
+          <svg viewBox="0 0 760 560" role="img" aria-labelledby="spoke-hero-title spoke-hero-desc">
+            <title id="spoke-hero-title">A Spoke social graph full of posts and conversations</title>
+            <desc id="spoke-hero-desc">People are connected in a social node grid. Photo posts, written posts, replies, and private messages move between them.</desc>
+            <defs>
+              <filter id="spoke-soft-shadow" x="-35%" y="-45%" width="170%" height="190%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#173c30" flood-opacity=".14"/></filter>
+            </defs>
+
+            <text x="26" y="31" class="social-grid-kicker">YOUR PEOPLE · SHARING TOGETHER</text>
+            <g class="social-grid-live" transform="translate(704 27)"><circle r="4"/><text x="-12" y="4" text-anchor="end">6 ACTIVE</text></g>
+
+            <g class="social-grid-links">
+              <path id="spoke-route-a" class="social-grid-link" d="M113 279C143 218 185 160 228 125"/>
+              <path id="spoke-route-b" class="social-grid-link" d="M272 108C360 70 458 73 530 109"/>
+              <path id="spoke-route-c" class="social-grid-link" d="M570 135C630 173 657 224 653 276"/>
+              <path id="spoke-route-d" class="social-grid-link" d="M650 321C625 379 586 421 545 446"/>
+              <path id="spoke-route-e" class="social-grid-link" d="M499 465C424 497 330 497 267 465"/>
+              <path id="spoke-route-f" class="social-grid-link" d="M221 440C157 407 112 359 101 316"/>
+              <path id="spoke-route-center-a" class="social-grid-link active" d="M118 292C208 324 286 311 346 273"/>
+              <path id="spoke-route-center-b" class="social-grid-link active" d="M418 244C463 204 506 162 544 132"/>
+              <path id="spoke-route-center-c" class="social-grid-link active" d="M402 315C432 363 474 412 520 447"/>
+              <path id="spoke-route-cross" class="social-grid-link faint" d="M251 140C275 233 275 351 245 437"/>
+            </g>
+
+            <g class="social-avatar alice" transform="translate(90 295)"><circle class="avatar-halo" r="48"/><circle class="avatar-core" r="35"/><circle class="avatar-head" cy="-9" r="9"/><path class="avatar-body" d="M-19 21C-17 4 17 4 19 21"/><circle class="avatar-presence" cx="36" cy="-35" r="5"/><text y="66" text-anchor="middle" class="avatar-name">ALICE</text></g>
+            <g class="social-avatar maya" transform="translate(250 113)"><circle class="avatar-halo" r="46"/><circle class="avatar-core" r="34"/><circle class="avatar-head" cy="-9" r="9"/><path class="avatar-body" d="M-19 21C-17 4 17 4 19 21"/><circle class="avatar-presence" cx="34" cy="-33" r="5"/><text y="64" text-anchor="middle" class="avatar-name">MAYA</text></g>
+            <g class="social-avatar bob" transform="translate(555 116)"><circle class="avatar-halo" r="46"/><circle class="avatar-core" r="34"/><circle class="avatar-head" cy="-9" r="9"/><path class="avatar-body" d="M-19 21C-17 4 17 4 19 21"/><circle class="avatar-presence" cx="34" cy="-33" r="5"/><text y="64" text-anchor="middle" class="avatar-name">BOB</text></g>
+            <g class="social-avatar kai" transform="translate(655 299)"><circle class="avatar-halo" r="45"/><circle class="avatar-core" r="33"/><circle class="avatar-head" cy="-8" r="8"/><path class="avatar-body" d="M-18 20C-16 4 16 4 18 20"/><circle class="avatar-presence" cx="33" cy="-32" r="5"/><text y="63" text-anchor="middle" class="avatar-name">KAI</text></g>
+            <g class="social-avatar iris" transform="translate(528 462)"><circle class="avatar-halo" r="45"/><circle class="avatar-core" r="33"/><circle class="avatar-head" cy="-8" r="8"/><path class="avatar-body" d="M-18 20C-16 4 16 4 18 20"/><circle class="avatar-presence" cx="33" cy="-32" r="5"/><text y="63" text-anchor="middle" class="avatar-name">IRIS</text></g>
+            <g class="social-avatar noah" transform="translate(242 459)"><circle class="avatar-halo" r="45"/><circle class="avatar-core" r="33"/><circle class="avatar-head" cy="-8" r="8"/><path class="avatar-body" d="M-18 20C-16 4 16 4 18 20"/><circle class="avatar-presence" cx="33" cy="-32" r="5"/><text y="63" text-anchor="middle" class="avatar-name">NOAH</text></g>
+
+            <g class="content-card feature-image" transform="translate(380 274)" filter="url(#spoke-soft-shadow)">
+              <rect x="-77" y="-58" width="154" height="116" rx="12"/><g class="content-photo" transform="translate(-67 -48)"><rect width="134" height="72" rx="8"/><circle cx="104" cy="18" r="8"/><path d="M0 61 34 31l25 20 23-15 52 36V72H0Z"/></g><circle class="content-author maya-colour" cx="-58" cy="39" r="9"/><text x="-43" y="37" class="content-title">Maya</text><text x="-43" y="50" class="content-meta">a quiet path today</text>
+            </g>
+            <g class="content-card static-post" transform="translate(387 82)"><rect x="-60" y="-31" width="120" height="62" rx="10"/><circle class="content-author bob-colour" cx="-43" cy="-12" r="8"/><text x="-29" y="-10" class="content-title">Bob</text><path class="copy-lines" d="M-45 8h88M-45 18h63"/></g>
+            <g class="content-card static-reply" transform="translate(421 406)"><rect x="-55" y="-27" width="110" height="54" rx="27"/><path class="reply-mark" d="M-38-4h18v12h-9l-6 6V8h-3Z"/><text x="-10" y="5" class="content-meta">3 new replies</text></g>
+            <g class="content-card static-message" transform="translate(633 215)"><rect x="-52" y="-25" width="104" height="50" rx="25"/><path class="message-lines" d="M-34-6h48M-34 5H2"/><circle cx="35" cy="0" r="5"/></g>
+
+            <g class="content-card moving-content moving-image" filter="url(#spoke-soft-shadow)">
+              <rect x="-43" y="-33" width="86" height="66" rx="9"/><g class="mini-photo" transform="translate(-36 -26)"><rect width="72" height="42" rx="6"/><circle cx="55" cy="11" r="5"/><path d="M0 35 18 18l15 12 13-9 26 21V42H0Z"/></g><text x="-33" y="26" class="content-meta">photo · Maya</text>
+              <animateMotion dur="8s" repeatCount="indefinite"><mpath href="#spoke-route-center-a"/></animateMotion>
+            </g>
+            <g class="content-card moving-content moving-message" filter="url(#spoke-soft-shadow)">
+              <rect x="-43" y="-22" width="86" height="44" rx="22"/><path class="message-lines" d="M-27-5h42M-27 5H3"/><circle cx="29" cy="0" r="5"/>
+              <animateMotion dur="7.4s" begin="-3s" repeatCount="indefinite"><mpath href="#spoke-route-center-c"/></animateMotion>
+            </g>
+            <g class="content-card moving-content moving-reply" filter="url(#spoke-soft-shadow)">
+              <rect x="-39" y="-21" width="78" height="42" rx="9"/><path class="reply-mark" d="M-26-5h18V7h-9l-6 6V7h-3Z"/><text x="1" y="4" class="content-meta">reply</text>
+              <animateMotion dur="8.6s" begin="-5.2s" repeatCount="indefinite"><mpath href="#spoke-route-e"/></animateMotion>
+            </g>
+
+            <g class="social-grid-legend" transform="translate(27 540)"><circle cx="5" cy="-3" r="5"/><text x="18">PEOPLE</text><rect x="122" y="-11" width="22" height="15" rx="3"/><text x="157">POSTS + IMAGES</text><rect x="338" y="-11" width="23" height="15" rx="8"/><text x="375">MESSAGES</text><path d="M506-8h17V4h-8l-6 6V4h-3Z"/><text x="538">REPLIES</text></g>
+          </svg>
+        </figure>
+      </section>
+
+      <section class="section page-width" id="why">
+        <header class="section-intro reveal">
+          <p class="eyebrow">01 / Why Spoke</p>
+          <h2>Social relationships<br />should survive software.</h2>
+          <p>Your profile and connections should belong to you, not to whichever social app happens to be popular today.</p>
+        </header>
+        <ol class="principles reveal">
+          <li><span>01</span><h3>Bring your identity</h3><p>Spoke uses the identity already protected by Jolt. It does not create another username or ask for your private identity key.</p></li>
+          <li><span>02</span><h3>Approve the app</h3><p>You choose what Spoke may do. Jolt checks every request before publishing a post, reading your contacts, or opening a private message.</p></li>
+          <li><span>03</span><h3>Keep your connections</h3><p>If you replace Spoke with another compatible app, your identity and content do not need to disappear with it.</p></li>
+        </ol>
+      </section>
+
+      <section class="section feature-section" id="features">
+        <div class="page-width">
+          <header class="section-intro reveal">
+            <p class="eyebrow">02 / What you can do</p>
+            <h2>Share, reply,<br />and stay in touch.</h2>
+          <p>Spoke gives you profiles, posts, conversations, and private messages—all tied to the identity you control through Jolt.</p>
+          </header>
+
+          <div class="feature-list reveal">
+            <article>
+              <span class="feature-index">01</span>
+              <div class="feature-glyph profile-glyph"><span class="avatar you large">AW</span><i></i><i></i></div>
+              <div><h3>Profiles</h3><p>Your name, photo, bio, and links are published under your Jolt identity rather than trapped inside a Spoke account.</p></div>
+            </article>
+            <article>
+              <span class="feature-index">02</span>
+              <div class="feature-glyph feed-glyph"><i></i><i></i><i></i></div>
+              <div><h3>People-you-know feed</h3><p>Add people directly. Spoke gathers their posts into a feed on your device instead of asking one company to build the timeline.</p></div>
+            </article>
+            <article>
+              <span class="feature-index">03</span>
+              <div class="feature-glyph thread-glyph"><i></i><i></i><i></i><span></span></div>
+              <div><h3>Nested threads</h3><p>Replies form conversations that people can exchange directly. Spoke arranges them into the familiar thread you see.</p></div>
+            </article>
+            <article>
+              <span class="feature-index">04</span>
+              <div class="feature-glyph message-glyph"><span>⌁</span><i></i></div>
+              <div><h3>Private messages</h3><p>Jolt locks each message for its recipient before it leaves your device. Spoke never receives the keys that protect your identity.</p></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section page-width" id="architecture">
+        <header class="section-intro reveal">
+          <p class="eyebrow">03 / Architecture</p>
+          <h2>Spoke is the app.<br />Jolt is the home.</h2>
+          <p>Spoke makes the social experience. It uses a scoped session with your local Jolt daemon, which holds your identity, checks every request, and joins the Jolt network.</p>
+        </header>
+
+        <figure class="architecture-diagram reveal">
+          <div class="diagram-scroll">
+            <svg viewBox="0 0 1200 570" role="img" aria-labelledby="spoke-diagram-title spoke-diagram-desc">
+              <title id="spoke-diagram-title">How Spoke works with Jolt</title>
+              <desc id="spoke-diagram-desc">Spoke uses a capability-scoped session with the local Jolt daemon. The daemon signs and verifies protocol data, then communicates with Jolt peer nodes and Jolt relay nodes.</desc>
+              <defs>
+                <marker id="spoke-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 Z" class="arrow-head" />
+                </marker>
+                <marker id="spoke-arrow-muted" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 Z" class="arrow-head-muted" />
+                </marker>
+              </defs>
+
+              <path class="device-outline" d="M45 76H748V510H45Z" />
+              <text x="68" y="55" class="zone-label">THIS DEVICE</text>
+              <text x="916" y="55" class="zone-label">JOLT NETWORK</text>
+
+              <g class="spoke-app-node" transform="translate(150 286)">
+                <circle r="62" /><text text-anchor="middle" y="11" class="spoke-symbol">S</text>
+                <text text-anchor="middle" y="99" class="node-name">SPOKE</text>
+                <text text-anchor="middle" y="122" class="node-note">social experience</text>
+              </g>
+
+              <path class="flow-line request" d="M214 265C266 218 318 218 369 258" marker-end="url(#spoke-arrow)" />
+              <path class="flow-line response" d="M369 314C315 352 264 352 214 307" marker-end="url(#spoke-arrow-muted)" />
+              <text x="292" y="205" text-anchor="middle" class="flow-label">APP API</text>
+              <polygon class="permission-gate" points="330,274 342,286 330,298 318,286" />
+              <text x="330" y="328" text-anchor="middle" class="gate-label">SCOPED SESSION</text>
+
+              <g class="jolt-daemon-node" transform="translate(542 286)">
+                <path class="daemon-outline" d="M-146-135H146V135H-146Z" />
+                <text x="-112" y="-96" class="daemon-kicker">LOCAL JOLT DAEMON</text>
+                <text x="-112" y="-61" class="jolt-name">jolt-node</text>
+                <line class="daemon-seam" x1="-146" y1="-32" x2="146" y2="-32" />
+                <text x="-112" y="3" class="component-name">Checks Spoke's grant</text>
+                <text x="-112" y="33" class="component-name">Signs + verifies state</text>
+                <text x="-112" y="63" class="component-name">Stores content + logs</text>
+                <text x="-112" y="100" class="component-note">keys never enter Spoke</text>
+              </g>
+
+              <path class="flow-line request network-trunk" d="M688 286H784" />
+              <path class="flow-line request" d="M784 286C821 286 828 175 872 175" />
+              <path class="flow-line request" d="M784 286C821 286 828 397 872 397" />
+
+              <g class="network-node peer-node" transform="translate(952 175)">
+                <circle class="network-orbit" r="65" />
+                <circle class="network-core" r="42" />
+                <circle class="peer-dot" cx="-12" cy="-4" r="5" />
+                <circle class="peer-dot" cx="12" cy="-4" r="5" />
+                <path class="peer-mark" d="M-13 10L0 17L13 10" />
+                <text text-anchor="middle" y="94" class="node-name">JOLT PEER NODE</text>
+                <text text-anchor="middle" y="116" class="node-note">signed state + content</text>
+              </g>
+
+              <g class="network-node relay-node" transform="translate(952 397)">
+                <circle class="network-orbit" r="65" />
+                <path class="relay-core" d="M0-43L37-22V22L0 43L-37 22V-22Z" />
+                <path class="relay-mark" d="M-16 8V-9L0-19L16-9V8M-23 15H23" />
+                <text text-anchor="middle" y="94" class="node-name">JOLT RELAY NODE</text>
+                <text text-anchor="middle" y="116" class="node-note">discovery · optional pinning</text>
+              </g>
+
+              <text x="597" y="546" text-anchor="middle" class="diagram-promise">Spoke uses Jolt. It does not become Jolt.</text>
+            </svg>
+          </div>
+          <figcaption>Spoke talks only to the capability-scoped App API. The local daemon keeps the keys, signs and verifies protocol state, and communicates with peer or relay nodes.</figcaption>
+        </figure>
+
+        <div class="boundary-truths reveal">
+          <p><span>IF SPOKE VANISHED</span><strong>your Jolt identity would still be yours.</strong></p>
+          <p><span>WHAT SPOKE NEVER GETS</span><strong>your private identity key.</strong></p>
+        </div>
+      </section>
+
+      <section class="section status-section">
+        <div class="page-width status-layout reveal">
+          <div>
+            <p class="eyebrow">Experimental v0</p>
+            <h2>You can try it today.<br />Expect rough edges.</h2>
+            <p>Spoke is desktop-first. Jolt must be running on your computer, and you approve Spoke before it can use your identity. It is not a finished public social network.</p>
+            <div class="actions"><a class="button primary" href="#download">Choose your platform ↓</a><a class="text-link" href="https://alexanderwanyoike.github.io/jolt/">Explore Jolt <span>→</span></a></div>
+          </div>
+          <div class="status-lists">
+            <div><span class="status-label available">AVAILABLE</span><ul><li>Profiles and contacts</li><li>Posts and nested replies</li><li>Image attachments</li><li>Follow requests</li><li>Encrypted messages</li></ul></div>
+            <div><span class="status-label limits">V0 LIMITS</span><ul><li>Manual Jolt approval</li><li>No global people search</li><li>Eventually consistent refresh</li><li>Unsigned macOS build</li><li>No security audit</li></ul></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="download-section" id="download">
+        <div class="page-width">
+          <header class="download-head reveal">
+            <div>
+              <p class="eyebrow">Spoke __VERSION__ · __RELEASE_DATE__</p>
+              <h2>Choose your platform.</h2>
+            </div>
+            <p>Install and run Jolt first, then download Spoke for your computer. Spoke connects to the Jolt node running locally and asks you to approve its access.</p>
+          </header>
+
+          <div class="platform-downloads reveal">
+            <a class="download-column" href="https://github.com/alexanderwanyoike/spoke/releases/download/__VERSION__/spoke-x86_64.AppImage" aria-label="Download Spoke __VERSION__ for Linux x86_64 as an AppImage">
+              <span class="download-column-top"><span class="download-index">01</span><svg class="os-icon linux-icon" viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4c-5.2 0-8.2 4.8-8.2 11.7 0 3-1.2 5.8-3.7 8.8-2.3 2.8-3.2 6.3-2.5 9.6l5.3-2c.9 7.2 4.1 11.9 9.1 11.9s8.2-4.7 9.1-11.9l5.3 2c.7-3.3-.2-6.8-2.5-9.6-2.5-3-3.7-5.8-3.7-8.8C32.2 8.8 29.2 4 24 4Z"/><ellipse class="icon-cutout" cx="24" cy="29" rx="7.1" ry="11.2"/><circle class="icon-cutout" cx="20.7" cy="15.8" r="1.5"/><circle class="icon-cutout" cx="27.3" cy="15.8" r="1.5"/><path class="icon-cutout" d="m20.5 20 3.5 2.6 3.5-2.6-3.5-2Z"/></svg></span>
+              <span class="download-platform"><strong>Linux</strong><small>x86_64</small></span>
+              <span class="download-format">AppImage</span>
+              <span class="download-action">Download <b>↓</b></span>
+            </a>
+            <a class="download-column" href="https://github.com/alexanderwanyoike/spoke/releases/download/__VERSION__/spoke-aarch64.dmg" aria-label="Download Spoke __VERSION__ for Apple silicon as a DMG">
+              <span class="download-column-top"><span class="download-index">02</span><svg class="os-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg></span>
+              <span class="download-platform"><strong>macOS</strong><small>Apple silicon</small></span>
+              <span class="download-format">DMG</span>
+              <span class="download-action">Download <b>↓</b></span>
+            </a>
+            <a class="download-column" href="https://github.com/alexanderwanyoike/spoke/releases/download/__VERSION__/spoke-x86_64-setup.exe" aria-label="Download Spoke __VERSION__ for Windows x86_64">
+              <span class="download-column-top"><span class="download-index">03</span><svg class="os-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M0 3.449 9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg></span>
+              <span class="download-platform"><strong>Windows</strong><small>x86_64</small></span>
+              <span class="download-format">Installer</span>
+              <span class="download-action">Download <b>↓</b></span>
+            </a>
+          </div>
+
+          <div class="download-foot reveal">
+            <p>The macOS build is not yet notarized. If it is blocked after installation, allow it under Privacy &amp; Security.</p>
+            <span><a href="https://alexanderwanyoike.github.io/jolt/#download">Get Jolt first →</a><a href="https://github.com/alexanderwanyoike/spoke/releases/tag/__VERSION__">Release notes ↗</a></span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer page-width">
+      <a class="brand" href="#overview"><img class="brand-mark small" src="favicon.svg" alt="" width="26" height="26" /><strong>Spoke</strong></a>
+      <p>Social software built above Jolt.</p>
+      <nav><a href="https://github.com/alexanderwanyoike/spoke">GitHub ↗</a><a href="https://alexanderwanyoike.github.io/jolt/">Jolt →</a></nav>
+    </footer>
+  </body>
+</html>
