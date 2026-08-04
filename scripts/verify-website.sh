@@ -120,6 +120,8 @@ for value in "${required_download_contract[@]}"; do
 done
 
 required_social_visual_contract=(
+  'Be yourself.<br /><em>Keep your data.</em>'
+  '<meta property="og:title" content="Spoke | Be yourself. Keep your data." />'
   'Spoke gathers their posts and replies, while encrypted private messages are delivered through Jolt.'
   'SOCIAL GRAPH'
   'POSTS + IMAGES'
@@ -134,7 +136,7 @@ for value in "${required_social_visual_contract[@]}"; do
   }
 done
 
-for value in '6 ACTIVE' 'move between them'; do
+for value in '6 ACTIVE' 'move between them' 'The app is<br />a view.'; do
   if grep -Fq "$value" website/index.html; then
     echo "misleading social hero terminology remains: $value" >&2
     exit 1
