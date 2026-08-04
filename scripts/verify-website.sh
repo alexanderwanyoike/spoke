@@ -4,10 +4,64 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-required=(website/index.html website/styles.css website/script.js)
+required=(
+  website/index.html
+  website/styles.css
+  website/script.js
+  website/fonts/geist-latin-wght-normal.woff2
+  website/fonts/Geist-LICENSE.txt
+)
 for file in "${required[@]}"; do
   test -s "$file" || { echo "missing website file: $file" >&2; exit 1; }
 done
+
+required_privacy_contract=(
+  '@font-face'
+  'font-family: "Geist Variable"'
+  'url("fonts/geist-latin-wght-normal.woff2") format("woff2-variations")'
+)
+
+for value in "${required_privacy_contract[@]}"; do
+  grep -Fq "$value" website/styles.css || {
+    echo "missing self-hosted font contract: $value" >&2
+    exit 1
+  }
+done
+
+for value in \
+  'fonts.googleapis.com' \
+  'fonts.gstatic.com' \
+  'https://alexanderwanyoike.github.io/jolt/'; do
+  if grep -Fq "$value" website/index.html website/styles.css; then
+    echo "premature or third-party website dependency remains: $value" >&2
+    exit 1
+  fi
+done
+
+grep -Fq 'https://github.com/alexanderwanyoike/jolt' website/index.html || {
+  echo "website does not link to the currently available Jolt home" >&2
+  exit 1
+}
+grep -Fq 'https://github.com/alexanderwanyoike/jolt/releases/latest' website/index.html || {
+  echo "website does not provide an available Jolt download destination" >&2
+  exit 1
+}
+
+em_dash="$(printf '\342\200\224')"
+for file in website/index.html website/styles.css scripts/verify-website.sh; do
+  if grep -Fq "$em_dash" "$file"; then
+    echo "house-style em dash remains in $file" >&2
+    exit 1
+  fi
+done
+
+python3 - <<'PY'
+from pathlib import Path
+
+font = Path("website/fonts/geist-latin-wght-normal.woff2")
+if font.read_bytes()[:4] != b"wOF2":
+    raise SystemExit(f"self-hosted Geist asset is not WOFF2: {font}")
+PY
 
 required_download_contract=(
   '__VERSION__'
