@@ -63,6 +63,9 @@ h1 em { color: var(--primary); font-style: normal; font-weight: 500; }
 .button { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--line-strong); border-radius: 9px; font-size: 13px; font-weight: 650; }
 .button.primary { border-color: var(--primary); background: var(--primary); color: white; }
 .button.primary:hover { filter: brightness(.94); }
+.jolt-button { gap: 9px; padding-left: 8px; }
+.jolt-button-mark { display: block; width: 28px; height: 28px; border-radius: 6px; }
+.jolt-button b { margin-left: 1px; font-weight: 650; }
 .text-link { color: var(--muted); font-size: 13px; font-weight: 500; }
 .text-link span { margin-left: 5px; color: var(--primary); }
 
@@ -219,6 +222,8 @@ h1 em { color: var(--primary); font-style: normal; font-weight: 500; }
 .jolt-prerequisite p { max-width: 660px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .jolt-prerequisite strong { color: var(--foreground); font-weight: 650; }
 .jolt-prerequisite a { color: var(--primary); font-size: 12px; font-weight: 650; white-space: nowrap; }
+.jolt-prerequisite-link { display: inline-flex; align-items: center; gap: 9px; }
+.jolt-prerequisite-link img { display: block; width: 24px; height: 24px; border-radius: 5px; }
 .platform-downloads { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
 .download-column { min-height: 292px; display: flex; flex-direction: column; padding: 30px 32px 28px; border-right: 1px solid var(--line); transition: color .18s, background .18s; }
 .download-column:last-child { border-right: 0; }

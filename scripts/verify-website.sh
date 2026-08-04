@@ -8,6 +8,7 @@ required=(
   website/index.html
   website/styles.css
   website/script.js
+  website/jolt-mark.svg
   website/fonts/geist-latin-wght-normal.woff2
   website/fonts/Geist-LICENSE.txt
 )
@@ -30,20 +31,40 @@ done
 
 for value in \
   'fonts.googleapis.com' \
-  'fonts.gstatic.com' \
-  'https://alexanderwanyoike.github.io/jolt/'; do
+  'fonts.gstatic.com'; do
   if grep -Fq "$value" website/index.html website/styles.css; then
     echo "premature or third-party website dependency remains: $value" >&2
     exit 1
   fi
 done
 
-grep -Fq 'https://github.com/alexanderwanyoike/jolt' website/index.html || {
-  echo "website does not link to the currently available Jolt home" >&2
+grep -Fq 'https://alexanderwanyoike.github.io/jolt/' website/index.html || {
+  echo "website does not link back to the Jolt Pages site" >&2
   exit 1
 }
-grep -Fq 'https://github.com/alexanderwanyoike/jolt/releases/latest' website/index.html || {
-  echo "website does not provide an available Jolt download destination" >&2
+grep -Fq 'https://alexanderwanyoike.github.io/jolt/#download' website/index.html || {
+  echo "website does not send Jolt installs to the Pages download section" >&2
+  exit 1
+}
+
+for value in \
+  'href="https://github.com/alexanderwanyoike/jolt"' \
+  'href="https://github.com/alexanderwanyoike/jolt/releases/latest"'; do
+  if grep -Fq "$value" website/index.html; then
+    echo "Jolt link bypasses the branded Pages site: $value" >&2
+    exit 1
+  fi
+done
+
+grep -Fq 'class="jolt-button-mark" src="jolt-mark.svg"' website/index.html || {
+  echo "primary Jolt action does not carry the Jolt mark" >&2
+  exit 1
+}
+
+expected_jolt_mark_sha='5ae675c21fdeb4cb469956d0a6d8546acaceeffd721589f94fccadcf57e7deec'
+actual_jolt_mark_sha="$(sha256sum website/jolt-mark.svg | cut -d' ' -f1)"
+test "$actual_jolt_mark_sha" = "$expected_jolt_mark_sha" || {
+  echo "website Jolt mark does not match the approved Jolt logo" >&2
   exit 1
 }
 
@@ -61,7 +82,7 @@ for value in "${required_jolt_dependency_contract[@]}"; do
   }
 done
 
-jolt_release_link_count="$(grep -Fc 'https://github.com/alexanderwanyoike/jolt/releases/latest' website/index.html)"
+jolt_release_link_count="$(grep -Fc 'https://alexanderwanyoike.github.io/jolt/#download' website/index.html)"
 test "$jolt_release_link_count" -ge 3 || {
   echo "Jolt prerequisite is not linked at every install decision point" >&2
   exit 1
