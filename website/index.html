@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Spoke is social software built above Jolt, where the identity and signed content do not belong to the app." />
+    <meta name="description" content="Spoke is a Jolt app for profiles, posts, threads, and private messages. A running local Jolt installation is required." />
     <meta name="theme-color" content="#faf8f2" />
     <meta property="og:title" content="Spoke | the social app is a view, not the owner" />
     <meta property="og:description" content="Profiles, posts, threads, and encrypted messages above an identity-owned protocol." />
@@ -18,16 +18,16 @@
     <header class="site-header page-width">
       <a class="brand" href="#overview"><img class="brand-mark" src="favicon.svg" alt="" width="32" height="32" /><strong>Spoke</strong></a>
       <nav aria-label="Primary navigation"><a href="#why">Why</a><a href="#features">Features</a><a href="#architecture">Architecture</a><a href="#download">Download</a></nav>
-      <div class="header-actions"><span><i></i> experimental</span><a href="https://github.com/alexanderwanyoike/spoke">GitHub ↗</a></div>
+      <div class="header-actions"><span><i></i> experimental</span><a href="https://github.com/alexanderwanyoike/jolt" aria-label="Learn about Jolt">Jolt ↗</a><a href="https://github.com/alexanderwanyoike/spoke">GitHub ↗</a></div>
     </header>
 
     <main id="main">
       <section class="hero page-width" id="overview">
         <div class="hero-copy reveal">
-          <p class="eyebrow">Social software · built on Jolt</p>
+          <p class="eyebrow"><a href="https://github.com/alexanderwanyoike/jolt">A Jolt app · requires Jolt ↗</a></p>
           <h1>The app is<br />a view.<br /><em>Not the owner.</em></h1>
-          <p class="lede">Spoke is a social app for people you know. Make a profile, share posts, reply in threads, and send private messages without creating an account that belongs to Spoke.</p>
-          <div class="actions"><a class="button primary" href="#download">Download Spoke ↓</a><a class="text-link" href="#why">See why it exists <span>↓</span></a></div>
+          <p class="lede"><strong>Spoke is a Jolt app. It cannot run standalone.</strong> Install and start Jolt before opening Spoke. Then make a profile, share posts, reply in threads, and send private messages without creating an account that belongs to Spoke.</p>
+          <div class="actions"><a class="button primary" href="https://github.com/alexanderwanyoike/jolt/releases/latest">Get Jolt first ↗</a><a class="text-link" href="#download">Then download Spoke <span>↓</span></a></div>
         </div>
 
         <figure class="hero-visual spoke-hero-visual reveal">
@@ -234,10 +234,16 @@
           <header class="download-head reveal">
             <div>
               <p class="eyebrow">Spoke __VERSION__ · __RELEASE_DATE__</p>
-              <h2>Choose your platform.</h2>
+              <h2>Jolt first.<br />Spoke second.</h2>
             </div>
-            <p>Install and run Jolt first, then download Spoke for your computer. Spoke connects to the Jolt node running locally and asks you to approve its access.</p>
+            <p>Spoke connects to the Jolt node running on your computer. Once Jolt is installed and running, choose the Spoke build for your platform.</p>
           </header>
+
+          <div class="jolt-prerequisite reveal">
+            <span>Required first</span>
+            <p><strong>Spoke cannot run standalone.</strong> Jolt holds your identity, joins the network, and asks you to approve Spoke before the app can open.</p>
+            <a href="https://github.com/alexanderwanyoike/jolt/releases/latest">Download Jolt ↗</a>
+          </div>
 
           <div class="platform-downloads reveal">
             <a class="download-column" href="https://github.com/alexanderwanyoike/spoke/releases/download/__VERSION__/spoke-x86_64.AppImage" aria-label="Download Spoke __VERSION__ for Linux x86_64 as an AppImage">
@@ -270,7 +276,7 @@
 
     <footer class="site-footer page-width">
       <a class="brand" href="#overview"><img class="brand-mark small" src="favicon.svg" alt="" width="26" height="26" /><strong>Spoke</strong></a>
-      <p>Social software built above Jolt.</p>
+      <p>A Jolt app for people you know.</p>
       <nav><a href="https://github.com/alexanderwanyoike/spoke">GitHub ↗</a><a href="https://github.com/alexanderwanyoike/jolt">Jolt →</a></nav>
     </footer>
   </body>

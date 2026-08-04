@@ -47,6 +47,26 @@ grep -Fq 'https://github.com/alexanderwanyoike/jolt/releases/latest' website/ind
   exit 1
 }
 
+required_jolt_dependency_contract=(
+  'Spoke is a Jolt app. It cannot run standalone.'
+  'Install and start Jolt before opening Spoke.'
+  'aria-label="Learn about Jolt"'
+  'class="jolt-prerequisite reveal"'
+)
+
+for value in "${required_jolt_dependency_contract[@]}"; do
+  grep -Fq "$value" website/index.html || {
+    echo "missing explicit Jolt dependency contract: $value" >&2
+    exit 1
+  }
+done
+
+jolt_release_link_count="$(grep -Fc 'https://github.com/alexanderwanyoike/jolt/releases/latest' website/index.html)"
+test "$jolt_release_link_count" -ge 3 || {
+  echo "Jolt prerequisite is not linked at every install decision point" >&2
+  exit 1
+}
+
 em_dash="$(printf '\342\200\224')"
 for file in website/index.html website/styles.css scripts/verify-website.sh; do
   if grep -Fq "$em_dash" "$file"; then
