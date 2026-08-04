@@ -69,8 +69,8 @@ test "$actual_jolt_mark_sha" = "$expected_jolt_mark_sha" || {
 }
 
 required_jolt_dependency_contract=(
-  'Spoke is a Jolt app. It cannot run standalone.'
-  'Install and start Jolt before opening Spoke.'
+  'A Jolt app · requires Jolt ↗'
+  'Spoke cannot run standalone.'
   'aria-label="Learn about Jolt"'
   'class="jolt-prerequisite reveal"'
 )
@@ -122,6 +122,8 @@ done
 required_social_visual_contract=(
   'Be yourself.<br /><em>Keep your data.</em>'
   '<meta property="og:title" content="Spoke | Be yourself. Keep your data." />'
+  'Spoke is a social app for sharing posts, following people you know, joining conversations, and sending private messages.'
+  'Your identity, connections, and content stay with you through Jolt.'
   'Spoke gathers their posts and replies, while encrypted private messages are delivered through Jolt.'
   'SOCIAL GRAPH'
   'POSTS + IMAGES'
@@ -136,7 +138,11 @@ for value in "${required_social_visual_contract[@]}"; do
   }
 done
 
-for value in '6 ACTIVE' 'move between them' 'The app is<br />a view.'; do
+for value in \
+  '6 ACTIVE' \
+  'move between them' \
+  'The app is<br />a view.' \
+  'Install and start Jolt before opening Spoke. Then make a profile'; do
   if grep -Fq "$value" website/index.html; then
     echo "misleading social hero terminology remains: $value" >&2
     exit 1
