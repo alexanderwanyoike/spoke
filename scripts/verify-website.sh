@@ -24,6 +24,28 @@ for value in "${required_download_contract[@]}"; do
   }
 done
 
+required_social_visual_contract=(
+  'Spoke gathers their posts and replies, while encrypted private messages are delivered through Jolt.'
+  'SOCIAL GRAPH'
+  'POSTS + IMAGES'
+  'MESSAGES'
+  'REPLIES'
+)
+
+for value in "${required_social_visual_contract[@]}"; do
+  grep -Fq "$value" website/index.html || {
+    echo "missing application-accurate hero contract: $value" >&2
+    exit 1
+  }
+done
+
+for value in '6 ACTIVE' 'move between them'; do
+  if grep -Fq "$value" website/index.html; then
+    echo "misleading social hero terminology remains: $value" >&2
+    exit 1
+  fi
+done
+
 grep -Fq "workflows: [\"Package Spoke\"]" .github/workflows/pages.yml || {
   echo "Pages workflow does not follow tagged Spoke releases" >&2
   exit 1
