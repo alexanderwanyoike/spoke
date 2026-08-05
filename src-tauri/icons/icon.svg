@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#f3efe5"/>
+  <!-- The bottom-right spoke's slot is taken by the jolt badge: this is a
+       jolt app, and the badge radiates from the same hub as every spoke. -->
+  <g stroke="#245e4a" stroke-width="7" stroke-linecap="round">
+    <path d="M32 9v14M32 41v14M9 32h14M41 32h14M16 16l10 10"/>
+  </g>
+  <circle cx="32" cy="32" r="7" fill="#e9684f"/>
+  <g>
+    <rect x="39" y="39" width="21" height="21" rx="4.5" fill="#0b0d0c"/>
+    <path transform="translate(39 39) scale(0.328125)" d="M17 43 25 17h8l-8 26zm15 0 8-26h8l-8 26z" fill="#d9ff43"/>
+  </g>
+</svg>
