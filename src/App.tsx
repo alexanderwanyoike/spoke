@@ -2602,9 +2602,13 @@ function App() {
           <Sidebar collapsible="icon">
             <SidebarHeader>
               <div className="flex items-center gap-3 rounded-lg px-2 py-1.5">
-                <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
-                  S
-                </div>
+                <svg viewBox="0 0 64 64" className="size-9 shrink-0 rounded-lg" aria-hidden="true">
+                  <rect width="64" height="64" rx="14" fill="#f3efe5" />
+                  <g stroke="#245e4a" strokeWidth="7" strokeLinecap="round">
+                    <path d="M32 9v14M32 41v14M9 32h14M41 32h14M16 16l10 10M38 38l10 10" />
+                  </g>
+                  <circle cx="32" cy="32" r="7" fill="#e9684f" />
+                </svg>
                 <div className="min-w-0 group-data-[collapsible=icon]:hidden">
                   <strong className="block leading-none">Spoke</strong>
                   <span className="text-xs text-sidebar-foreground/65">Jolt social</span>
@@ -2651,6 +2655,34 @@ function App() {
                     {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
                     <span className="group-data-[collapsible=icon]:hidden">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
                   </Button>
+                  {updateCheck?.available ? (
+                    <Button
+                      type="button"
+                      onClick={installSpokeUpdate}
+                      disabled={updateAction === "install"}
+                      title={`Install signed Spoke ${updateCheck.version} update`}
+                      className="justify-start group-data-[collapsible=icon]:px-2"
+                    >
+                      <Download className="size-4" />
+                      <span className="group-data-[collapsible=icon]:hidden">
+                        {updateAction === "install" ? "Installing…" : `Update to ${updateCheck.version}`}
+                      </span>
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={checkSpokeUpdate}
+                      disabled={updateAction !== null}
+                      title="Check for Spoke updates"
+                      className="justify-start group-data-[collapsible=icon]:px-2"
+                    >
+                      <RefreshCw className={cn("size-4", updateAction === "check" && "animate-spin")} />
+                      <span className="group-data-[collapsible=icon]:hidden">
+                        {updateAction === "check" ? "Checking…" : "Check for updates"}
+                      </span>
+                    </Button>
+                  )}
                 </SidebarGroupContent>
               </SidebarGroup>
             </SidebarContent>
@@ -2678,15 +2710,6 @@ function App() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {updateCheck?.available ? (
-                    <Button type="button" variant="outline" onClick={installSpokeUpdate} disabled={updateAction === "install"} title="Install signed Spoke update">
-                      <Download className="size-4" />
-                    Update
-                    </Button>
-                  ) : null}
-                  <Button type="button" variant="outline" size="icon" onClick={checkSpokeUpdate} disabled={updateAction === "check" || updateAction === "install"} title="Check for Spoke updates">
-                    <RefreshCw className="size-4" />
-                  </Button>
                   <Button type="button" variant="outline" size="icon" onClick={refreshSession} disabled={!sessionToken || busy === "session"} title="Refresh session">
                     <ShieldCheck className="size-4" />
                   </Button>
