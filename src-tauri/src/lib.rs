@@ -199,6 +199,23 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup(|app| {
+            // Linux window managers take the taskbar icon from the window
+            // itself; Tauri does not publish _NET_WM_ICON there, so a bare
+            // AppImage shows a generic icon without this (jolt#208).
+            #[cfg(target_os = "linux")]
+            {
+                use tauri::Manager;
+                if let Some(icon) = app.default_window_icon().cloned() {
+                    for window in app.webview_windows().values() {
+                        let _ = window.set_icon(icon.clone());
+                    }
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            let _ = app;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             daemon_request,
             daemon_publish_bytes,
