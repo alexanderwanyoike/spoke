@@ -457,10 +457,6 @@
   resolved "https://registry.yarnpkg.com/@hono/node-server/-/node-server-2.1.0.tgz#c1823e1b9add6bdd14807fbbfec39b8b80614b25"
   integrity sha512-XovyyCCnBzW+zKu+z/zq8hwNs4KOR5rEMAOxo2f40Q5xoOI37IMm6MIg2COOUtUApo0i6850MTBKH2u4QLGIqg==
 
-"@jolt/sdk@https://github.com/alexanderwanyoike/jolt/releases/download/v0.3.20/jolt-sdk.tgz":
-  version "0.1.0"
-  resolved "https://github.com/alexanderwanyoike/jolt/releases/download/v0.3.20/jolt-sdk.tgz#50c7439e901e24ee274e0ea3e495d3cb41a4766c"
-
 "@jridgewell/gen-mapping@^0.3.12", "@jridgewell/gen-mapping@^0.3.5":
   version "0.3.13"
   resolved "https://registry.yarnpkg.com/@jridgewell/gen-mapping/-/gen-mapping-0.3.13.tgz#6342a19f44347518c93e43b1ac69deb3c4656a1f"
@@ -2772,6 +2768,10 @@ jiti@^2.7.0:
   version "2.7.0"
   resolved "https://registry.yarnpkg.com/jiti/-/jiti-2.7.0.tgz#974228f2f4ca2bc21885a1797b45fea68e950c64"
   integrity sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==
+
+"jolt-sdk@https://github.com/alexanderwanyoike/jolt/releases/download/v0.3.21/jolt-sdk.tgz":
+  version "0.1.0"
+  resolved "https://github.com/alexanderwanyoike/jolt/releases/download/v0.3.21/jolt-sdk.tgz#a2cdd011c791cf272e115caddbcf28ab4cf6ff7c"
 
 jose@^6.1.3:
   version "6.2.8"
