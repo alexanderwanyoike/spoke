@@ -125,6 +125,29 @@ describe("contact graph commands", () => {
     ]);
   });
 
+  it("requestFollow refuses a request to your own identity", async () => {
+    const { sdk, sent } = fakeJolt("alice.jolt");
+    const store = createStore();
+
+    await expect(
+      requestFollow(sdk, "alice.jolt", { identity: "alice.jolt", displayName: "Me" }, store)
+    ).rejects.toThrow(/yourself/i);
+    // A self edge that would later crash the message-thread projection is never created.
+    expect(sent).toHaveLength(0);
+    expect(selectContacts(store.getSnapshot(), "alice.jolt")).toEqual([]);
+  });
+
+  it("acceptFollowRequest refuses a request whose sender is your own identity", async () => {
+    const { sdk, sent } = fakeJolt("alice.jolt");
+    const store = createStore();
+
+    await expect(
+      acceptFollowRequest(sdk, "alice.jolt", followRequest({ sender: "alice.jolt" }), store)
+    ).rejects.toThrow(/own identity/i);
+    expect(sent).toHaveLength(0);
+    expect(selectContacts(store.getSnapshot(), "alice.jolt")).toEqual([]);
+  });
+
   it("applyIncomingResponse upgrades a requested edge to accepted, preserving the nickname", async () => {
     const { sdk } = fakeJolt("alice.jolt");
     const store = createStore();

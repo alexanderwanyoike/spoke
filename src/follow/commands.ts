@@ -7,6 +7,7 @@ import { store as defaultStore, type Store } from "../common/store";
 import {
   makeContactPath,
   normalizeIdentity,
+  sameIdentity,
   type ContactRelationship,
   type SpokeContact,
   type SpokeFollowRequest,
@@ -93,6 +94,9 @@ export async function requestFollow(
   store: Store = defaultStore
 ): Promise<{ request: SpokeFollowRequest; contact: SpokeContact }> {
   const identity = params.identity.trim();
+  if (sameIdentity(identity, localIdentity)) {
+    throw new Error("You cannot send a follow request to yourself.");
+  }
   const request: SpokeFollowRequest = {
     schema: "spoke.follow_request.v1",
     id: makeId("follow_req"),
@@ -142,6 +146,9 @@ export async function acceptFollowRequest(
   request: SpokeFollowRequest,
   store: Store = defaultStore
 ): Promise<{ response: SpokeFollowResponse; contact: SpokeContact }> {
+  if (sameIdentity(request.sender, localIdentity)) {
+    throw new Error("Refusing to accept a follow request from your own identity.");
+  }
   const contact = await publishContact(
     sdk,
     localIdentity,
