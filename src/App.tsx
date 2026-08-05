@@ -476,8 +476,14 @@ function App() {
   const localFeedItems = useMemo(() => feed.filter((item) => item.source === "local"), [feed]);
   const activeContactCount = useMemo(() => activeContacts(contacts).length, [contacts]);
   const acceptedContacts = useMemo(
-    () => contacts.filter((contact) => contact.relationship === "accepted"),
-    [contacts]
+    () =>
+      contacts.filter(
+        (contact) =>
+          contact.relationship === "accepted" &&
+          !!contact.identity &&
+          !sameIdentity(contact.identity, localIdentity)
+      ),
+    [contacts, localIdentity]
   );
   const conversationList = useMemo(
     () => Object.values(conversations).sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)),
@@ -522,7 +528,14 @@ function App() {
 
     const threads = new Map<string, MessageThread>();
     for (const contact of acceptedContacts) {
-      const id = conversationIdForParticipants([localIdentity, contact.identity]);
+      // A contact that cannot form a valid one-to-one conversation (self edge
+      // or blank identity) must not crash the whole thread list. Skip it.
+      let id: string;
+      try {
+        id = conversationIdForParticipants([localIdentity, contact.identity]);
+      } catch {
+        continue;
+      }
       threads.set(id, {
         id,
         contact: { ...contact, displayName: contactDisplayName(contact) },
