@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
+    "@jolt/sdk": "https://github.com/alexanderwanyoike/jolt/releases/download/v0.3.20/jolt-sdk.tgz",
     "@tailwindcss/vite": "^4.3.1",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-process": "^2.3.1",
