@@ -173,6 +173,9 @@ export async function applyIncomingResponse(
   response: SpokeFollowResponse,
   store: Store = defaultStore
 ): Promise<SpokeContact> {
+  if (sameIdentity(response.sender, localIdentity)) {
+    throw new Error("Refusing to apply a follow response from your own identity.");
+  }
   const existing = storedContact(store, localIdentity, response.sender);
   const displayName = existing?.displayName || normalizeIdentity(response.sender);
   if (response.decision === "rejected") {

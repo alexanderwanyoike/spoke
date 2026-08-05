@@ -173,6 +173,30 @@ describe("contact graph commands", () => {
     ]);
   });
 
+  it("applyIncomingResponse refuses a response whose sender is your own identity", async () => {
+    const { sdk } = fakeJolt("alice.jolt");
+    const store = createStore();
+
+    await expect(
+      applyIncomingResponse(
+        sdk,
+        "alice.jolt",
+        {
+          schema: "spoke.follow_response.v1",
+          id: "follow_resp_self",
+          requestId: "follow_req_1",
+          sender: "alice.jolt",
+          recipient: "alice.jolt",
+          decision: "accepted",
+          createdAt: "2026-06-18T11:00:00.000Z"
+        },
+        store
+      )
+    ).rejects.toThrow(/own identity/i);
+    // The third write path that could mint a self accepted edge stays closed.
+    expect(selectContacts(store.getSnapshot(), "alice.jolt")).toEqual([]);
+  });
+
   it("a rejected response and removeContact tombstone the edge out of the projection", async () => {
     const { sdk } = fakeJolt("alice.jolt");
     const store = createStore();
