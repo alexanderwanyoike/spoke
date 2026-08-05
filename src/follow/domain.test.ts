@@ -125,6 +125,29 @@ describe("contact graph commands", () => {
     ]);
   });
 
+  it("requestFollow refuses a request to your own identity", async () => {
+    const { sdk, sent } = fakeJolt("alice.jolt");
+    const store = createStore();
+
+    await expect(
+      requestFollow(sdk, "alice.jolt", { identity: "alice.jolt", displayName: "Me" }, store)
+    ).rejects.toThrow(/yourself/i);
+    // A self edge that would later crash the message-thread projection is never created.
+    expect(sent).toHaveLength(0);
+    expect(selectContacts(store.getSnapshot(), "alice.jolt")).toEqual([]);
+  });
+
+  it("acceptFollowRequest refuses a request whose sender is your own identity", async () => {
+    const { sdk, sent } = fakeJolt("alice.jolt");
+    const store = createStore();
+
+    await expect(
+      acceptFollowRequest(sdk, "alice.jolt", followRequest({ sender: "alice.jolt" }), store)
+    ).rejects.toThrow(/own identity/i);
+    expect(sent).toHaveLength(0);
+    expect(selectContacts(store.getSnapshot(), "alice.jolt")).toEqual([]);
+  });
+
   it("applyIncomingResponse upgrades a requested edge to accepted, preserving the nickname", async () => {
     const { sdk } = fakeJolt("alice.jolt");
     const store = createStore();
@@ -148,6 +171,30 @@ describe("contact graph commands", () => {
     expect(selectContacts(store.getSnapshot(), "alice.jolt")).toEqual([
       { identity: "bob.jolt", displayName: "Bobby", relationship: "accepted" }
     ]);
+  });
+
+  it("applyIncomingResponse refuses a response whose sender is your own identity", async () => {
+    const { sdk } = fakeJolt("alice.jolt");
+    const store = createStore();
+
+    await expect(
+      applyIncomingResponse(
+        sdk,
+        "alice.jolt",
+        {
+          schema: "spoke.follow_response.v1",
+          id: "follow_resp_self",
+          requestId: "follow_req_1",
+          sender: "alice.jolt",
+          recipient: "alice.jolt",
+          decision: "accepted",
+          createdAt: "2026-06-18T11:00:00.000Z"
+        },
+        store
+      )
+    ).rejects.toThrow(/own identity/i);
+    // The third write path that could mint a self accepted edge stays closed.
+    expect(selectContacts(store.getSnapshot(), "alice.jolt")).toEqual([]);
   });
 
   it("a rejected response and removeContact tombstone the edge out of the projection", async () => {
