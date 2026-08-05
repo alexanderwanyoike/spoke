@@ -2769,9 +2769,10 @@ jiti@^2.7.0:
   resolved "https://registry.yarnpkg.com/jiti/-/jiti-2.7.0.tgz#974228f2f4ca2bc21885a1797b45fea68e950c64"
   integrity sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==
 
-"jolt-sdk@https://github.com/alexanderwanyoike/jolt/releases/download/v0.3.21/jolt-sdk.tgz":
+jolt-sdk@^0.1.0:
   version "0.1.0"
-  resolved "https://github.com/alexanderwanyoike/jolt/releases/download/v0.3.21/jolt-sdk.tgz#a2cdd011c791cf272e115caddbcf28ab4cf6ff7c"
+  resolved "https://registry.yarnpkg.com/jolt-sdk/-/jolt-sdk-0.1.0.tgz#a25e0a8f34a2b2872b045646008af7a807010664"
+  integrity sha512-YtciOT0vxMAWR3Te81bR10kWy1+QlUMc6n1usxU84GbtgYWTMMOly+E+/b+qx/+OuFeYKBM8/+eEmh4CpEnkfQ==
 
 jose@^6.1.3:
   version "6.2.8"
