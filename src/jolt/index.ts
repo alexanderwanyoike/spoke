@@ -1,6 +1,6 @@
 // Jolt SDK / ACL seam.
 //
-// Since v0.1.6 the wire layer is @jolt/sdk (extracted from this very module;
+// Since v0.1.6 the wire layer is jolt-sdk (extracted from this very module;
 // see jolt's sdks/js). This barrel binds the SDK to Spoke's runtime (Tauri
 // invoke on desktop, the vite proxy on web) and preserves the import surface
 // the app has always used, so feature code and fakes are unchanged. Consumers
@@ -21,9 +21,9 @@ import {
   type JoltSdk,
   type JoltTransport,
   type SessionRequest,
-} from "@jolt/sdk";
-import { HttpTransport } from "@jolt/sdk/transport-http";
-import { isTauriRuntime, TauriTransport } from "@jolt/sdk/transport-tauri";
+} from "jolt-sdk";
+import { HttpTransport } from "jolt-sdk/transport-http";
+import { isTauriRuntime, TauriTransport } from "jolt-sdk/transport-tauri";
 
 export { apiErrorMessage, makeId, referenceKey, referenceTarget };
 export type {
@@ -37,7 +37,7 @@ export type {
   Reference,
   SessionRequest,
   Versioned,
-} from "@jolt/sdk";
+} from "jolt-sdk";
 export type {
   AppSessionStatus,
   CurrentAppSession,
@@ -49,7 +49,7 @@ export type {
   PublishedContent,
   PublishResponse,
   ResolveResponse,
-} from "@jolt/sdk";
+} from "jolt-sdk";
 
 // One transport for the whole app, chosen by runtime. Desktop goes through
 // the Tauri commands in src-tauri; web goes through the vite proxy so the
