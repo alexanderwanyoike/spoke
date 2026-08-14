@@ -188,6 +188,7 @@ import {
   type SpokeUpdateCheck,
   type SpokeUpdateClient
 } from "./update/client";
+import { SpokeStartupGate } from "./startup-gate";
 
 type AppView = "feed" | "profile" | "messages" | "notifications";
 type ThemeMode = "light" | "dark";
@@ -364,6 +365,14 @@ function notificationGroupLabel(receivedAt: number) {
 }
 
 function App() {
+  return (
+    <SpokeStartupGate>
+      <SpokeRuntime />
+    </SpokeStartupGate>
+  );
+}
+
+function SpokeRuntime() {
   const [status, setStatus] = useState<NodeStatus | null>(null);
   const [session, setSession] = useState<StoredSession>(() =>
     loadJson<StoredSession>(SESSION_KEY, { requestId: "", status: "pending" })
@@ -1046,11 +1055,26 @@ function App() {
     try {
       const nextUpdateCheck = await updateClient.check();
       setUpdateCheck(nextUpdateCheck);
-      setNotice(
-        nextUpdateCheck.available
-          ? `Update available: ${nextUpdateCheck.version}`
-          : "Spoke is up to date."
-      );
+      if (!nextUpdateCheck.available) {
+        setNotice("Spoke is up to date.");
+        return;
+      }
+
+      switch (nextUpdateCheck.compatibility.status) {
+        case "compatible":
+          setNotice(`Update available: ${nextUpdateCheck.version}`);
+          break;
+        case "incompatible":
+          setNotice(
+            `Spoke ${nextUpdateCheck.version} needs newer Jolt App API features. Your current Spoke remains installed.`
+          );
+          break;
+        case "unavailable":
+          setError(
+            "Cannot reach the Jolt daemon to verify this Spoke update. Your current Spoke remains installed."
+          );
+          break;
+      }
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
@@ -2655,7 +2679,7 @@ function App() {
                     {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
                     <span className="group-data-[collapsible=icon]:hidden">{theme === "dark" ? "Light mode" : "Dark mode"}</span>
                   </Button>
-                  {updateCheck?.available ? (
+                  {updateCheck?.available && updateCheck.compatibility.status === "compatible" ? (
                     <Button
                       type="button"
                       onClick={installSpokeUpdate}

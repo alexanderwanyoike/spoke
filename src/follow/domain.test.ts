@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { JoltEncryptedSdk, JoltIngressSdk, PublishResult } from "../jolt";
+import type { PublishResult } from "../jolt";
 import { createStore, type Store } from "../common/store";
 import {
   acceptFollowRequest,
   addContact,
   applyIncomingResponse,
   removeContact,
-  requestFollow
+  requestFollow,
+  type FollowCommandSdk
 } from "./commands";
-import { loadContacts } from "./loaders";
+import { loadContacts, type ContactLoaderSdk } from "./loaders";
 import { selectContacts } from "./queries";
 import { makeContactPath, type SpokeContact, type SpokeFollowRequest } from "./model";
 
@@ -28,7 +29,7 @@ function fakeJolt(localIdentity: string) {
     return { contentId, latestSequence: seq, path, address: `${localIdentity}${path}` };
   }
 
-  const sdk: JoltEncryptedSdk & JoltIngressSdk = {
+  const sdk: FollowCommandSdk & ContactLoaderSdk = {
     async publishEncryptedJson(path, body, recipients) {
       encrypted.push({ path, recipients });
       return publish(path, body);
@@ -51,15 +52,7 @@ function fakeJolt(localIdentity: string) {
     async sendObject(recipient, path, body) {
       sent.push({ recipient, path, body });
       return publish(path, body);
-    },
-    async listPendingIngress() {
-      return [];
-    },
-    async openIngress() {
-      return null;
-    },
-    async acceptIngress() {},
-    async rejectIngress() {}
+    }
   };
 
   return { sdk, sent, encrypted };

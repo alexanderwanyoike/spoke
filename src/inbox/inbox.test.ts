@@ -28,13 +28,6 @@ function fakeJolt(localIdentity: string) {
     published.set(path, { body, seq, contentId });
     return { contentId, latestSequence: seq, path, address: `${localIdentity}${path}` };
   }
-  function readHit(ref: { identity: string; path: string }, decode: (v: unknown) => unknown) {
-    const rec = published.get(ref.path);
-    if (!rec) return null;
-    const value = decode(JSON.parse(JSON.stringify(rec.body)));
-    return value === null ? null : { ref, value, latestSequence: rec.seq, contentId: rec.contentId };
-  }
-
   function enqueue(ingressId: string, sender: string, payload: unknown, schemaHint?: string) {
     inbox.set(ingressId, {
       payload,
@@ -55,26 +48,8 @@ function fakeJolt(localIdentity: string) {
     async publishJson(path, body) {
       return publish(path, body);
     },
-    async read(ref, decode) {
-      return readHit(ref, decode) as never;
-    },
-    async readContent(_contentId, ref, _latestSequence, decode) {
-      return readHit(ref, decode) as never;
-    },
     async publishEncryptedJson(path, body) {
       return publish(path, body);
-    },
-    async readEncrypted(ref, decode) {
-      return readHit(ref, decode) as never;
-    },
-    async listPublished() {
-      return [...published.entries()].map(([path, rec]) => ({
-        content_id: rec.contentId,
-        size: 0,
-        path,
-        address: `${localIdentity}${path}`,
-        pin_state: "pinned"
-      }));
     },
     async sendObject(recipient, path, body) {
       sent.push({ recipient, body });

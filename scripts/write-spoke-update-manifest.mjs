@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from "node:fs";
 
+const appCompatibility = JSON.parse(
+  readFileSync(new URL("../spoke-compatibility.json", import.meta.url), "utf8")
+);
+
 const args = process.argv.slice(2);
 
 if (args.length !== 3 && (args.length < 5 || (args.length - 2) % 3 !== 0)) {
@@ -66,6 +70,7 @@ const manifest = {
   version,
   notes: releaseNotes,
   pub_date: pubDate,
+  app_compatibility: appCompatibility,
   platforms
 };
 

@@ -8,8 +8,10 @@ import type { JoltEncryptedSdk } from "../jolt";
 import { store as defaultStore, type Store } from "../common/store";
 import { CONTACTS_PREFIX, decodeContact, normalizeIdentity } from "./model";
 
+export type ContactLoaderSdk = Pick<JoltEncryptedSdk, "listPublished" | "readEncrypted">;
+
 export async function loadContacts(
-  sdk: JoltEncryptedSdk,
+  sdk: ContactLoaderSdk,
   localIdentity: string,
   store: Store = defaultStore
 ): Promise<void> {

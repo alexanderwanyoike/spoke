@@ -9,8 +9,11 @@ import { normalizeIdentity } from "../follow";
 import { store as defaultStore, type Store } from "../common/store";
 import { MESSAGES_OUTGOING_PREFIX, MESSAGES_RECEIVED_PREFIX, decodeMessage } from "./model";
 
+export type ConversationLoaderSdk = Pick<JoltSdk, "read"> &
+  Pick<JoltEncryptedSdk, "listPublished" | "readEncrypted">;
+
 export async function loadConversations(
-  sdk: JoltSdk & JoltEncryptedSdk,
+  sdk: ConversationLoaderSdk,
   localIdentity: string,
   store: Store = defaultStore
 ): Promise<void> {

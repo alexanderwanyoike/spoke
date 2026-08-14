@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { JoltEncryptedSdk, JoltIngressSdk, JoltSdk, PublishResult } from "../jolt";
+import type { PublishResult } from "../jolt";
 import { createStore } from "../common/store";
-import { sendMessage, acceptReceivedMessage } from "./commands";
-import { loadConversations } from "./loaders";
+import {
+  sendMessage,
+  acceptReceivedMessage,
+  type MessageSender,
+  type MessageWriter
+} from "./commands";
+import { loadConversations, type ConversationLoaderSdk } from "./loaders";
 import { selectConversations } from "./queries";
 import { conversationIdForParticipants, type SpokeMessage } from "./model";
 
@@ -27,18 +32,12 @@ function fakeJolt(localIdentity: string) {
     return value === null ? null : { ref, value, latestSequence: rec.seq, contentId: rec.contentId };
   }
 
-  const sdk: JoltSdk & JoltEncryptedSdk & JoltIngressSdk = {
+  const sdk: MessageSender & MessageWriter & ConversationLoaderSdk = {
     async publishJson(path, body) {
       return publish(path, body);
     },
     async read(ref, decode) {
       return readHit(ref, decode) as never;
-    },
-    async readContent(_contentId, ref, _latestSequence, decode) {
-      return readHit(ref, decode) as never;
-    },
-    async publishEncryptedJson(path, body) {
-      return publish(path, body);
     },
     async readEncrypted(ref, decode) {
       return readHit(ref, decode) as never;
@@ -55,15 +54,7 @@ function fakeJolt(localIdentity: string) {
     async sendObject(recipient, path, body) {
       sent.push({ recipient, path });
       return publish(path, body);
-    },
-    async listPendingIngress() {
-      return [];
-    },
-    async openIngress() {
-      return null;
-    },
-    async acceptIngress() {},
-    async rejectIngress() {}
+    }
   };
 
   return { sdk, sent };

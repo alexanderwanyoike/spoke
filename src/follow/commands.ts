@@ -14,6 +14,10 @@ import {
   type SpokeFollowResponse
 } from "./model";
 
+export type ContactWriter = Pick<JoltEncryptedSdk, "publishEncryptedJson">;
+export type FollowSender = Pick<JoltIngressSdk, "sendObject">;
+export type FollowCommandSdk = ContactWriter & FollowSender;
+
 function foldContact(
   store: Store,
   localIdentity: string,
@@ -47,7 +51,7 @@ function storedContact(
 // records at the same per-edge path. The store sequence is bumped past the
 // existing entry so an optimistic local fold is never a no-op downgrade.
 export async function publishContact(
-  sdk: JoltEncryptedSdk,
+  sdk: ContactWriter,
   localIdentity: string,
   contact: { identity: string; displayName: string; relationship: ContactRelationship },
   options: { removed?: boolean } = {},
@@ -71,7 +75,7 @@ export async function publishContact(
 
 // Add a local-only contact (no follow request sent): just an address-book entry.
 export async function addContact(
-  sdk: JoltEncryptedSdk,
+  sdk: ContactWriter,
   localIdentity: string,
   draft: { identity: string; displayName?: string },
   store: Store = defaultStore
@@ -88,7 +92,7 @@ export async function addContact(
 
 // Send a follow request to a peer and record a local "requested" edge.
 export async function requestFollow(
-  sdk: JoltEncryptedSdk & JoltIngressSdk,
+  sdk: FollowCommandSdk,
   localIdentity: string,
   params: { identity: string; displayName?: string; message?: string; fromDisplayName?: string },
   store: Store = defaultStore
@@ -119,7 +123,7 @@ export async function requestFollow(
 
 // Send a follow response (accepted/rejected) to the requester.
 export async function sendFollowResponse(
-  sdk: JoltIngressSdk,
+  sdk: FollowSender,
   localIdentity: string,
   request: SpokeFollowRequest,
   decision: SpokeFollowResponse["decision"]
@@ -141,7 +145,7 @@ export async function sendFollowResponse(
 // requester. The peer becomes an active contact (auto-accepts their replies and
 // messages per ADR 0002).
 export async function acceptFollowRequest(
-  sdk: JoltEncryptedSdk & JoltIngressSdk,
+  sdk: FollowCommandSdk,
   localIdentity: string,
   request: SpokeFollowRequest,
   store: Store = defaultStore
@@ -168,7 +172,7 @@ export async function acceptFollowRequest(
 // upgrades the edge to "accepted"; a reject tombstones it. Preserves the
 // nickname we chose when we sent the request.
 export async function applyIncomingResponse(
-  sdk: JoltEncryptedSdk,
+  sdk: ContactWriter,
   localIdentity: string,
   response: SpokeFollowResponse,
   store: Store = defaultStore
@@ -199,7 +203,7 @@ export async function applyIncomingResponse(
 // Remove a contact: a tombstone edge. Excluded from the Projection, retained in
 // the store for monotonicity.
 export async function removeContact(
-  sdk: JoltEncryptedSdk,
+  sdk: ContactWriter,
   localIdentity: string,
   identity: string,
   store: Store = defaultStore

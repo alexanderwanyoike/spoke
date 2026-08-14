@@ -87,7 +87,15 @@ xattr -dr com.apple.quarantine "/Applications/Spoke.app"
 Packaged Spoke builds also check GitHub Releases for signed in-app updates.
 When a newer signed release is available, Spoke shows an update action in the
 top bar. Installing the update verifies the updater signature, applies the
-platform update payload, and relaunches Spoke.
+platform update payload, and relaunches Spoke. Before installation, Spoke
+checks the release's App API declaration against the reachable Jolt daemon. An
+incompatible or unverifiable release leaves the currently installed Spoke
+build untouched.
+
+At startup, Spoke checks the same app-owned declaration before mounting its
+session or social runtime. A reachable incompatible daemon gets a retryable,
+non-mutating recovery screen; an unreachable daemon is reported as unavailable,
+not as requiring an upgrade.
 
 ## Desktop Development
 
