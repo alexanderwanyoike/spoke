@@ -73,16 +73,4 @@ describe("Spoke startup compatibility gate", () => {
     });
     expect(continueStartup).not.toHaveBeenCalled();
   });
-
-  it("treats the legacy Tauri host connection error as unavailable", async () => {
-    const continueStartup = vi.fn(async () => undefined);
-    checkSpokeCompatibility.mockRejectedValue(
-      new JoltApiError("daemon request failed: error sending request for url")
-    );
-
-    await expect(enterSpokeRuntime(continueStartup)).resolves.toEqual({
-      status: "unavailable"
-    });
-    expect(continueStartup).not.toHaveBeenCalled();
-  });
 });

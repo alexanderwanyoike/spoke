@@ -2193,6 +2193,48 @@
           "markdownDescription": "Denies the unminimize command without any pre-configured scope."
         },
         {
+          "description": "Allows the app to reach the local Jolt daemon through the plugin's proxy commands\n#### This default permission set includes:\n\n- `allow-daemon-request`\n- `allow-daemon-publish-bytes`\n- `allow-daemon-append`",
+          "type": "string",
+          "const": "jolt:default",
+          "markdownDescription": "Allows the app to reach the local Jolt daemon through the plugin's proxy commands\n#### This default permission set includes:\n\n- `allow-daemon-request`\n- `allow-daemon-publish-bytes`\n- `allow-daemon-append`"
+        },
+        {
+          "description": "Enables the daemon_append command without any pre-configured scope.",
+          "type": "string",
+          "const": "jolt:allow-daemon-append",
+          "markdownDescription": "Enables the daemon_append command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the daemon_publish_bytes command without any pre-configured scope.",
+          "type": "string",
+          "const": "jolt:allow-daemon-publish-bytes",
+          "markdownDescription": "Enables the daemon_publish_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the daemon_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "jolt:allow-daemon-request",
+          "markdownDescription": "Enables the daemon_request command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the daemon_append command without any pre-configured scope.",
+          "type": "string",
+          "const": "jolt:deny-daemon-append",
+          "markdownDescription": "Denies the daemon_append command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the daemon_publish_bytes command without any pre-configured scope.",
+          "type": "string",
+          "const": "jolt:deny-daemon-publish-bytes",
+          "markdownDescription": "Denies the daemon_publish_bytes command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the daemon_request command without any pre-configured scope.",
+          "type": "string",
+          "const": "jolt:deny-daemon-request",
+          "markdownDescription": "Denies the daemon_request command without any pre-configured scope."
+        },
+        {
           "description": "This permission set configures which\nprocess features are by default exposed.\n\n#### Granted Permissions\n\nThis enables to quit via `allow-exit` and restart via `allow-restart`\nthe application.\n\n#### This default permission set includes:\n\n- `allow-exit`\n- `allow-restart`",
           "type": "string",
           "const": "process:default",

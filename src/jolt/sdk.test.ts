@@ -77,4 +77,13 @@ describe("Jolt SDK ACL", () => {
       })
     );
   });
+
+  it("rejects publications outside the Spoke namespace before transport", async () => {
+    const sdk = createJoltSdk(() => "token-1");
+
+    await expect(sdk.publishJson("/profile", { name: "Alice" })).rejects.toThrow(
+      "Spoke can only publish under /spoke/"
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });
