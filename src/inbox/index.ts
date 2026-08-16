@@ -11,7 +11,9 @@ import type { IngressRecord } from "../jolt";
 import type { JoltEncryptedSdk, JoltIngressSdk, JoltSdk } from "../jolt";
 import type { Store } from "../common/store";
 
-export type InboxSdk = JoltSdk & JoltEncryptedSdk & JoltIngressSdk;
+export type InboxSdk = Pick<JoltSdk, "publishJson"> &
+  Pick<JoltEncryptedSdk, "publishEncryptedJson"> &
+  JoltIngressSdk;
 
 // "auto": apply now without asking the user. "manual": leave it in the review
 // queue. Auto-classification is conservative; anything uncertain is manual.
@@ -58,7 +60,7 @@ function isAlreadyHandled(err: unknown) {
 
 // Accept a pending ingress record, tolerating a concurrent poll that already
 // accepted it (so a double-process is not an error).
-async function acceptTolerant(sdk: JoltIngressSdk, ingressId: string) {
+async function acceptTolerant(sdk: Pick<JoltIngressSdk, "acceptIngress">, ingressId: string) {
   try {
     await sdk.acceptIngress(ingressId);
   } catch (err) {

@@ -3276,6 +3276,7 @@ name = "spoke"
 version = "0.1.6"
 dependencies = [
  "reqwest 0.12.28",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",

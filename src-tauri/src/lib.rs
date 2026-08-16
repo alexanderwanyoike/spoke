@@ -7,6 +7,65 @@ use std::time::Duration;
 
 const DEFAULT_DAEMON_URL: &str = "http://127.0.0.1:9862";
 
+#[derive(Debug, serde::Serialize)]
+struct DaemonError {
+    kind: &'static str,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<Value>,
+}
+
+impl DaemonError {
+    fn application(message: impl Into<String>) -> Self {
+        Self {
+            kind: "api",
+            message: message.into(),
+            status: None,
+            code: None,
+            body: None,
+        }
+    }
+
+    fn configuration(message: impl Into<String>) -> Self {
+        Self {
+            kind: "configuration",
+            message: message.into(),
+            status: None,
+            code: None,
+            body: None,
+        }
+    }
+
+    fn transport(message: impl Into<String>) -> Self {
+        Self {
+            kind: "transport",
+            message: message.into(),
+            status: None,
+            code: None,
+            body: None,
+        }
+    }
+
+    fn response(
+        message: impl Into<String>,
+        status: reqwest::StatusCode,
+        code: Option<String>,
+        body: Option<Value>,
+    ) -> Self {
+        Self {
+            kind: "api",
+            message: message.into(),
+            status: Some(status.as_u16()),
+            code,
+            body,
+        }
+    }
+}
+
 #[tauri::command]
 async fn daemon_request(
     base_path: String,
@@ -14,15 +73,17 @@ async fn daemon_request(
     method: String,
     body: Option<Value>,
     session_token: Option<String>,
-) -> Result<Value, String> {
-    let method = method
-        .parse::<reqwest::Method>()
-        .map_err(|error| format!("invalid daemon request method {method}: {error}"))?;
-    let url = daemon_url(&base_path, &path)?;
+) -> Result<Value, DaemonError> {
+    let method = method.parse::<reqwest::Method>().map_err(|error| {
+        DaemonError::configuration(format!("invalid daemon request method {method}: {error}"))
+    })?;
+    let url = daemon_url(&base_path, &path).map_err(DaemonError::configuration)?;
     let client = reqwest::Client::builder()
         .timeout(request_timeout(&base_path, &path))
         .build()
-        .map_err(|error| format!("failed to create daemon HTTP client: {error}"))?;
+        .map_err(|error| {
+            DaemonError::configuration(format!("failed to create daemon HTTP client: {error}"))
+        })?;
     let mut request = client
         .request(method, url)
         .header(ACCEPT, "application/json");
@@ -42,9 +103,11 @@ async fn daemon_publish_json(
     session_token: String,
     path: String,
     json_text: String,
-) -> Result<Value, String> {
+) -> Result<Value, DaemonError> {
     if !path.starts_with("/spoke/") {
-        return Err("Spoke can only publish under /spoke/".to_string());
+        return Err(DaemonError::application(
+            "Spoke can only publish under /spoke/",
+        ));
     }
 
     let filename = format!(
@@ -57,10 +120,12 @@ async fn daemon_publish_json(
     let file = Part::bytes(json_text.into_bytes())
         .file_name(filename)
         .mime_str("application/json")
-        .map_err(|error| format!("failed to prepare Spoke upload: {error}"))?;
+        .map_err(|error| {
+            DaemonError::application(format!("failed to prepare Spoke upload: {error}"))
+        })?;
     let form = Form::new().part("file", file).text("path", path);
     let request = reqwest::Client::new()
-        .post(daemon_url("/app/v1", "/publish")?)
+        .post(daemon_url("/app/v1", "/publish").map_err(DaemonError::configuration)?)
         .header(ACCEPT, "application/json")
         .header(AUTHORIZATION, format!("Bearer {session_token}"))
         .multipart(form);
@@ -75,18 +140,22 @@ async fn daemon_publish_bytes(
     bytes: Vec<u8>,
     file_name: String,
     mime_type: String,
-) -> Result<Value, String> {
+) -> Result<Value, DaemonError> {
     if !path.starts_with("/spoke/") {
-        return Err("Spoke can only publish under /spoke/".to_string());
+        return Err(DaemonError::application(
+            "Spoke can only publish under /spoke/",
+        ));
     }
 
     let file = Part::bytes(bytes)
         .file_name(file_name)
         .mime_str(&mime_type)
-        .map_err(|error| format!("failed to prepare Spoke upload: {error}"))?;
+        .map_err(|error| {
+            DaemonError::application(format!("failed to prepare Spoke upload: {error}"))
+        })?;
     let form = Form::new().part("file", file).text("path", path);
     let request = reqwest::Client::new()
-        .post(daemon_url("/app/v1", "/publish")?)
+        .post(daemon_url("/app/v1", "/publish").map_err(DaemonError::configuration)?)
         .header(ACCEPT, "application/json")
         .header(AUTHORIZATION, format!("Bearer {session_token}"))
         .multipart(form);
@@ -101,18 +170,22 @@ async fn daemon_append(
     bytes: Vec<u8>,
     file_name: String,
     mime_type: String,
-) -> Result<Value, String> {
+) -> Result<Value, DaemonError> {
     if !path.starts_with("/spoke/") {
-        return Err("Spoke can only publish under /spoke/".to_string());
+        return Err(DaemonError::application(
+            "Spoke can only publish under /spoke/",
+        ));
     }
 
     let file = Part::bytes(bytes)
         .file_name(file_name)
         .mime_str(&mime_type)
-        .map_err(|error| format!("failed to prepare Spoke upload: {error}"))?;
+        .map_err(|error| {
+            DaemonError::application(format!("failed to prepare Spoke upload: {error}"))
+        })?;
     let form = Form::new().part("file", file).text("path", path);
     let request = reqwest::Client::new()
-        .post(daemon_url("/app/v1", "/append")?)
+        .post(daemon_url("/app/v1", "/append").map_err(DaemonError::configuration)?)
         .header(ACCEPT, "application/json")
         .header(AUTHORIZATION, format!("Bearer {session_token}"))
         .multipart(form);
@@ -122,8 +195,9 @@ async fn daemon_append(
 
 async fn parse_response(
     response: Result<reqwest::Response, reqwest::Error>,
-) -> Result<Value, String> {
-    let response = response.map_err(|error| format!("daemon request failed: {error}"))?;
+) -> Result<Value, DaemonError> {
+    let response = response
+        .map_err(|error| DaemonError::transport(format!("daemon request failed: {error}")))?;
     let status = response.status();
     let content_type = response
         .headers()
@@ -134,30 +208,59 @@ async fn parse_response(
     let body = response
         .text()
         .await
-        .map_err(|error| format!("daemon response read failed: {error}"))?;
+        .map_err(|error| DaemonError::transport(format!("daemon response read failed: {error}")))?;
 
     if !status.is_success() {
-        if content_type.contains("application/json") {
-            if let Ok(value) = serde_json::from_str::<Value>(&body) {
-                if let Some(error) = value.get("error").and_then(Value::as_str) {
-                    return Err(error.to_string());
-                }
-            }
-        }
-
-        return Err(if body.trim().is_empty() {
-            format!("daemon returned {status}")
-        } else {
-            body
-        });
+        return Err(daemon_response_error(status, &content_type, &body));
     }
 
     if content_type.contains("application/json") {
-        serde_json::from_str(&body)
-            .map_err(|error| format!("daemon returned invalid JSON: {error}"))
+        serde_json::from_str(&body).map_err(|error| {
+            DaemonError::response(
+                format!("daemon returned invalid JSON: {error}"),
+                status,
+                None,
+                Some(Value::String(body)),
+            )
+        })
     } else {
         Ok(Value::String(body))
     }
+}
+
+fn daemon_response_error(
+    status: reqwest::StatusCode,
+    content_type: &str,
+    body: &str,
+) -> DaemonError {
+    let parsed = content_type
+        .contains("application/json")
+        .then(|| serde_json::from_str::<Value>(body).ok())
+        .flatten();
+    let message = parsed
+        .as_ref()
+        .and_then(|value| value.get("error"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            if body.trim().is_empty() {
+                format!("daemon returned {status}")
+            } else {
+                body.to_owned()
+            }
+        });
+    let code = parsed
+        .as_ref()
+        .and_then(|value| value.get("code"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+
+    DaemonError::response(
+        message,
+        status,
+        code,
+        parsed.or_else(|| Some(Value::String(body.to_owned()))),
+    )
 }
 
 fn daemon_url(base_path: &str, path: &str) -> Result<String, String> {
@@ -257,5 +360,30 @@ mod tests {
             request_timeout("/app/v1", "/fetch"),
             Duration::from_secs(60)
         );
+    }
+
+    #[test]
+    fn daemon_api_errors_preserve_status_for_sdk_legacy_fallback() {
+        let error = daemon_response_error(
+            reqwest::StatusCode::NOT_FOUND,
+            "application/json",
+            r#"{"error":"route not found"}"#,
+        );
+        let serialized = serde_json::to_value(error).unwrap();
+
+        assert_eq!(serialized["kind"], "api");
+        assert_eq!(serialized["status"], 404);
+        assert_eq!(serialized["message"], "route not found");
+    }
+
+    #[test]
+    fn spoke_validation_errors_are_not_reported_as_transport_failures() {
+        let serialized = serde_json::to_value(DaemonError::application(
+            "Spoke can only publish under /spoke/",
+        ))
+        .unwrap();
+
+        assert_eq!(serialized["kind"], "api");
+        assert_eq!(serialized["status"], Value::Null);
     }
 }

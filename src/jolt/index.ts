@@ -8,13 +8,15 @@
 // See docs/CONTEXT.md ("Jolt SDK / ACL").
 
 import {
-  apiErrorMessage,
+  apiErrorMessage as sdkApiErrorMessage,
   createJoltClient,
   makeId,
   operations as ops,
   referenceKey,
   referenceTarget,
   type FetchResult,
+  type AppCompatibilityDeclaration,
+  type CompatibilityCheckOptions,
   type JoltAppendSdk,
   type JoltEncryptedSdk,
   type JoltIngressSdk,
@@ -24,8 +26,10 @@ import {
 } from "jolt-sdk";
 import { HttpTransport } from "jolt-sdk/transport-http";
 import { isTauriRuntime, TauriTransport } from "jolt-sdk/transport-tauri";
+import appCompatibility from "../../spoke-compatibility.json";
+import { isJoltUnavailableError, JOLT_UNAVAILABLE_MESSAGE } from "./errors";
 
-export { apiErrorMessage, makeId, referenceKey, referenceTarget };
+export { makeId, referenceKey, referenceTarget };
 export type {
   Decoder,
   EnumeratedRecord,
@@ -64,11 +68,32 @@ function getTransport(): JoltTransport {
   return transport;
 }
 
+function getClient(getSessionToken: () => string = () => "") {
+  return createJoltClient({ transport: getTransport(), getSessionToken });
+}
+
+export const SPOKE_COMPATIBILITY = {
+  appApi: appCompatibility.app_api,
+  requiredFeatures: appCompatibility.required_features,
+  optionalFeatures: appCompatibility.optional_features
+} as const satisfies AppCompatibilityDeclaration;
+
+export function checkSpokeCompatibility(
+  declaration: AppCompatibilityDeclaration = SPOKE_COMPATIBILITY,
+  options?: CompatibilityCheckOptions
+) {
+  return getClient().checkCompatibility(declaration, options);
+}
+
+export function apiErrorMessage(error: unknown) {
+  return isJoltUnavailableError(error) ? JOLT_UNAVAILABLE_MESSAGE : sdkApiErrorMessage(error);
+}
+
 /** The fakeable adapter Spoke's commands and queries depend on. */
 export function createJoltSdk(
   getSessionToken: () => string
 ): JoltSdk & JoltEncryptedSdk & JoltIngressSdk & JoltAppendSdk {
-  return createJoltClient({ transport: getTransport(), getSessionToken });
+  return getClient(getSessionToken);
 }
 
 // App-shell daemon operations (bootstrap, session, media) that sit outside
@@ -76,23 +101,23 @@ export function createJoltSdk(
 // signatures preserved.
 
 export function getStatus() {
-  return ops.getStatus(getTransport());
+  return getClient().getStatus();
 }
 
 export function requestSession(req: SessionRequest) {
-  return ops.requestSession(getTransport(), req);
+  return getClient().requestSession(req);
 }
 
 export function getSessionRequestStatus(requestId: string) {
-  return ops.getSessionRequestStatus(getTransport(), requestId);
+  return getClient().getSessionRequestStatus(requestId);
 }
 
 export function getCurrentSession(sessionToken: string) {
-  return ops.getCurrentSession(getTransport(), sessionToken);
+  return getClient(() => sessionToken).getCurrentSession();
 }
 
 export function listPublished(sessionToken: string) {
-  return ops.listPublished(getTransport(), sessionToken);
+  return getClient(() => sessionToken).listPublished();
 }
 
 export function fetchTarget(sessionToken: string, target: string) {

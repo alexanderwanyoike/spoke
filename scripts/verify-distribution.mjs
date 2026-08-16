@@ -7,6 +7,7 @@ const files = {
   normalizeArtifacts: readFileSync("scripts/normalize-spoke-artifacts.sh", "utf8"),
   assembleRelease: readFileSync("scripts/assemble-spoke-release.sh", "utf8"),
   updateManifest: readFileSync("scripts/write-spoke-update-manifest.mjs", "utf8"),
+  compatibility: readFileSync("spoke-compatibility.json", "utf8"),
   tauriConfig: readFileSync("src-tauri/tauri.conf.json", "utf8"),
   tauriCargo: readFileSync("src-tauri/Cargo.toml", "utf8"),
   tauriLib: readFileSync("src-tauri/src/lib.rs", "utf8"),
@@ -33,7 +34,8 @@ const requiredMarkers = {
     "spoke-x86_64-setup.exe",
     "write-spoke-update-manifest.mjs",
     "softprops/action-gh-release",
-    "refs/tags/"
+    "refs/tags/",
+    "spoke-compatibility.json"
   ],
   installer: [
     "SPOKE_VERSION",
@@ -93,6 +95,8 @@ const requiredMarkers = {
   ],
   updateManifest: [
     "latest.json",
+    "app_compatibility",
+    "spoke-compatibility.json",
     "linux-x86_64",
     "darwin-aarch64",
     "windows-x86_64",
@@ -101,6 +105,7 @@ const requiredMarkers = {
     "spoke-aarch64.app.tar.gz",
     "spoke-x86_64-setup.exe"
   ],
+  compatibility: ["app_api", "required_features", "optional_features"],
   tauriConfig: [
     "icons/icon.png",
     "icons/icon.ico",
@@ -110,7 +115,7 @@ const requiredMarkers = {
   ],
   tauriCargo: ["tauri-plugin-updater", "tauri-plugin-process"],
   tauriLib: ["tauri_plugin_updater::Builder", "tauri_plugin_process::init"],
-  packageJson: ["@tauri-apps/plugin-updater", "@tauri-apps/plugin-process"],
+  packageJson: ["@tauri-apps/plugin-updater", "@tauri-apps/plugin-process", "jolt-sdk"],
   app: ["checkSpokeUpdate", "installSpokeUpdate", "Update available"],
   updateClient: ["check()", "downloadAndInstall", "relaunch"],
   readme: [
