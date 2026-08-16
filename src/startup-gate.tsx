@@ -17,6 +17,28 @@ type SpokeStartupState =
   | { status: "checking" }
   | { status: "error"; message: string };
 
+function startupCopy(startup: SpokeStartupState) {
+  switch (startup.status) {
+    case "compatible":
+      return null;
+    case "checking":
+      return {
+        title: "Checking Jolt compatibility",
+        message: "Spoke is checking the generic App API behavior provided by your local Jolt daemon."
+      };
+    case "incompatible":
+      return {
+        title: "Spoke needs a newer Jolt",
+        message:
+          "This Spoke build requires Jolt behavior that the connected daemon does not provide. Spoke stopped before opening a session or changing data."
+      };
+    case "unavailable":
+      return { title: "Jolt is unavailable", message: JOLT_UNAVAILABLE_MESSAGE };
+    case "error":
+      return { title: "Could not check Jolt compatibility", message: startup.message };
+  }
+}
+
 export function SpokeStartupGate({ children }: { children: ReactNode }) {
   const [startup, setStartup] = useState<SpokeStartupState>({ status: "checking" });
   const [retrying, setRetrying] = useState(false);
@@ -24,12 +46,8 @@ export function SpokeStartupGate({ children }: { children: ReactNode }) {
   async function checkCompatibility() {
     setRetrying(true);
     try {
-      const compatibility = await enterSpokeRuntime(async (confirmed) => {
-        setStartup(confirmed);
-      });
-      if (compatibility.status !== "compatible") {
-        setStartup(compatibility);
-      }
+      const compatibility = await enterSpokeRuntime(async () => undefined);
+      setStartup(compatibility);
     } catch (error) {
       setStartup({ status: "error", message: apiErrorMessage(error) });
     } finally {
@@ -41,28 +59,10 @@ export function SpokeStartupGate({ children }: { children: ReactNode }) {
     void checkCompatibility();
   }, []);
 
-  if (startup.status === "compatible") {
+  const copy = startupCopy(startup);
+  if (!copy) {
     return children;
   }
-
-  const title =
-    startup.status === "checking"
-      ? "Checking Jolt compatibility"
-      : startup.status === "incompatible"
-        ? "Spoke needs a newer Jolt"
-        : startup.status === "unavailable"
-          ? "Jolt is unavailable"
-          : "Could not check Jolt compatibility";
-  const message =
-    startup.status === "checking"
-      ? "Spoke is checking the generic App API behavior provided by your local Jolt daemon."
-      : startup.status === "incompatible"
-        ? "This Spoke build requires Jolt behavior that the connected daemon does not provide. Spoke stopped before opening a session or changing data."
-        : startup.status === "unavailable"
-          ? JOLT_UNAVAILABLE_MESSAGE
-          : startup.status === "error"
-            ? startup.message
-            : "Spoke is ready to start.";
 
   return (
     <main className="grid min-h-screen place-items-center bg-background p-6">
@@ -70,9 +70,9 @@ export function SpokeStartupGate({ children }: { children: ReactNode }) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ShieldCheck className="size-5" />
-            {title}
+            {copy.title}
           </CardTitle>
-          <CardDescription>{message}</CardDescription>
+          <CardDescription>{copy.message}</CardDescription>
         </CardHeader>
         {startup.status !== "checking" ? (
           <CardFooter>

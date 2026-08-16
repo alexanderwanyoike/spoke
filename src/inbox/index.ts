@@ -13,14 +13,7 @@ import type { Store } from "../common/store";
 
 export type InboxSdk = Pick<JoltSdk, "publishJson"> &
   Pick<JoltEncryptedSdk, "publishEncryptedJson"> &
-  Pick<
-    JoltIngressSdk,
-    | "sendObject"
-    | "listPendingIngress"
-    | "openIngress"
-    | "acceptIngress"
-    | "rejectIngress"
-  >;
+  JoltIngressSdk;
 
 // "auto": apply now without asking the user. "manual": leave it in the review
 // queue. Auto-classification is conservative; anything uncertain is manual.

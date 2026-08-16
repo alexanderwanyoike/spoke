@@ -4,7 +4,10 @@ export const JOLT_UNAVAILABLE_MESSAGE =
   "Cannot reach the Jolt daemon. Start Jolt Console and make sure the daemon is running.";
 
 export function isJoltUnavailableError(error: unknown) {
-  const legacyTauriTransportFailure =
+  // The desktop host reports both transport failures and local client
+  // configuration failures here: neither can establish a daemon connection.
+  // Keep matching the legacy message form for older Jolt hosts as well.
+  const desktopHostConnectionFailure =
     error instanceof JoltApiError &&
     error.status === undefined &&
     /^(daemon request failed|failed to create daemon HTTP client|daemon response read failed):/.test(
@@ -13,7 +16,7 @@ export function isJoltUnavailableError(error: unknown) {
   return (
     error instanceof JoltTransportError ||
     error instanceof TypeError ||
-    legacyTauriTransportFailure ||
+    desktopHostConnectionFailure ||
     (error instanceof JoltApiError && (error.status === 500 || error.status === 502))
   );
 }

@@ -49,6 +49,21 @@ impl DaemonError {
             body: None,
         }
     }
+
+    fn response(
+        message: impl Into<String>,
+        status: reqwest::StatusCode,
+        code: Option<String>,
+        body: Option<Value>,
+    ) -> Self {
+        Self {
+            kind: "api",
+            message: message.into(),
+            status: Some(status.as_u16()),
+            code,
+            body,
+        }
+    }
 }
 
 #[tauri::command]
@@ -200,12 +215,13 @@ async fn parse_response(
     }
 
     if content_type.contains("application/json") {
-        serde_json::from_str(&body).map_err(|error| DaemonError {
-            kind: "api",
-            message: format!("daemon returned invalid JSON: {error}"),
-            status: Some(status.as_u16()),
-            code: None,
-            body: Some(Value::String(body)),
+        serde_json::from_str(&body).map_err(|error| {
+            DaemonError::response(
+                format!("daemon returned invalid JSON: {error}"),
+                status,
+                None,
+                Some(Value::String(body)),
+            )
         })
     } else {
         Ok(Value::String(body))
@@ -239,13 +255,12 @@ fn daemon_response_error(
         .and_then(Value::as_str)
         .map(str::to_owned);
 
-    DaemonError {
-        kind: "api",
+    DaemonError::response(
         message,
-        status: Some(status.as_u16()),
+        status,
         code,
-        body: parsed.or_else(|| Some(Value::String(body.to_owned()))),
-    }
+        parsed.or_else(|| Some(Value::String(body.to_owned()))),
+    )
 }
 
 fn daemon_url(base_path: &str, path: &str) -> Result<String, String> {
