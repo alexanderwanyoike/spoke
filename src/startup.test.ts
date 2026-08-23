@@ -73,4 +73,16 @@ describe("Spoke startup compatibility gate", () => {
     });
     expect(continueStartup).not.toHaveBeenCalled();
   });
+
+  it("does not hide an unexpected TypeError as unavailable", async () => {
+    const continueStartup = vi.fn(async () => undefined);
+    checkSpokeCompatibility.mockRejectedValue(
+      new TypeError("Application decoder bug")
+    );
+
+    await expect(enterSpokeRuntime(continueStartup)).rejects.toThrow(
+      "Application decoder bug"
+    );
+    expect(continueStartup).not.toHaveBeenCalled();
+  });
 });
