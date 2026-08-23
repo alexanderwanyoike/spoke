@@ -74,7 +74,7 @@ function getClient(getSessionToken: () => string = () => "") {
 
 function assertSpokePath(path: string) {
   if (!path.startsWith("/spoke/")) {
-    throw new Error("Spoke can only publish under /spoke/");
+    throw new Error("Spoke can only write under /spoke/");
   }
 }
 

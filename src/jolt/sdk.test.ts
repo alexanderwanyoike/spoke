@@ -82,7 +82,7 @@ describe("Jolt SDK ACL", () => {
     const sdk = createJoltSdk(() => "token-1");
 
     await expect(sdk.publishJson("/profile", { name: "Alice" })).rejects.toThrow(
-      "Spoke can only publish under /spoke/"
+      "Spoke can only write under /spoke/"
     );
     expect(fetch).not.toHaveBeenCalled();
   });
