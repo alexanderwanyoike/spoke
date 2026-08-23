@@ -56,10 +56,10 @@ export type {
 } from "jolt-sdk";
 
 // One transport for the whole app, chosen by runtime. Desktop goes through
-// the Tauri commands in src-tauri; web goes through the vite proxy so the
+// the shared Jolt Tauri plugin; web goes through the vite proxy so the
 // browser never needs CORS access to the daemon.
 function makeTransport(): JoltTransport {
-  return isTauriRuntime() ? new TauriTransport() : HttpTransport.viteProxy();
+  return isTauriRuntime() ? new TauriTransport({ plugin: true }) : HttpTransport.viteProxy();
 }
 
 let transport: JoltTransport | null = null;
@@ -70,6 +70,12 @@ function getTransport(): JoltTransport {
 
 function getClient(getSessionToken: () => string = () => "") {
   return createJoltClient({ transport: getTransport(), getSessionToken });
+}
+
+function assertSpokePath(path: string) {
+  if (!path.startsWith("/spoke/")) {
+    throw new Error("Spoke can only write under /spoke/");
+  }
 }
 
 export const SPOKE_COMPATIBILITY = {
@@ -93,7 +99,26 @@ export function apiErrorMessage(error: unknown) {
 export function createJoltSdk(
   getSessionToken: () => string
 ): JoltSdk & JoltEncryptedSdk & JoltIngressSdk & JoltAppendSdk {
-  return getClient(getSessionToken);
+  const client = getClient(getSessionToken);
+  return {
+    ...client,
+    async publishJson(path, body, options) {
+      assertSpokePath(path);
+      return await client.publishJson(path, body, options);
+    },
+    async publishAppend(path, body, options) {
+      assertSpokePath(path);
+      return await client.publishAppend(path, body, options);
+    },
+    async publishEncryptedJson(path, body, recipients, options) {
+      assertSpokePath(path);
+      return await client.publishEncryptedJson(path, body, recipients, options);
+    },
+    async sendObject(recipient, path, body, options) {
+      assertSpokePath(path);
+      return await client.sendObject(recipient, path, body, options);
+    }
+  };
 }
 
 // App-shell daemon operations (bootstrap, session, media) that sit outside
@@ -134,6 +159,7 @@ export async function publishBinary(
   file: File | Blob,
   options: { fileName: string; mimeType: string }
 ) {
+  assertSpokePath(path);
   return ops.publishBytes(
     getTransport(),
     sessionToken,
@@ -149,6 +175,7 @@ export async function publishEncryptedBinary(
   file: File | Blob,
   options: { mimeType: string; recipients: string[] }
 ) {
+  assertSpokePath(path);
   return ops.publishEncryptedBytes(
     getTransport(),
     sessionToken,

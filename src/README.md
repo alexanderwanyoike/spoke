@@ -160,10 +160,11 @@ remain separate in [`src/session.ts`](./session.ts).
 | Encrypted | `/encrypted/publish`, `/encrypted/decrypt` | `publishEncrypted*`, `readEncrypted` |
 | Ingress (DMs/follows) | `/ingress/*` | `sendObject`, `listPendingIngress`, … |
 
-On **web** these are `fetch` calls through the `/jolt-api` dev proxy; on
-**desktop** they go through Tauri `invoke` commands in
-[`../src-tauri/src/lib.rs`](../src-tauri/src/lib.rs) (`daemon_request`,
-`daemon_publish_json`, `daemon_publish_bytes`, `daemon_append`).
+On **web** these are `fetch` calls through the `/jolt-api` dev proxy. On
+**desktop** `jolt-sdk` invokes the audited commands supplied by the shared
+`tauri-plugin-jolt` adapter. Spoke's SDK / ACL seam rejects writes outside
+`/spoke/*` before either adapter is called; the daemon independently enforces
+the approved session capabilities.
 
 ## Features at a glance
 

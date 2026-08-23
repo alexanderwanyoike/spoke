@@ -11,6 +11,7 @@ const files = {
   tauriConfig: readFileSync("src-tauri/tauri.conf.json", "utf8"),
   tauriCargo: readFileSync("src-tauri/Cargo.toml", "utf8"),
   tauriLib: readFileSync("src-tauri/src/lib.rs", "utf8"),
+  tauriCapability: readFileSync("src-tauri/capabilities/default.json", "utf8"),
   packageJson: readFileSync("package.json", "utf8"),
   app: readFileSync("src/App.tsx", "utf8"),
   updateClient: readFileSync("src/update/client.ts", "utf8"),
@@ -113,8 +114,13 @@ const requiredMarkers = {
     "\"pubkey\"",
     "https://github.com/alexanderwanyoike/spoke/releases/latest/download/latest.json"
   ],
-  tauriCargo: ["tauri-plugin-updater", "tauri-plugin-process"],
-  tauriLib: ["tauri_plugin_updater::Builder", "tauri_plugin_process::init"],
+  tauriCargo: ["tauri-plugin-updater", "tauri-plugin-process", "tauri-plugin-jolt"],
+  tauriLib: [
+    "tauri_plugin_updater::Builder",
+    "tauri_plugin_process::init",
+    "tauri_plugin_jolt::init"
+  ],
+  tauriCapability: ["jolt:default"],
   packageJson: ["@tauri-apps/plugin-updater", "@tauri-apps/plugin-process", "jolt-sdk"],
   app: ["checkSpokeUpdate", "installSpokeUpdate", "Update available"],
   updateClient: ["check()", "downloadAndInstall", "relaunch"],
