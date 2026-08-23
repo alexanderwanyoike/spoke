@@ -1,6 +1,10 @@
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
-import type { AppCompatibilityDeclaration, AppCompatibilityResult } from "jolt-sdk";
+import {
+  decodeAppCompatibilityDeclaration,
+  type AppCompatibilityDeclaration,
+  type AppCompatibilityResult
+} from "jolt-sdk";
 import { checkSpokeCompatibility, SPOKE_COMPATIBILITY } from "../jolt";
 import { isJoltUnavailableError } from "../jolt/errors";
 
@@ -34,36 +38,16 @@ type PendingSpokeUpdate = {
 
 let pendingUpdate: PendingSpokeUpdate | null = null;
 
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value > 0;
-}
-
 function compatibilityDeclaration(update: Update): AppCompatibilityDeclaration {
   const raw = update.rawJson?.app_compatibility;
   // Manifests published before compatibility metadata use this build's baseline.
-  if (!raw || typeof raw !== "object") return SPOKE_COMPATIBILITY;
+  if (raw === undefined) return SPOKE_COMPATIBILITY;
 
-  const declaration = raw as {
-    app_api?: unknown;
-    required_features?: unknown;
-    optional_features?: unknown;
-  };
-  const validFeatureMap = (value: unknown): value is Record<string, number> => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    return Object.values(value).every(isPositiveInteger);
-  };
-  if (
-    !isPositiveInteger(declaration.app_api) ||
-    !validFeatureMap(declaration.required_features) ||
-    !validFeatureMap(declaration.optional_features)
-  ) {
+  try {
+    return decodeAppCompatibilityDeclaration(raw);
+  } catch {
     throw new Error("Spoke update has invalid app_compatibility metadata");
   }
-  return {
-    appApi: declaration.app_api,
-    requiredFeatures: declaration.required_features,
-    optionalFeatures: declaration.optional_features
-  };
 }
 
 async function inspectUpdate(update: Update): Promise<PendingSpokeUpdate> {
