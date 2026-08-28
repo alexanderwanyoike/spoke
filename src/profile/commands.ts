@@ -8,13 +8,14 @@ import { store as defaultStore, type Store } from "../common/store";
 import type { SpokeProfile } from "./model";
 
 export const PROFILE_PATH = "/spoke/profile";
+export type ProfileWriter = Pick<JoltSdk, "publishJson">;
 
 // Publish the local user's profile (a Singleton Object) and reflect it in the
 // store. A publish is the freshest value by causality, so it always wins over
 // whatever an earlier read cached, even when the daemon does not echo a
 // sequence on the publish response.
 export async function publishProfile(
-  sdk: JoltSdk,
+  sdk: ProfileWriter,
   profile: SpokeProfile,
   store: Store = defaultStore
 ): Promise<SpokeProfile> {

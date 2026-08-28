@@ -9,8 +9,10 @@ import { store as defaultStore, type Store } from "../common/store";
 import { decodeAnyReply, makeAcceptedRefPath } from "./model";
 import type { ThreadEnumeration } from "./enumeration";
 
+export type ThreadReader = Pick<JoltSdk, "read">;
+
 export async function loadThread(
-  sdk: JoltSdk,
+  sdk: ThreadReader,
   enumeration: ThreadEnumeration,
   postAuthor: string,
   postId: string,

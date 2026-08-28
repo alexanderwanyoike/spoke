@@ -13,6 +13,8 @@ import {
   type AcceptedReplyRef
 } from "./model";
 
+export type ThreadEnumerationSdk = Pick<JoltSdk, "readContent"> & JoltAppendSdk;
+
 export interface ThreadEnumeration {
   // List an author's accepted references for a post, with the version to fold
   // each reference into the store at.
@@ -25,7 +27,7 @@ export interface ThreadEnumeration {
   recordAccepted(postId: string, ref: AcceptedReplyRef): Promise<number>;
 }
 
-export function createJoltThreadEnumeration(sdk: JoltSdk & JoltAppendSdk): ThreadEnumeration {
+export function createJoltThreadEnumeration(sdk: ThreadEnumerationSdk): ThreadEnumeration {
   return {
     async listAccepted(postAuthor, postId) {
       const records = await sdk.enumerate(postAuthor, makeAcceptedPrefix(postId));
