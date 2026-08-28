@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { JoltAppendSdk, JoltSdk, Reference } from "../jolt";
+import type { Reference } from "../jolt";
 import { createStore } from "../common/store";
 import type { SpokeReply } from "./model";
 import {
@@ -10,10 +10,13 @@ import {
   type SpokeReplyV2
 } from "./model";
 import type { ThreadEnumeration } from "./enumeration";
+import type { ThreadEnumerationSdk } from "./enumeration";
 import { createJoltThreadEnumeration } from "./enumeration";
 import { acceptanceDecision } from "./policy";
 import { submitReply, acceptReply, unacceptReply } from "./commands";
+import type { ThreadWriter } from "./commands";
 import { loadThread } from "./loaders";
+import type { ThreadReader } from "./loaders";
 import { selectThread } from "./queries";
 
 function replyV2(overrides: Partial<SpokeReplyV2>): SpokeReplyV2 {
@@ -48,7 +51,7 @@ function encode(value: unknown): number[] {
 function fakeSdk(
   reads: Record<string, { latestSequence: number; contentId: string; bytes: number[] }> = {},
   onPublish?: (path: string, body: object) => void
-): JoltSdk {
+): ThreadWriter & ThreadReader {
   return {
     async publishJson(path, body) {
       onPublish?.(path, body);
@@ -59,12 +62,6 @@ function fakeSdk(
       if (!hit) return null;
       const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(hit.bytes))));
       return value === null ? null : { ref, value, latestSequence: hit.latestSequence, contentId: hit.contentId };
-    },
-    async readContent(contentId, ref, latestSequence, decode) {
-      const hit = Object.values(reads).find((item) => item.contentId === contentId);
-      if (!hit) return null;
-      const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(hit.bytes))));
-      return value === null ? null : { ref, value, latestSequence, contentId };
     }
   };
 }
@@ -244,15 +241,7 @@ describe("jolt thread enumeration", () => {
     const ref = acceptedRef(reply);
     const appendPath = makeAcceptedRefPath("p1", "r_bob");
     const appended: Array<{ path: string; body: unknown }> = [];
-    const sdk: JoltSdk & JoltAppendSdk = {
-      async publishJson(path) {
-        return { contentId: "c", latestSequence: 1, path, address: null };
-      },
-      async read(r: Reference, decode) {
-        if (r.path !== appendPath) return null;
-        const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(encode(ref)))));
-        return value === null ? null : { ref: r, value, latestSequence: 7, contentId: "cacc" };
-      },
+    const sdk: ThreadEnumerationSdk = {
       async readContent(contentId, r, latestSequence, decode) {
         if (contentId !== "cacc" || r.path !== appendPath) return null;
         const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(encode(ref)))));
