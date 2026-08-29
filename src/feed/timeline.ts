@@ -83,6 +83,7 @@ export function createFeedTimeline(
     lastVerifiedAt?: number;
     reason?: SubscriptionFailureValue;
     subscription?: PostSubscription;
+    subscriptionPromise?: Promise<PostSubscription>;
     stream?: DataChangeStream<Post>;
   };
 
@@ -229,10 +230,23 @@ export function createFeedTimeline(
   async function refreshSource(source: Source) {
     try {
       const hadStream = source.stream !== undefined;
-      source.subscription ??= await createSubscription(
-        source.identity,
-        posts.for(source.identity),
-      );
+      if (!source.subscription) {
+        const pending = source.subscriptionPromise ??= createSubscription(
+          source.identity,
+          posts.for(source.identity),
+        );
+        let subscription: PostSubscription;
+        try {
+          subscription = await pending;
+        } finally {
+          if (source.subscriptionPromise === pending) source.subscriptionPromise = undefined;
+        }
+        if (!source.active) {
+          await subscription.remove().catch(() => {});
+          return;
+        }
+        source.subscription ??= subscription;
+      }
       const items = await source.subscription.get();
       if (!source.active) return;
       // A retained Change Stream may advance while get() returns its cached

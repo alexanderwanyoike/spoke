@@ -261,4 +261,32 @@ describe("feed timeline", () => {
     ]);
     expect(timeline.getSnapshot().state).toBe(SubscriptionState.Ready);
   });
+
+  it("coalesces concurrent Home opens into one subscription per identity", async () => {
+    const viewer = SpokeData.test({ identity: "viewer.jolt" });
+    let release!: () => void;
+    const admitted = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const created = vi.fn(async (identity: string) => {
+      await admitted;
+      return {
+        id: `sub_${identity}`,
+        identity,
+        state: SubscriptionState.Ready,
+        get: async () => [],
+        remove: async () => {},
+      } as unknown as DataSubscription<Post>;
+    });
+    const timeline = createFeedTimeline(viewer.posts, { createSubscription: created });
+    const scope = { localIdentity: "", contacts: [contact("alice.jolt", "Alice")] };
+
+    const first = timeline.open(scope);
+    const second = timeline.open(scope);
+    release();
+    await Promise.all([first, second]);
+
+    expect(created).toHaveBeenCalledTimes(1);
+    await timeline.close();
+  });
 });
