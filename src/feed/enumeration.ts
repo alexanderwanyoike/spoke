@@ -37,6 +37,6 @@ function postRefFromRecord(identity: string, record: EnumeratedRecord): PostRef 
     author: identity,
     contentId: record.contentId,
     latestSequence: record.deviceSequence,
-    createdAt: record.createdAt
+    createdAt: new Date(record.createdAt * 1_000).toISOString()
   };
 }

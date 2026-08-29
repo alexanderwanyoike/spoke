@@ -1,0 +1,264 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  State,
+  SubscriptionFailure,
+  SubscriptionState,
+  type DataSubscription,
+  type PresentItem,
+} from "jolt-sdk/data";
+
+import { SpokeData, type Post } from "../data";
+import type { Contact } from "./model";
+import { createFeedTimeline } from "./timeline";
+
+function contact(identity: string, displayName: string): Contact {
+  return { identity, displayName, relationship: "accepted" };
+}
+
+describe("feed timeline", () => {
+  it("opens from typed Materialized Views and preserves Spoke's feed ordering", async () => {
+    const world = SpokeData.testWorld();
+    const alice = world.as("alice.jolt");
+    const bob = world.as("bob.jolt");
+    const viewer = world.as("viewer.jolt");
+
+    await alice.posts.create({
+      author: "alice.jolt",
+      displayName: "Alice",
+      title: "Older",
+      body: "Alice's post",
+      createdAt: new Date("2026-08-29T09:00:00.000Z"),
+    });
+    await bob.posts.create({
+      author: "bob.jolt",
+      displayName: "Bob",
+      title: "Newer",
+      body: "Bob's post",
+      createdAt: new Date("2026-08-29T10:00:00.000Z"),
+    });
+
+    const timeline = createFeedTimeline(viewer.posts);
+    await timeline.open({
+      localIdentity: "viewer.jolt",
+      contacts: [contact("alice.jolt", "Alice"), contact("bob.jolt", "Bob")],
+    });
+
+    const view = timeline.getSnapshot();
+    expect(view.state).toBe(SubscriptionState.Ready);
+    expect(view.items.map((item) => item.post.title)).toEqual(["Newer", "Older"]);
+    expect(view.items.map((item) => item.source)).toEqual(["contact", "contact"]);
+    expect(view.items[0]?.address).toMatch(/^bob\.jolt\/spoke\/posts\//);
+
+    await timeline.close();
+  });
+
+  it("renders the Last Verified View immediately when its source is offline", async () => {
+    const viewer = SpokeData.test({ identity: "viewer.jolt" });
+    const cached = {
+      state: State.Present,
+      ref: { identity: "alice.jolt", path: "/spoke/posts/cached" },
+      value: {
+        author: "alice.jolt",
+        title: "Still visible",
+        body: "Cached before Alice went offline",
+        createdAt: new Date("2026-08-29T09:00:00.000Z"),
+      },
+      isPresent: () => true,
+      isDeleted: () => false,
+      isConflicted: () => false,
+    } as unknown as PresentItem<Post>;
+    const subscription = {
+      id: "sub_alice",
+      identity: "alice.jolt",
+      state: SubscriptionState.Stale,
+      lastVerifiedAt: 1_788_000_000,
+      reason: SubscriptionFailure.NetworkUnavailable,
+      get: async () => [cached],
+      remove: async () => {},
+    } as unknown as DataSubscription<Post>;
+    const timeline = createFeedTimeline(viewer.posts, {
+      createSubscription: async () => subscription,
+    });
+
+    await timeline.open({
+      localIdentity: "",
+      contacts: [contact("alice.jolt", "Alice")],
+    });
+
+    expect(timeline.getSnapshot()).toMatchObject({
+      state: SubscriptionState.Stale,
+      reason: SubscriptionFailure.NetworkUnavailable,
+      lastVerifiedAt: 1_788_000_000,
+    });
+    expect(timeline.getSnapshot().items.map((item) => item.post.title)).toEqual([
+      "Still visible",
+    ]);
+  });
+
+  it("keeps healthy followed content visible when another identity is unavailable", async () => {
+    const viewer = SpokeData.test({ identity: "viewer.jolt" });
+    const alicePost = {
+      state: State.Present,
+      ref: { identity: "alice.jolt", path: "/spoke/posts/healthy" },
+      value: {
+        author: "alice.jolt",
+        title: "Alice is here",
+        body: "A verified post",
+        createdAt: new Date("2026-08-29T09:00:00.000Z"),
+      },
+    } as unknown as PresentItem<Post>;
+    const alice = {
+      id: "sub_alice",
+      identity: "alice.jolt",
+      state: SubscriptionState.Ready,
+      get: async () => [alicePost],
+      remove: async () => {},
+    } as unknown as DataSubscription<Post>;
+    const bob = {
+      id: "sub_bob",
+      identity: "bob.jolt",
+      state: SubscriptionState.Unavailable,
+      reason: SubscriptionFailure.NetworkUnavailable,
+      get: async () => {
+        throw new Error("Bob is offline");
+      },
+      remove: async () => {},
+    } as unknown as DataSubscription<Post>;
+    const timeline = createFeedTimeline(viewer.posts, {
+      createSubscription: async (identity) => identity === "alice.jolt" ? alice : bob,
+    });
+
+    await expect(timeline.open({
+      localIdentity: "",
+      contacts: [contact("alice.jolt", "Alice"), contact("bob.jolt", "Bob")],
+    })).resolves.toBeUndefined();
+
+    const view = timeline.getSnapshot();
+    expect(view.items.map((item) => item.post.title)).toEqual(["Alice is here"]);
+    expect(view.state).toBe(SubscriptionState.Stale);
+    expect(view.sources).toEqual([
+      { identity: "alice.jolt", state: SubscriptionState.Ready },
+      {
+        identity: "bob.jolt",
+        state: SubscriptionState.Unavailable,
+        reason: SubscriptionFailure.NetworkUnavailable,
+      },
+    ]);
+  });
+
+  it("inserts a newly verified post from the local Change Stream", async () => {
+    const world = SpokeData.testWorld();
+    const alice = world.as("alice.jolt");
+    const viewer = world.as("viewer.jolt");
+    await alice.posts.create({
+      author: "alice.jolt",
+      title: "First",
+      body: "Already cached",
+      createdAt: new Date("2026-08-29T09:00:00.000Z"),
+    });
+    const timeline = createFeedTimeline(viewer.posts);
+    await timeline.open({
+      localIdentity: "",
+      contacts: [contact("alice.jolt", "Alice")],
+    });
+    const changed = vi.fn();
+    const unsubscribe = timeline.subscribe(changed);
+
+    await alice.posts.create({
+      author: "alice.jolt",
+      title: "Second",
+      body: "Arrived as a delta",
+      createdAt: new Date("2026-08-29T10:00:00.000Z"),
+    });
+
+    await vi.waitFor(() => {
+      expect(timeline.getSnapshot().items.map((item) => item.post.title)).toEqual([
+        "Second",
+        "First",
+      ]);
+    });
+    expect(changed).toHaveBeenCalled();
+
+    unsubscribe();
+    await timeline.close();
+  });
+
+  it("retains subscriptions on warm open and removes only an unfollowed identity", async () => {
+    const viewer = SpokeData.test({ identity: "viewer.jolt" });
+    const removed: string[] = [];
+    const created: string[] = [];
+    const timeline = createFeedTimeline(viewer.posts, {
+      createSubscription: async (identity) => {
+        created.push(identity);
+        return {
+          id: `sub_${identity}`,
+          identity,
+          state: SubscriptionState.Ready,
+          get: async () => [],
+          remove: async () => {
+            removed.push(identity);
+          },
+        } as unknown as DataSubscription<Post>;
+      },
+    });
+    const alice = contact("alice.jolt", "Alice");
+    const bob = contact("bob.jolt", "Bob");
+
+    await timeline.open({ localIdentity: "", contacts: [alice, bob] });
+    await timeline.open({ localIdentity: "", contacts: [alice, bob] });
+    expect(created).toEqual(["alice.jolt", "bob.jolt"]);
+    expect(removed).toEqual([]);
+
+    await timeline.open({ localIdentity: "", contacts: [alice] });
+    expect(created).toEqual(["alice.jolt", "bob.jolt"]);
+    expect(removed).toEqual(["bob.jolt"]);
+    expect(timeline.getSnapshot().sources.map((source) => source.identity)).toEqual([
+      "alice.jolt",
+    ]);
+
+    await timeline.close();
+  });
+
+  it("isolates one malformed projected record from healthy posts by the same identity", async () => {
+    const viewer = SpokeData.test({ identity: "viewer.jolt" });
+    const healthy = {
+      state: State.Present,
+      ref: { identity: "alice.jolt", path: "/spoke/posts/healthy" },
+      value: {
+        author: "alice.jolt",
+        title: "Healthy",
+        body: "Still rendered",
+        createdAt: new Date("2026-08-29T09:00:00.000Z"),
+      },
+    } as unknown as PresentItem<Post>;
+    const malformed = {
+      state: State.Present,
+      ref: { identity: "alice.jolt", path: "/spoke/posts/malformed" },
+      value: {
+        author: "alice.jolt",
+        title: "Malformed",
+        body: "Historical invalid date",
+        createdAt: "not-a-date",
+      },
+    } as unknown as PresentItem<Post>;
+    const subscription = {
+      id: "sub_alice",
+      identity: "alice.jolt",
+      state: SubscriptionState.Ready,
+      get: async () => [malformed, healthy],
+      remove: async () => {},
+    } as unknown as DataSubscription<Post>;
+    const timeline = createFeedTimeline(viewer.posts, {
+      createSubscription: async () => subscription,
+    });
+
+    await expect(timeline.open({
+      localIdentity: "",
+      contacts: [contact("alice.jolt", "Alice")],
+    })).resolves.toBeUndefined();
+    expect(timeline.getSnapshot().items.map((item) => item.post.title)).toEqual([
+      "Healthy",
+    ]);
+    expect(timeline.getSnapshot().state).toBe(SubscriptionState.Ready);
+  });
+});

@@ -2769,10 +2769,10 @@ jiti@^2.7.0:
   resolved "https://registry.yarnpkg.com/jiti/-/jiti-2.7.0.tgz#974228f2f4ca2bc21885a1797b45fea68e950c64"
   integrity sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==
 
-jolt-sdk@^0.2.0:
-  version "0.2.0"
-  resolved "https://registry.yarnpkg.com/jolt-sdk/-/jolt-sdk-0.2.0.tgz#d98936facacf3dcabef083b212d14a05ff3a807f"
-  integrity sha512-q6uPe7Q7gq2ratKnxB34cx+T0AoR8OF4tZpIafNDPuaS8zzeg1LE0cMP0bgMzT14Gu3voH/5BwD4LETjSIcmOw==
+jolt-sdk@^0.3.0:
+  version "0.3.0"
+  resolved "https://registry.yarnpkg.com/jolt-sdk/-/jolt-sdk-0.3.0.tgz#1780dfbf2aec4f19d9946effb7de46116cce829c"
+  integrity sha512-v9JZVP5WK51GSlmkjFRtw8m7JK6rU6Xm6NGZrntHZTrfBnXTFkIF3trh/WWIuleuMwCml+EER9WEP2PaYSterQ==
 
 jose@^6.1.3:
   version "6.2.8"
