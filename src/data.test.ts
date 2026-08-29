@@ -1,9 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { State } from "jolt-sdk/data";
 
-import { SpokeData } from "./data";
+import { type ImageAttachment, SpokeData } from "./data";
 
 describe("Spoke Data SDK application", () => {
+  it("requires the image attachment discriminator", async () => {
+    const spoke = SpokeData.test({ identity: "alice.jolt" });
+
+    await expect(
+      spoke.posts.create({
+        author: "alice.jolt",
+        title: "Photo",
+        body: "An attachment",
+        createdAt: new Date("2026-08-29T08:00:00.000Z"),
+        attachments: [
+          {
+            id: "photo-1",
+            contentId: "bafk-photo-1",
+            mimeType: "image/jpeg",
+            size: 1024,
+          } as unknown as ImageAttachment,
+        ],
+      }),
+    ).rejects.toMatchObject({
+      name: "SchemaValidationError",
+      field: "kind",
+    });
+  });
+
   it("keeps a stable profile reference and independent mutable post references", async () => {
     const spoke = SpokeData.test({ identity: "alice.jolt" });
     const createdProfile = await spoke.profile.getOrCreate({
