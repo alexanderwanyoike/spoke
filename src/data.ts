@@ -13,8 +13,12 @@ export class ImageAttachment {
   id!: string;
 
   @Field.string()
+  kind!: "image";
+
+  @Field.string()
   contentId!: string;
 
+  // Card 117 will normalise legacy `null` addresses to an absent field.
   @Field.string({ optional: true })
   address?: string;
 
@@ -112,6 +116,7 @@ const Posts = Collection.create(Post, {
   },
 });
 
+// Advanced seam only until Card 117 wires the production flow and delete grant.
 export const SpokeData = App.create({
   id: "spoke.local",
   name: "Spoke",
