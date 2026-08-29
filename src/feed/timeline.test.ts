@@ -19,9 +19,9 @@ function contact(identity: string, displayName: string): Contact {
 describe("feed timeline", () => {
   it("opens from typed Materialized Views and preserves Spoke's feed ordering", async () => {
     const world = SpokeData.testWorld();
-    const alice = world.as("alice.jolt");
-    const bob = world.as("bob.jolt");
-    const viewer = world.as("viewer.jolt");
+    const alice = world.as("alice");
+    const bob = world.as("bob");
+    const viewer = world.as("viewer");
 
     await alice.posts.create({
       author: "alice.jolt",
@@ -48,7 +48,7 @@ describe("feed timeline", () => {
     expect(view.state).toBe(SubscriptionState.Ready);
     expect(view.items.map((item) => item.post.title)).toEqual(["Newer", "Older"]);
     expect(view.items.map((item) => item.source)).toEqual(["contact", "contact"]);
-    expect(view.items[0]?.address).toMatch(/^bob\.jolt\/spoke\/posts\//);
+    expect(view.items[0]?.address).toMatch(/^bob\/spoke\/posts\//);
 
     await timeline.close();
   });
@@ -149,8 +149,8 @@ describe("feed timeline", () => {
 
   it("inserts a newly verified post from the local Change Stream", async () => {
     const world = SpokeData.testWorld();
-    const alice = world.as("alice.jolt");
-    const viewer = world.as("viewer.jolt");
+    const alice = world.as("alice");
+    const viewer = world.as("viewer");
     await alice.posts.create({
       author: "alice.jolt",
       title: "First",
@@ -406,5 +406,52 @@ describe("feed timeline", () => {
     expect(attempts).toBe(2);
 
     await timeline.close();
+  });
+
+  it("backs repeated Change Stream failures off to a ceiling", async () => {
+    vi.useFakeTimers();
+    try {
+      const viewer = SpokeData.test({ identity: "viewer.jolt" });
+      let attempts = 0;
+      const subscription = {
+        id: "sub_alice",
+        identity: "alice.jolt",
+        state: SubscriptionState.Ready,
+        get: async () => [],
+        changes: () => {
+          attempts += 1;
+          return {
+            async *[Symbol.asyncIterator]() {
+              throw new Error("still offline");
+            },
+            cancel: async () => {},
+          };
+        },
+        remove: async () => {},
+      } as unknown as DataSubscription<Post>;
+      const timeline = createFeedTimeline(viewer.posts, {
+        createSubscription: async () => subscription,
+        streamRetryMs: 10,
+        streamRetryMaxMs: 40,
+      });
+
+      await timeline.open({
+        localIdentity: "",
+        contacts: [contact("alice.jolt", "Alice")],
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(attempts).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(10);
+      expect(attempts).toBe(2);
+      await vi.advanceTimersByTimeAsync(20);
+      expect(attempts).toBe(3);
+      await vi.advanceTimersByTimeAsync(40);
+      expect(attempts).toBe(4);
+
+      await timeline.close();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

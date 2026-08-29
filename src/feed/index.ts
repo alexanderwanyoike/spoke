@@ -7,3 +7,10 @@ export { createJoltEnumeration, type EnumerationSource, type PostRef } from "./e
 export { publishPost } from "./commands";
 export { loadFeed } from "./loaders";
 export { selectFeed, readFeed, useFeed, type FeedScope } from "./queries";
+export {
+  createFeedTimeline,
+  type FeedTimeline,
+  type FeedTimelineSnapshot,
+  type FeedTimelineSourceSnapshot,
+} from "./timeline";
+export { useSpokeTimeline, type SpokeTimeline } from "./use-spoke-timeline";

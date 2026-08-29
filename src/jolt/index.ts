@@ -9,6 +9,7 @@
 
 import {
   apiErrorMessage as sdkApiErrorMessage,
+  createDataClient,
   createJoltClient,
   makeId,
   operations as ops,
@@ -70,6 +71,11 @@ function getTransport(): JoltTransport {
 
 function getClient(getSessionToken: () => string = () => "") {
   return createJoltClient({ transport: getTransport(), getSessionToken });
+}
+
+/** Advanced host seam consumed only by Spoke's typed Data application. */
+export function createJoltDataClient(getSessionToken: () => string) {
+  return createDataClient({ transport: getTransport(), getSessionToken });
 }
 
 function assertSpokePath(path: string) {

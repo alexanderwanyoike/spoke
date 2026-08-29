@@ -86,25 +86,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
-  createJoltEnumeration,
   displayNameForFeedItem,
-  loadFeed,
-  makePostPath,
-  publishPost as publishPostCommand,
-  readFeed,
-  useFeed,
   activeContacts,
+  useSpokeTimeline,
   type Contact,
+  type FeedTimelineSnapshot,
   type FeedItem,
-  type SpokePost
 } from "./feed";
+import { SubscriptionFailure, SubscriptionState } from "jolt-sdk/data";
 import {
   addContact as addContactCommand,
   isSpokeFollowRequest,
   isSpokeFollowResponse,
   loadContacts,
   publishContact,
-  readContacts,
   removeContact,
   requestFollow,
   sameIdentity,
@@ -182,6 +177,7 @@ import {
   type IngressRecord,
   type NodeStatus
 } from "./jolt";
+import { useSpokeData } from "./use-spoke-data";
 import { SPOKE_CAPABILITIES, requestSpokeSession } from "./session";
 import {
   tauriSpokeUpdateClient,
@@ -228,7 +224,6 @@ const SESSION_KEY = "spoke.session";
 const CONTACTS_KEY = "spoke.contacts";
 const PROFILE_KEY = "spoke.profile";
 const THEME_KEY = "spoke.theme";
-const FEED_REFRESH_MS = 2000;
 const INCOMING_REFRESH_MS = 2000;
 const CONVERSATION_REFRESH_MS = 3000;
 const MEDIA_RETRY_MS = 5000;
@@ -364,6 +359,18 @@ function notificationGroupLabel(receivedAt: number) {
   return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 }
 
+function feedStateLabel(snapshot: FeedTimelineSnapshot | null) {
+  if (!snapshot || snapshot.state === SubscriptionState.Loading) return "loading saved posts";
+  if (snapshot.state === SubscriptionState.Updating) return "updating saved posts";
+  if (snapshot.state === SubscriptionState.Ready) return "ready";
+  if (snapshot.state === SubscriptionState.Stale) {
+    return snapshot.reason === SubscriptionFailure.NetworkUnavailable
+      ? "showing saved posts — network unavailable"
+      : "showing saved posts — refresh failed";
+  }
+  return "unavailable";
+}
+
 function App() {
   return (
     <SpokeStartupGate>
@@ -426,12 +433,9 @@ function SpokeRuntime() {
   const [updateCheck, setUpdateCheck] = useState<SpokeUpdateCheck | null>(null);
   const [updateAction, setUpdateAction] = useState<"check" | "install" | null>(null);
   const [sessionValidated, setSessionValidated] = useState(false);
-  const [feedRefreshing, setFeedRefreshing] = useState(false);
   const [mediaRetryTick, setMediaRetryTick] = useState(0);
-  const feedRefreshInFlight = useRef(false);
   const incomingRefreshInFlight = useRef(false);
   const conversationRefreshInFlight = useRef(false);
-  const feedRefreshGeneration = useRef(0);
   const pendingAttachmentUrlsRef = useRef<string[]>([]);
   const fetchedAttachmentUrlsRef = useRef<Set<string>>(new Set());
   const fetchingAttachmentKeysRef = useRef<Set<string>>(new Set());
@@ -456,16 +460,39 @@ function SpokeRuntime() {
   // inbox loop fold writes into the store; these hooks re-render off it.
   const contacts = useContacts(localIdentity);
   const conversations = useConversations(localIdentity);
-
-  // The feed reads from the monotonic store through the query seam; enumeration
-  // discovers posts via Jolt's append-record enumeration (J1, card 104).
-  const enumeration = useMemo(() => createJoltEnumeration(jolt), [jolt]);
-  const feed = useFeed({ localIdentity, contacts });
+  const { data: spokeData, error: spokeDataError } = useSpokeData({
+    identity: localIdentity,
+    sessionToken,
+    enabled: canUseApp,
+  });
+  const timeline = useSpokeTimeline(spokeData, { localIdentity, contacts });
+  const feed = timeline.items;
+  const displayedError = error || (
+    spokeDataError || timeline.error
+      ? apiErrorMessage(spokeDataError ?? timeline.error)
+      : ""
+  );
 
   // Threads are author-anchored: the bridge enumerates the post author's
   // accepted-reply Collection (swappable for J1 in card 104). useThreads
   // projects one nested tree per visible post from the monotonic store.
   const threadBridge = useMemo(() => createJoltThreadEnumeration(jolt), [jolt]);
+  const feedDetailKey = useMemo(
+    () => feed.map((item) => item.address).join("\u0000"),
+    [feed]
+  );
+  const feedContactKey = useMemo(
+    () => activeContacts(contacts).map((contact) => contact.identity).join("\u0000"),
+    [contacts]
+  );
+
+  useEffect(() => {
+    if (!canUseApp) return;
+    void loadFeedDetails(feed).catch(() => {});
+    // The keys deliberately ignore freshness-only timeline updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canUseApp, feedContactKey, feedDetailKey, jolt, localIdentity, threadBridge]);
+
   const threadScopes = useMemo<ThreadScope[]>(
     () => feed.map((item) => ({ postId: item.post.id, postAuthor: item.post.author, localIdentity })),
     [feed, localIdentity]
@@ -484,6 +511,7 @@ function SpokeRuntime() {
   );
   const localFeedItems = useMemo(() => feed.filter((item) => item.source === "local"), [feed]);
   const activeContactCount = useMemo(() => activeContacts(contacts).length, [contacts]);
+  const feedStatus = feedStateLabel(timeline);
   const acceptedContacts = useMemo(
     () =>
       contacts.filter(
@@ -712,11 +740,7 @@ function SpokeRuntime() {
       if (cancelled) return;
       await loadContacts(jolt, localIdentity).catch(() => {});
       if (cancelled) return;
-      const hydratedContacts = readContacts(localIdentity);
-      await Promise.all([
-        loadConversations(jolt, localIdentity).catch(() => {}),
-        loadFeedSnapshot(hydratedContacts).catch(() => {})
-      ]);
+      await loadConversations(jolt, localIdentity).catch(() => {});
     })();
     return () => {
       cancelled = true;
@@ -1377,13 +1401,15 @@ function SpokeRuntime() {
 
   async function publishPost() {
     await withBusy("post", async () => {
+      if (!spokeData) {
+        throw new Error("The Spoke data connection is still starting.");
+      }
       const title = postDraft.title.trim();
       const body = postDraft.body.trim();
       if (!title || !body) {
         throw new Error("A Spoke post needs a title and body.");
       }
 
-      const id = makeId("post");
       const attachments = await Promise.all(
         postAttachments.map(async (attachment) => {
           const published = await publishBinary(sessionToken, mediaPath(attachment.id), attachment.file, {
@@ -1400,23 +1426,21 @@ function SpokeRuntime() {
           });
         })
       );
-      const post: SpokePost = {
-        schema: attachments.length > 0 ? "spoke.post.v2" : "spoke.post.v1",
-        id,
+      await spokeData.posts.create({
         author: localIdentity,
         displayName: profileDraft.displayName.trim() || localIdentity,
         title,
         body,
-        createdAt: new Date().toISOString(),
-        path: makePostPath(id),
-        threadPath: makeAcceptedPrefix(id),
-        ...(attachments.length > 0 ? { attachments } : {})
-      };
-      // Publish the post (Append Record), record it in the bridge index, and
-      // fold it into the store. The post appears in the feed Projection at once
-      // because the store update is synchronous after the publish resolves.
-      await publishPostCommand(jolt, post);
-      feedRefreshGeneration.current += 1;
+        createdAt: new Date(),
+        ...(attachments.length > 0
+          ? {
+              attachments: attachments.map(({ address, ...attachment }) => ({
+                ...attachment,
+                ...(address ? { address } : {})
+              }))
+            }
+          : {})
+      });
       for (const attachment of attachments) {
         const pendingAttachment = postAttachments.find((item) => item.id === attachment.id);
         if (pendingAttachment) {
@@ -1433,9 +1457,8 @@ function SpokeRuntime() {
       setNotice(
         attachments.length > 0
           ? "Post and media attachments published."
-          : "Post published and local feed index updated."
+          : "Post published."
       );
-      void refreshFeedSilently();
     });
   }
 
@@ -1470,7 +1493,6 @@ function SpokeRuntime() {
     const displayName = contactDraft.displayName.trim() || identity;
     await addContactCommand(jolt, localIdentity, { identity, displayName });
     setContactDraft({ identity: "", displayName: "" });
-    void loadFeedSnapshot([...contacts, { identity, displayName, relationship: "local" }]);
   }
 
   async function sendFollowRequest() {
@@ -1536,31 +1558,15 @@ function SpokeRuntime() {
   }, [showContactsModal, canUseApp, jolt, sessionToken, contactDraft.identity]);
 
 
-  async function loadFeedSnapshot(nextContacts = contacts) {
+  async function loadFeedDetails(items: readonly FeedItem[], nextContacts = contacts) {
     const feedContacts = activeContacts(nextContacts);
-    const generation = ++feedRefreshGeneration.current;
-    setFeedRefreshing(true);
     const identities = [localIdentity, ...feedContacts.map((contact) => contact.identity)].filter(
       Boolean
     );
 
-    // Hydrate profiles (card 101) and posts (card 102) into the monotonic store
-    // through the loader seam. Both merges are additive and monotonic: a stale
-    // or incomplete read can never drop a record another reader confirmed, so
-    // the timeline no longer needs snapshot-merge gymnastics.
     await Promise.all(identities.map((identity) => loadProfile(jolt, identity).catch(() => null)));
-    await loadFeed(jolt, enumeration, identities);
-
-    if (generation === feedRefreshGeneration.current) {
-      setFeedRefreshing(false);
-    }
-
-    // Threads (card 091): for each visible post, enumerate the author's
-    // accepted-reply Collection and fold the replies into the store. Additive
-    // and monotonic; an incomplete refresh cannot drop an accepted reply.
-    const feedItems = readFeed({ localIdentity, contacts: nextContacts });
     await Promise.all(
-      feedItems.map((item) =>
+      items.map((item) =>
         loadThread(jolt, threadBridge, item.post.author, item.post.id).catch(() => {})
       )
     );
@@ -1584,24 +1590,10 @@ function SpokeRuntime() {
 
   async function refreshFeed() {
     await withBusy("feed", async () => {
-      await loadFeedSnapshot();
+      const snapshot = await timeline.refresh();
+      await loadFeedDetails(snapshot.items);
       setNotice("Feed refreshed.");
     });
-  }
-
-  async function refreshFeedSilently() {
-    if (feedRefreshInFlight.current) {
-      return;
-    }
-    feedRefreshInFlight.current = true;
-    try {
-      await loadFeedSnapshot();
-    } catch {
-      // Silent polling should not interrupt the active workflow.
-    } finally {
-      feedRefreshInFlight.current = false;
-      setFeedRefreshing(false);
-    }
   }
 
   async function sendReply(item: FeedItem, parentId: string) {
@@ -1635,7 +1627,7 @@ function SpokeRuntime() {
         setNotice("Encrypted reply submitted to the post author.");
       }
       setReplyDrafts((current) => ({ ...current, [draftKey]: "" }));
-      void refreshFeedSilently();
+      void loadThread(jolt, threadBridge, item.post.author, item.post.id).catch(() => {});
     });
   }
 
@@ -1730,8 +1722,6 @@ function SpokeRuntime() {
         }
         return next;
       });
-      // A newly accepted follow can add a feed source; refresh the timeline.
-      void loadFeedSnapshot();
     }
   }
 
@@ -1806,8 +1796,6 @@ function SpokeRuntime() {
       await acceptInboxRecord(jolt, inboxHandlers, record.ingress_id, opened, inboxContext);
       setIncoming((current) => current.filter((item) => item.ingress_id !== record.ingress_id));
       recordHandledNotification(record, "accepted", opened);
-      // Accepting a follow or message may change feed scope; refresh.
-      void loadFeedSnapshot();
       setNotice(acceptNoticeFor(opened));
     });
   }
@@ -2547,16 +2535,6 @@ function SpokeRuntime() {
       return;
     }
 
-    refreshFeedSilently();
-    const timer = window.setInterval(refreshFeedSilently, FEED_REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [canUseApp, sessionToken, localIdentity, contacts]);
-
-  useEffect(() => {
-    if (!canUseApp) {
-      return;
-    }
-
     refreshIncomingSilently();
     const timer = window.setInterval(refreshIncomingSilently, INCOMING_REFRESH_MS);
     return () => window.clearInterval(timer);
@@ -2575,7 +2553,7 @@ function SpokeRuntime() {
   const viewTitle: Record<AppView, { title: string; subtitle: string }> = {
     feed: {
       title: "Feed",
-      subtitle: `${localPosts} local posts, ${activeContactCount} active contacts${feedRefreshing ? " - updating..." : ""}`
+      subtitle: `${localPosts} local posts, ${activeContactCount} active contacts — ${feedStatus}`
     },
     profile: {
       title: "Your Profile",
@@ -2742,7 +2720,7 @@ function SpokeRuntime() {
             </header>
 
             <main className={cn("mx-auto grid w-full gap-5 p-4 lg:p-8", activeView === "messages" ? "max-w-7xl" : "max-w-5xl")}>
-            {error ? <div className="rounded-lg border spoke-border-error bg-destructive/10 px-3 py-2 text-sm text-destructive shadow-sm shadow-destructive/5">{error}</div> : null}
+            {displayedError ? <div className="rounded-lg border spoke-border-error bg-destructive/10 px-3 py-2 text-sm text-destructive shadow-sm shadow-destructive/5">{displayedError}</div> : null}
             {notice ? <div className="rounded-lg border spoke-border-notice bg-primary/10 px-3 py-2 text-sm text-primary shadow-sm shadow-primary/5">{notice}</div> : null}
 
             {activeView === "feed" ? (
@@ -2755,8 +2733,8 @@ function SpokeRuntime() {
                       <CardDescription>{viewTitle.feed.subtitle}</CardDescription>
                   </div>
                     <CardAction>
-                      <Button type="button" variant="outline" size="icon" onClick={refreshFeed} disabled={busy === "feed" || feedRefreshing} title="Refresh feed">
-                        <RefreshCw className={cn("size-4", feedRefreshing ? "animate-spin" : "")} />
+                      <Button type="button" variant="outline" size="icon" onClick={refreshFeed} disabled={busy === "feed" || timeline.refreshing} title="Refresh feed">
+                        <RefreshCw className={cn("size-4", timeline.refreshing ? "animate-spin" : "")} />
                       </Button>
                     </CardAction>
                   </CardHeader>
@@ -2764,7 +2742,14 @@ function SpokeRuntime() {
                 <div className="grid gap-4">
                   {feed.map((item) => renderPostCard(item))}
                   {feed.length === 0 ? (
-                    <EmptyState>Publish a post or add a known identity to build the feed.</EmptyState>
+                    <EmptyState>
+                      {timeline.state === SubscriptionState.Loading
+                        || timeline.state === SubscriptionState.Updating
+                        ? "Loading saved posts…"
+                        : timeline.state === SubscriptionState.Unavailable
+                          ? "The feed is unavailable. Check Jolt and try again."
+                          : "Publish a post or add a known identity to build the feed."}
+                    </EmptyState>
                   ) : null}
                 </div>
               </section>

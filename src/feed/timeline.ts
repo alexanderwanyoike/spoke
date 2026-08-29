@@ -47,6 +47,7 @@ export type FeedTimelineOptions = {
     posts: RemoteCollection<Post>,
   ) => Promise<PostSubscription>;
   streamRetryMs?: number;
+  streamRetryMaxMs?: number;
 };
 
 function postId(path: string): string {
@@ -77,6 +78,7 @@ export function createFeedTimeline(
   const createSubscription = options.createSubscription
     ?? ((_identity: string, remotePosts: RemoteCollection<Post>) => Subscription.create(remotePosts));
   const streamRetryMs = options.streamRetryMs ?? 1_000;
+  const streamRetryMaxMs = options.streamRetryMaxMs ?? 30_000;
   type Source = {
     identity: string;
     active: boolean;
@@ -88,6 +90,7 @@ export function createFeedTimeline(
     subscriptionPromise?: Promise<PostSubscription>;
     stream?: DataChangeStream<Post>;
     retryTimer?: ReturnType<typeof setTimeout>;
+    retryAttempts: number;
     removeWhenReady?: boolean;
   };
 
@@ -229,6 +232,7 @@ export function createFeedTimeline(
             source.state = SubscriptionState.Revoked;
             source.items.clear();
           }
+          source.retryAttempts = 0;
           rebuildSnapshot();
         }
       } catch {
@@ -242,10 +246,15 @@ export function createFeedTimeline(
       } finally {
         if (source.stream === stream) source.stream = undefined;
         if (retry && source.active) {
+          const delay = Math.min(
+            streamRetryMs * 2 ** Math.min(source.retryAttempts, 30),
+            streamRetryMaxMs,
+          );
+          source.retryAttempts += 1;
           source.retryTimer = setTimeout(() => {
             source.retryTimer = undefined;
             if (source.active) startChanges(source);
-          }, streamRetryMs);
+          }, delay);
         }
       }
     })();
@@ -257,7 +266,7 @@ export function createFeedTimeline(
       if (!source.subscription) {
         const pending = source.subscriptionPromise ??= createSubscription(
           source.identity,
-          posts.for(source.identity),
+          posts.for(normalizeIdentity(source.identity)),
         );
         let subscription: PostSubscription;
         try {
@@ -280,6 +289,7 @@ export function createFeedTimeline(
       source.state = source.subscription.state;
       source.lastVerifiedAt = source.subscription.lastVerifiedAt;
       source.reason = source.subscription.reason;
+      source.retryAttempts = 0;
       startChanges(source);
     } catch {
       if (!source.active) return;
@@ -318,6 +328,7 @@ export function createFeedTimeline(
             active: true,
             items: new Map(),
             state: SubscriptionState.Loading,
+            retryAttempts: 0,
           });
         }
       }
