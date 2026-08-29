@@ -10,13 +10,13 @@ import {
   type SubscriptionStateValue,
 } from "jolt-sdk/data";
 
-import { SpokeData, type Post } from "../data";
+import type { Post, SpokeApp } from "../data";
 import { activeContacts, normalizeIdentity } from "../follow";
 import type { SpokeAttachment } from "../media";
 import { sortFeed, type FeedItem, type SpokePost } from "./model";
 import type { FeedScope } from "./queries";
 
-type PostsResource = ReturnType<typeof SpokeData.test>["posts"];
+export type FeedPosts = SpokeApp["posts"];
 type PostSubscription = DataSubscription<Post>;
 
 export type FeedTimelineSnapshot = {
@@ -46,6 +46,7 @@ export type FeedTimelineOptions = {
     identity: string,
     posts: RemoteCollection<Post>,
   ) => Promise<PostSubscription>;
+  streamRetryMs?: number;
 };
 
 function postId(path: string): string {
@@ -70,11 +71,12 @@ function toSpokePost(item: PresentItem<Post>): SpokePost {
 }
 
 export function createFeedTimeline(
-  posts: PostsResource,
+  posts: FeedPosts,
   options: FeedTimelineOptions = {},
 ): FeedTimeline {
   const createSubscription = options.createSubscription
     ?? ((_identity: string, remotePosts: RemoteCollection<Post>) => Subscription.create(remotePosts));
+  const streamRetryMs = options.streamRetryMs ?? 1_000;
   type Source = {
     identity: string;
     active: boolean;
@@ -85,6 +87,8 @@ export function createFeedTimeline(
     subscription?: PostSubscription;
     subscriptionPromise?: Promise<PostSubscription>;
     stream?: DataChangeStream<Post>;
+    retryTimer?: ReturnType<typeof setTimeout>;
+    removeWhenReady?: boolean;
   };
 
   const sources = new Map<string, Source>();
@@ -156,13 +160,23 @@ export function createFeedTimeline(
     const unavailable = sourceSnapshots.find(
       (source) => source.state === SubscriptionState.Unavailable,
     );
+    const revoked = sourceSnapshots.some(
+      (source) => source.state === SubscriptionState.Revoked,
+    );
+    const cancelled = sourceSnapshots.some(
+      (source) => source.state === SubscriptionState.Cancelled,
+    );
     const pending = sourceSnapshots.some(
       (source) => source.state === SubscriptionState.Loading
         || source.state === SubscriptionState.Updating,
     );
     const state = sourceSnapshots.length === 0
       ? SubscriptionState.Ready
-      : stale
+      : revoked
+        ? SubscriptionState.Revoked
+        : cancelled
+          ? SubscriptionState.Cancelled
+          : stale
         ? SubscriptionState.Stale
         : unavailable && items.length === 0
           ? SubscriptionState.Unavailable
@@ -192,6 +206,7 @@ export function createFeedTimeline(
     const stream = source.subscription.changes();
     source.stream = stream;
     void (async () => {
+      let retry = false;
       try {
         for await (const change of stream) {
           if (!source.active) break;
@@ -209,13 +224,16 @@ export function createFeedTimeline(
             source.reason = change.reason;
           } else if (change.type === ChangeType.Cancelled) {
             source.state = SubscriptionState.Cancelled;
+            source.items.clear();
           } else if (change.type === ChangeType.Revoked) {
             source.state = SubscriptionState.Revoked;
+            source.items.clear();
           }
           rebuildSnapshot();
         }
       } catch {
         if (source.active) {
+          retry = true;
           source.state = source.items.size > 0
             ? SubscriptionState.Stale
             : SubscriptionState.Unavailable;
@@ -223,6 +241,12 @@ export function createFeedTimeline(
         }
       } finally {
         if (source.stream === stream) source.stream = undefined;
+        if (retry && source.active) {
+          source.retryTimer = setTimeout(() => {
+            source.retryTimer = undefined;
+            if (source.active) startChanges(source);
+          }, streamRetryMs);
+        }
       }
     })();
   }
@@ -242,7 +266,7 @@ export function createFeedTimeline(
           if (source.subscriptionPromise === pending) source.subscriptionPromise = undefined;
         }
         if (!source.active) {
-          await subscription.remove().catch(() => {});
+          if (source.removeWhenReady) await subscription.remove().catch(() => {});
           return;
         }
         source.subscription ??= subscription;
@@ -267,10 +291,12 @@ export function createFeedTimeline(
     }
   }
 
-  async function removeSource(source: Source) {
+  async function removeSource(source: Source, removeSubscription: boolean) {
     source.active = false;
+    source.removeWhenReady = removeSubscription;
+    if (source.retryTimer !== undefined) clearTimeout(source.retryTimer);
     await source.stream?.cancel().catch(() => {});
-    await source.subscription?.remove().catch(() => {});
+    if (removeSubscription) await source.subscription?.remove().catch(() => {});
   }
 
   return {
@@ -282,7 +308,7 @@ export function createFeedTimeline(
       const desired = sourceDescriptors(currentScope);
       const removed = [...sources.entries()]
         .filter(([key]) => !desired.has(key));
-      await Promise.all(removed.map(([, source]) => removeSource(source)));
+      await Promise.all(removed.map(([, source]) => removeSource(source, true)));
       for (const [key] of removed) sources.delete(key);
 
       for (const [key, identity] of desired) {
@@ -311,7 +337,7 @@ export function createFeedTimeline(
       const active = [...sources.values()];
       sources.clear();
       sourceOrder = [];
-      await Promise.all(active.map(removeSource));
+      await Promise.all(active.map((source) => removeSource(source, false)));
       rebuildSnapshot();
     },
   };

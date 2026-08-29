@@ -126,3 +126,5 @@ export const SpokeData = App.create({
     posts: Posts,
   },
 });
+
+export type SpokeApp = Awaited<ReturnType<typeof SpokeData.connect>>;

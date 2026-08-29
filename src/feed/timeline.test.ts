@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  ChangeType,
   State,
   SubscriptionFailure,
   SubscriptionState,
@@ -287,6 +288,123 @@ describe("feed timeline", () => {
     await Promise.all([first, second]);
 
     expect(created).toHaveBeenCalledTimes(1);
+    await timeline.close();
+  });
+
+  it("closes local streams without deleting durable subscriptions", async () => {
+    const viewer = SpokeData.test({ identity: "viewer.jolt" });
+    const remove = vi.fn(async () => {});
+    const timeline = createFeedTimeline(viewer.posts, {
+      createSubscription: async (identity) => ({
+        id: `sub_${identity}`,
+        identity,
+        state: SubscriptionState.Ready,
+        get: async () => [],
+        remove,
+      }) as unknown as DataSubscription<Post>,
+    });
+
+    await timeline.open({
+      localIdentity: "",
+      contacts: [contact("alice.jolt", "Alice")],
+    });
+    await timeline.close();
+
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("clears cached posts and surfaces a revoked subscription", async () => {
+    const viewer = SpokeData.test({ identity: "viewer.jolt" });
+    const cached = {
+      state: State.Present,
+      ref: { identity: "alice.jolt", path: "/spoke/posts/cached" },
+      value: {
+        author: "alice.jolt",
+        title: "No longer authorized",
+        body: "Must disappear after revocation",
+        createdAt: new Date("2026-08-29T09:00:00.000Z"),
+      },
+    } as unknown as PresentItem<Post>;
+    const subscription = {
+      id: "sub_alice",
+      identity: "alice.jolt",
+      state: SubscriptionState.Ready,
+      get: async () => [cached],
+      changes: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield { type: ChangeType.Revoked };
+        },
+        cancel: async () => {},
+      }),
+      remove: async () => {},
+    } as unknown as DataSubscription<Post>;
+    const timeline = createFeedTimeline(viewer.posts, {
+      createSubscription: async () => subscription,
+    });
+
+    await timeline.open({
+      localIdentity: "",
+      contacts: [contact("alice.jolt", "Alice")],
+    });
+    await vi.waitFor(() => {
+      expect(timeline.getSnapshot().state).toBe(SubscriptionState.Revoked);
+    });
+    expect(timeline.getSnapshot().items).toEqual([]);
+
+    await timeline.close();
+  });
+
+  it("reopens a Change Stream after a transient iterator failure", async () => {
+    const viewer = SpokeData.test({ identity: "viewer.jolt" });
+    const recovered = {
+      state: State.Present,
+      ref: { identity: "alice.jolt", path: "/spoke/posts/recovered" },
+      value: {
+        author: "alice.jolt",
+        title: "Recovered",
+        body: "Delivered after retry",
+        createdAt: new Date("2026-08-29T09:00:00.000Z"),
+      },
+    } as unknown as PresentItem<Post>;
+    let attempts = 0;
+    const subscription = {
+      id: "sub_alice",
+      identity: "alice.jolt",
+      state: SubscriptionState.Ready,
+      get: async () => [],
+      changes: () => {
+        attempts += 1;
+        return {
+          async *[Symbol.asyncIterator]() {
+            if (attempts === 1) throw new Error("transport interrupted");
+            yield {
+              type: ChangeType.Changed,
+              cursor: "cursor_2",
+              items: [recovered],
+              removed: [],
+            };
+          },
+          cancel: async () => {},
+        };
+      },
+      remove: async () => {},
+    } as unknown as DataSubscription<Post>;
+    const timeline = createFeedTimeline(viewer.posts, {
+      createSubscription: async () => subscription,
+      streamRetryMs: 0,
+    });
+
+    await timeline.open({
+      localIdentity: "",
+      contacts: [contact("alice.jolt", "Alice")],
+    });
+    await vi.waitFor(() => {
+      expect(timeline.getSnapshot().items.map((item) => item.post.title)).toEqual([
+        "Recovered",
+      ]);
+    });
+    expect(attempts).toBe(2);
+
     await timeline.close();
   });
 });
