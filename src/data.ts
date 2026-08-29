@@ -7,6 +7,8 @@ import {
   Schema,
 } from "jolt-sdk/data";
 
+import type { SpokeAttachment } from "./media";
+
 @Schema({ version: 1 })
 export class ImageAttachment {
   @Field.string()
@@ -36,6 +38,11 @@ export class ImageAttachment {
 
   @Field.string({ optional: true })
   alt?: string;
+}
+
+export function toDataImageAttachment(attachment: SpokeAttachment): ImageAttachment {
+  const { address, ...fields } = attachment;
+  return address ? { ...fields, address } : fields;
 }
 
 @Schema({ version: 1 })
@@ -116,7 +123,8 @@ const Posts = Collection.create(Post, {
   },
 });
 
-// Advanced seam only until Card 117 wires the production flow and delete grant.
+// Spoke's typed application surface. React connects once, then works through
+// these domain-named resources rather than raw Jolt operations.
 export const SpokeData = App.create({
   id: "spoke.local",
   name: "Spoke",

@@ -7,7 +7,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   isTauri: isTauriMock
 }));
 
-import { createJoltSdk } from "./index";
+import { createJoltDataClient, createJoltSdk } from "./index";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -85,5 +85,29 @@ describe("Jolt SDK ACL", () => {
       "Spoke can only write under /spoke/"
     );
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("binds the advanced Data client to Spoke's existing authorized session", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({
+      id: "sub_alice_posts",
+      identity: "alice.jolt",
+      prefix: "/spoke/posts/",
+      lifecycle: "dormant",
+      refresh: { status: "loading" },
+      created_at: 1_788_000_000,
+    }));
+
+    const client = createJoltDataClient(() => "token-1");
+    await expect(
+      client.createDataSubscription("alice.jolt", "/spoke/posts/"),
+    ).resolves.toMatchObject({ id: "sub_alice_posts", identity: "alice.jolt" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/jolt-api/data-subscriptions",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer token-1" }),
+      }),
+    );
   });
 });

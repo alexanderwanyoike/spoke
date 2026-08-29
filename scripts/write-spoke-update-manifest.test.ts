@@ -27,7 +27,11 @@ describe("write-spoke-update-manifest", () => {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     expect(manifest.app_compatibility).toEqual({
       app_api: 1,
-      required_features: {},
+      required_features: {
+        "data.records": 5,
+        "data.subscriptions": 1,
+        "data.change-streams": 1,
+      },
       optional_features: {}
     });
   });

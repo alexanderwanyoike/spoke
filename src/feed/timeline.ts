@@ -4,6 +4,7 @@ import {
   SubscriptionState,
   type DataChangeStream,
   type DataSubscription,
+  type DataSubscriptionChange,
   type PresentItem,
   type RemoteCollection,
   type SubscriptionFailureValue,
@@ -18,21 +19,41 @@ import type { FeedScope } from "./queries";
 
 export type FeedPosts = SpokeApp["posts"];
 type PostSubscription = DataSubscription<Post>;
+type CreatePostSubscription = (
+  identity: string,
+  posts: RemoteCollection<Post>,
+) => Promise<PostSubscription>;
 
-export type FeedTimelineSnapshot = {
-  readonly items: readonly FeedItem[];
-  readonly state: SubscriptionStateValue;
-  readonly lastVerifiedAt?: number;
-  readonly reason?: SubscriptionFailureValue;
-  readonly sources: readonly FeedTimelineSourceSnapshot[];
+type Freshness = {
+  state: SubscriptionStateValue;
+  lastVerifiedAt?: number;
+  reason?: SubscriptionFailureValue;
 };
 
-export type FeedTimelineSourceSnapshot = {
-  readonly identity: string;
-  readonly state: SubscriptionStateValue;
-  readonly lastVerifiedAt?: number;
-  readonly reason?: SubscriptionFailureValue;
+type FeedItemSource =
+  | { source: "local" }
+  | { source: "contact"; contact: FeedScope["contacts"][number] };
+
+type SourceDescriptor = {
+  identity: string;
+  feedSource: FeedItemSource;
 };
+
+type TimelineSourceOptions = {
+  createSubscription: CreatePostSubscription;
+  streamRetryMs: number;
+  streamRetryMaxMs: number;
+  onChange(): void;
+};
+
+export type FeedTimelineSnapshot = Readonly<Freshness & {
+  items: readonly FeedItem[];
+  sources: readonly FeedTimelineSourceSnapshot[];
+}>;
+
+export type FeedTimelineSourceSnapshot = Readonly<Freshness & {
+  identity: string;
+}>;
 
 export type FeedTimeline = {
   open(scope: FeedScope): Promise<void>;
@@ -42,19 +63,21 @@ export type FeedTimeline = {
 };
 
 export type FeedTimelineOptions = {
-  createSubscription?: (
-    identity: string,
-    posts: RemoteCollection<Post>,
-  ) => Promise<PostSubscription>;
+  createSubscription?: CreatePostSubscription;
   streamRetryMs?: number;
+  streamRetryMaxMs?: number;
 };
 
 function postId(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
-function toSpokePost(item: PresentItem<Post>): SpokePost {
+function toSpokePost(item: PresentItem<Post>): SpokePost | null {
   const value = item.value;
+  if (!(value.createdAt instanceof Date) || Number.isNaN(value.createdAt.valueOf())) {
+    return null;
+  }
+
   const id = postId(item.ref.path);
   return {
     schema: value.attachments?.length ? "spoke.post.v2" : "spoke.post.v1",
@@ -70,275 +93,357 @@ function toSpokePost(item: PresentItem<Post>): SpokePost {
   };
 }
 
-export function createFeedTimeline(
-  posts: FeedPosts,
-  options: FeedTimelineOptions = {},
-): FeedTimeline {
-  const createSubscription = options.createSubscription
-    ?? ((_identity: string, remotePosts: RemoteCollection<Post>) => Subscription.create(remotePosts));
-  const streamRetryMs = options.streamRetryMs ?? 1_000;
-  type Source = {
-    identity: string;
-    active: boolean;
-    items: Map<string, PresentItem<Post>>;
-    state: SubscriptionStateValue;
-    lastVerifiedAt?: number;
-    reason?: SubscriptionFailureValue;
-    subscription?: PostSubscription;
-    subscriptionPromise?: Promise<PostSubscription>;
-    stream?: DataChangeStream<Post>;
-    retryTimer?: ReturnType<typeof setTimeout>;
-    removeWhenReady?: boolean;
-  };
+export function aggregateTimelineState(
+  sources: readonly FeedTimelineSourceSnapshot[],
+  itemCount: number,
+): SubscriptionStateValue {
+  if (sources.length === 0) return SubscriptionState.Ready;
 
-  const sources = new Map<string, Source>();
-  const listeners = new Set<() => void>();
-  let currentScope: FeedScope = { localIdentity: "", contacts: [] };
-  let sourceOrder: string[] = [];
-  let snapshot: FeedTimelineSnapshot = Object.freeze({
+  const states = new Set(sources.map((source) => source.state));
+  if (states.has(SubscriptionState.Revoked)) return SubscriptionState.Revoked;
+  if (states.has(SubscriptionState.Cancelled)) return SubscriptionState.Cancelled;
+  if (states.has(SubscriptionState.Stale)) return SubscriptionState.Stale;
+  if (states.has(SubscriptionState.Unavailable)) {
+    return itemCount > 0 ? SubscriptionState.Stale : SubscriptionState.Unavailable;
+  }
+  if (states.has(SubscriptionState.Loading) || states.has(SubscriptionState.Updating)) {
+    return SubscriptionState.Updating;
+  }
+  return SubscriptionState.Ready;
+}
+
+function setFreshness(source: TimelineSource, freshness: Freshness) {
+  source.state = freshness.state;
+  source.lastVerifiedAt = freshness.lastVerifiedAt;
+  source.reason = freshness.reason;
+}
+
+function replaceItems(source: TimelineSource, items: readonly PresentItem<Post>[]) {
+  source.items = new Map(items.map((item) => [item.ref.path, item]));
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled Data Subscription change: ${String(value)}`);
+}
+
+function applyChange(source: TimelineSource, change: DataSubscriptionChange<Post>) {
+  switch (change.type) {
+    case ChangeType.Snapshot:
+      replaceItems(source, change.items);
+      setFreshness(source, change);
+      return;
+    case ChangeType.Changed:
+      for (const item of change.items) source.items.set(item.ref.path, item);
+      for (const ref of change.removed) source.items.delete(ref.path);
+      return;
+    case ChangeType.State:
+      setFreshness(source, change);
+      return;
+    case ChangeType.Cancelled:
+      setFreshness(source, { state: SubscriptionState.Cancelled });
+      source.items.clear();
+      return;
+    case ChangeType.Revoked:
+      setFreshness(source, { state: SubscriptionState.Revoked });
+      source.items.clear();
+      return;
+    case ChangeType.ResyncRequired:
+      // The stream follows this marker with a complete Snapshot event.
+      return;
+    default:
+      return assertNever(change);
+  }
+}
+
+export function retryDelay(
+  attempts: number,
+  baseDelayMs: number,
+  maxDelayMs: number,
+): number {
+  return Math.min(baseDelayMs * 2 ** Math.min(attempts, 30), maxDelayMs);
+}
+
+function sourceDescriptors(scope: FeedScope): Map<string, SourceDescriptor> {
+  const descriptors = new Map<string, SourceDescriptor>();
+  if (scope.localIdentity) {
+    descriptors.set(normalizeIdentity(scope.localIdentity), {
+      identity: scope.localIdentity,
+      feedSource: { source: "local" },
+    });
+  }
+  for (const contact of activeContacts(scope.contacts)) {
+    const key = normalizeIdentity(contact.identity);
+    if (!descriptors.has(key)) {
+      descriptors.set(key, {
+        identity: contact.identity,
+        feedSource: { source: "contact", contact },
+      });
+    }
+  }
+  return descriptors;
+}
+
+function feedItemsFor(
+  source: TimelineSource,
+  identity: string,
+  feedSource: FeedItemSource,
+): FeedItem[] {
+  const items: FeedItem[] = [];
+  for (const item of source.items.values()) {
+    const post = toSpokePost(item);
+    if (!post || normalizeIdentity(post.author) !== identity) continue;
+    items.push({
+      ...feedSource,
+      post,
+      address: `${item.ref.identity}${item.ref.path}`,
+    });
+  }
+  return items;
+}
+
+function aggregateSnapshot(
+  sources: ReadonlyMap<string, TimelineSource>,
+  descriptors: ReadonlyMap<string, SourceDescriptor>,
+): FeedTimelineSnapshot {
+  const items: FeedItem[] = [];
+  const sourceSnapshots: FeedTimelineSourceSnapshot[] = [];
+  for (const [identity, descriptor] of descriptors) {
+    const source = sources.get(identity);
+    if (!source) continue;
+    items.push(...feedItemsFor(source, identity, descriptor.feedSource));
+    sourceSnapshots.push(source.snapshot());
+  }
+
+  const failed = sourceSnapshots.find((source) =>
+    source.state === SubscriptionState.Stale
+      || source.state === SubscriptionState.Unavailable
+  );
+  return Object.freeze({
+    items: Object.freeze(sortFeed(items)),
+    state: aggregateTimelineState(sourceSnapshots, items.length),
+    lastVerifiedAt: failed?.lastVerifiedAt,
+    reason: failed?.reason,
+    sources: Object.freeze(sourceSnapshots),
+  });
+}
+
+function createPostSubscription(
+  _identity: string,
+  posts: RemoteCollection<Post>,
+): Promise<PostSubscription> {
+  return Subscription.create(posts);
+}
+
+class TimelineSource {
+  items = new Map<string, PresentItem<Post>>();
+  state: SubscriptionStateValue = SubscriptionState.Loading;
+  lastVerifiedAt?: number;
+  reason?: SubscriptionFailureValue;
+
+  private active = true;
+  private subscription?: PostSubscription;
+  private subscriptionPromise?: Promise<PostSubscription>;
+  private stream?: DataChangeStream<Post>;
+  private retryTimer?: ReturnType<typeof setTimeout>;
+  private retryAttempts = 0;
+
+  constructor(
+    readonly identity: string,
+    private readonly posts: RemoteCollection<Post>,
+    private readonly options: TimelineSourceOptions,
+  ) {}
+
+  snapshot(): FeedTimelineSourceSnapshot {
+    return Object.freeze({
+      identity: this.identity,
+      state: this.state,
+      lastVerifiedAt: this.lastVerifiedAt,
+      reason: this.reason,
+    });
+  }
+
+  async refresh(): Promise<void> {
+    try {
+      const hadStream = this.stream !== undefined;
+      const subscription = await this.subscriptionForSource();
+      if (!subscription) return;
+
+      const items = await subscription.get();
+      if (!this.active) return;
+
+      // A retained stream may advance while get() returns its cached view.
+      // The stream owns the projection once it is running.
+      if (!hadStream) replaceItems(this, items);
+      setFreshness(this, subscription);
+      this.retryAttempts = 0;
+      this.startChanges();
+    } catch {
+      if (!this.active) return;
+      this.markRefreshFailed();
+    }
+    this.options.onChange();
+  }
+
+  async stop(): Promise<void> {
+    this.active = false;
+    if (this.retryTimer !== undefined) clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+    await this.stream?.cancel().catch(() => {});
+  }
+
+  async unsubscribe(): Promise<void> {
+    await this.stop();
+    let subscription = this.subscription;
+    if (!subscription && this.subscriptionPromise) {
+      subscription = await this.subscriptionPromise.catch(() => undefined);
+    }
+    await subscription?.remove().catch(() => {});
+  }
+
+  private async subscriptionForSource(): Promise<PostSubscription | undefined> {
+    if (this.subscription) return this.subscription;
+
+    const pending = this.subscriptionPromise ?? this.options.createSubscription(
+      this.identity,
+      this.posts,
+    );
+    this.subscriptionPromise = pending;
+    try {
+      const subscription = await pending;
+      if (!this.active) return undefined;
+      this.subscription = subscription;
+      return subscription;
+    } finally {
+      if (this.subscriptionPromise === pending) this.subscriptionPromise = undefined;
+    }
+  }
+
+  private startChanges() {
+    if (this.stream || !this.subscription) return;
+    const stream = this.subscription.changes();
+    this.stream = stream;
+    void this.consumeChanges(stream);
+  }
+
+  private async consumeChanges(stream: DataChangeStream<Post>) {
+    try {
+      for await (const change of stream) {
+        if (!this.active) break;
+        applyChange(this, change);
+        this.retryAttempts = 0;
+        this.options.onChange();
+      }
+    } catch {
+      this.handleStreamFailure();
+    } finally {
+      if (this.stream === stream) this.stream = undefined;
+    }
+  }
+
+  private handleStreamFailure() {
+    if (!this.active) return;
+    this.markRefreshFailed();
+    this.options.onChange();
+    this.scheduleRetry();
+  }
+
+  private markRefreshFailed() {
+    setFreshness(this, {
+      state: this.items.size > 0
+        ? SubscriptionState.Stale
+        : SubscriptionState.Unavailable,
+      lastVerifiedAt: this.subscription?.lastVerifiedAt ?? this.lastVerifiedAt,
+      reason: this.subscription?.reason ?? this.reason,
+    });
+  }
+
+  private scheduleRetry() {
+    const delay = retryDelay(
+      this.retryAttempts,
+      this.options.streamRetryMs,
+      this.options.streamRetryMaxMs,
+    );
+    this.retryAttempts += 1;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      if (this.active) this.startChanges();
+    }, delay);
+  }
+}
+
+class SpokeFeedTimeline implements FeedTimeline {
+  private readonly sources = new Map<string, TimelineSource>();
+  private readonly listeners = new Set<() => void>();
+  private descriptors = new Map<string, SourceDescriptor>();
+  private snapshotValue: FeedTimelineSnapshot = Object.freeze({
     items: Object.freeze([]),
     state: SubscriptionState.Loading,
     sources: Object.freeze([]),
   });
 
-  function sourceDescriptors(scope: FeedScope) {
-    const descriptors = new Map<string, string>();
-    if (scope.localIdentity) {
-      descriptors.set(normalizeIdentity(scope.localIdentity), scope.localIdentity);
-    }
-    for (const contact of activeContacts(scope.contacts)) {
-      const key = normalizeIdentity(contact.identity);
-      if (!descriptors.has(key)) descriptors.set(key, contact.identity);
-    }
-    return descriptors;
-  }
+  constructor(
+    private readonly posts: FeedPosts,
+    private readonly options: Required<FeedTimelineOptions>,
+  ) {}
 
-  function rebuildSnapshot() {
-    const feedSources = new Map<
-      string,
-      { source: "local" } | { source: "contact"; contact: FeedScope["contacts"][number] }
-    >();
-    if (currentScope.localIdentity) {
-      feedSources.set(normalizeIdentity(currentScope.localIdentity), { source: "local" });
-    }
-    for (const contact of activeContacts(currentScope.contacts)) {
-      const key = normalizeIdentity(contact.identity);
-      if (!feedSources.has(key)) {
-        feedSources.set(key, { source: "contact", contact });
-      }
+  async open(scope: FeedScope): Promise<void> {
+    const nextDescriptors = sourceDescriptors(scope);
+    const removed = [...this.sources.entries()].filter(([key]) => !nextDescriptors.has(key));
+    await Promise.all(removed.map(([, source]) => source.unsubscribe()));
+    for (const [key] of removed) this.sources.delete(key);
+
+    for (const [key, descriptor] of nextDescriptors) {
+      if (this.sources.has(key)) continue;
+      this.sources.set(key, new TimelineSource(
+        descriptor.identity,
+        this.posts.for(key),
+        {
+          ...this.options,
+          onChange: () => this.rebuildSnapshot(),
+        },
+      ));
     }
 
-    const items: FeedItem[] = [];
-    const sourceSnapshots = sourceOrder.flatMap((key) => {
-      const source = sources.get(key);
-      if (!source) return [];
-      const feedSource = feedSources.get(key);
-      if (feedSource) {
-        for (const item of source.items.values()) {
-          let post: SpokePost;
-          try {
-            post = toSpokePost(item);
-          } catch {
-            continue;
-          }
-          if (normalizeIdentity(post.author) !== key) continue;
-          items.push({
-            ...feedSource,
-            post,
-            address: `${item.ref.identity}${item.ref.path}`,
-          });
-        }
-      }
-      return [Object.freeze({
-        identity: source.identity,
-        state: source.state,
-        lastVerifiedAt: source.lastVerifiedAt,
-        reason: source.reason,
-      })];
+    this.descriptors = nextDescriptors;
+    this.rebuildSnapshot();
+    const refreshes = [...nextDescriptors.keys()].flatMap((key) => {
+      const source = this.sources.get(key);
+      return source ? [source.refresh()] : [];
     });
-    const stale = sourceSnapshots.find((source) => source.state === SubscriptionState.Stale);
-    const unavailable = sourceSnapshots.find(
-      (source) => source.state === SubscriptionState.Unavailable,
-    );
-    const revoked = sourceSnapshots.some(
-      (source) => source.state === SubscriptionState.Revoked,
-    );
-    const cancelled = sourceSnapshots.some(
-      (source) => source.state === SubscriptionState.Cancelled,
-    );
-    const pending = sourceSnapshots.some(
-      (source) => source.state === SubscriptionState.Loading
-        || source.state === SubscriptionState.Updating,
-    );
-    const state = sourceSnapshots.length === 0
-      ? SubscriptionState.Ready
-      : revoked
-        ? SubscriptionState.Revoked
-        : cancelled
-          ? SubscriptionState.Cancelled
-          : stale
-        ? SubscriptionState.Stale
-        : unavailable && items.length === 0
-          ? SubscriptionState.Unavailable
-          : unavailable
-            ? SubscriptionState.Stale
-            : pending
-              ? SubscriptionState.Updating
-              : SubscriptionState.Ready;
-    const failed = stale ?? unavailable;
-    snapshot = Object.freeze({
-      items: Object.freeze(sortFeed(items)),
-      state,
-      lastVerifiedAt: failed?.lastVerifiedAt,
-      reason: failed?.reason,
-      sources: Object.freeze(sourceSnapshots),
-    });
-    for (const listener of listeners) listener();
+    await Promise.all(refreshes);
+    this.rebuildSnapshot();
   }
 
-  function replaceItems(source: Source, items: readonly PresentItem<Post>[]) {
-    source.items = new Map(items.map((item) => [item.ref.path, item]));
+  getSnapshot(): FeedTimelineSnapshot {
+    return this.snapshotValue;
   }
 
-  function startChanges(source: Source) {
-    if (source.stream || !source.subscription
-      || typeof source.subscription.changes !== "function") return;
-    const stream = source.subscription.changes();
-    source.stream = stream;
-    void (async () => {
-      let retry = false;
-      try {
-        for await (const change of stream) {
-          if (!source.active) break;
-          if (change.type === ChangeType.Snapshot) {
-            replaceItems(source, change.items);
-            source.state = change.state;
-            source.lastVerifiedAt = change.lastVerifiedAt;
-            source.reason = change.reason;
-          } else if (change.type === ChangeType.Changed) {
-            for (const item of change.items) source.items.set(item.ref.path, item);
-            for (const ref of change.removed) source.items.delete(ref.path);
-          } else if (change.type === ChangeType.State) {
-            source.state = change.state;
-            source.lastVerifiedAt = change.lastVerifiedAt;
-            source.reason = change.reason;
-          } else if (change.type === ChangeType.Cancelled) {
-            source.state = SubscriptionState.Cancelled;
-            source.items.clear();
-          } else if (change.type === ChangeType.Revoked) {
-            source.state = SubscriptionState.Revoked;
-            source.items.clear();
-          }
-          rebuildSnapshot();
-        }
-      } catch {
-        if (source.active) {
-          retry = true;
-          source.state = source.items.size > 0
-            ? SubscriptionState.Stale
-            : SubscriptionState.Unavailable;
-          rebuildSnapshot();
-        }
-      } finally {
-        if (source.stream === stream) source.stream = undefined;
-        if (retry && source.active) {
-          source.retryTimer = setTimeout(() => {
-            source.retryTimer = undefined;
-            if (source.active) startChanges(source);
-          }, streamRetryMs);
-        }
-      }
-    })();
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
-  async function refreshSource(source: Source) {
-    try {
-      const hadStream = source.stream !== undefined;
-      if (!source.subscription) {
-        const pending = source.subscriptionPromise ??= createSubscription(
-          source.identity,
-          posts.for(source.identity),
-        );
-        let subscription: PostSubscription;
-        try {
-          subscription = await pending;
-        } finally {
-          if (source.subscriptionPromise === pending) source.subscriptionPromise = undefined;
-        }
-        if (!source.active) {
-          if (source.removeWhenReady) await subscription.remove().catch(() => {});
-          return;
-        }
-        source.subscription ??= subscription;
-      }
-      const items = await source.subscription.get();
-      if (!source.active) return;
-      // A retained Change Stream may advance while get() returns its cached
-      // view. Keep the stream's projection in that case; get() still triggers
-      // the bounded refresh and the stream delivers the resulting delta.
-      if (!hadStream) replaceItems(source, items);
-      source.state = source.subscription.state;
-      source.lastVerifiedAt = source.subscription.lastVerifiedAt;
-      source.reason = source.subscription.reason;
-      startChanges(source);
-    } catch {
-      if (!source.active) return;
-      source.state = source.items.size > 0
-        ? SubscriptionState.Stale
-        : SubscriptionState.Unavailable;
-      source.lastVerifiedAt = source.subscription?.lastVerifiedAt;
-      source.reason = source.subscription?.reason;
-    }
+  async close(): Promise<void> {
+    const activeSources = [...this.sources.values()];
+    this.sources.clear();
+    this.descriptors.clear();
+    await Promise.all(activeSources.map((source) => source.stop()));
+    this.rebuildSnapshot();
   }
 
-  async function removeSource(source: Source, removeSubscription: boolean) {
-    source.active = false;
-    source.removeWhenReady = removeSubscription;
-    if (source.retryTimer !== undefined) clearTimeout(source.retryTimer);
-    await source.stream?.cancel().catch(() => {});
-    if (removeSubscription) await source.subscription?.remove().catch(() => {});
+  private rebuildSnapshot() {
+    this.snapshotValue = aggregateSnapshot(this.sources, this.descriptors);
+    for (const listener of this.listeners) listener();
   }
+}
 
-  return {
-    async open(scope) {
-      currentScope = {
-        localIdentity: scope.localIdentity,
-        contacts: activeContacts(scope.contacts),
-      };
-      const desired = sourceDescriptors(currentScope);
-      const removed = [...sources.entries()]
-        .filter(([key]) => !desired.has(key));
-      await Promise.all(removed.map(([, source]) => removeSource(source, true)));
-      for (const [key] of removed) sources.delete(key);
-
-      for (const [key, identity] of desired) {
-        if (!sources.has(key)) {
-          sources.set(key, {
-            identity,
-            active: true,
-            items: new Map(),
-            state: SubscriptionState.Loading,
-          });
-        }
-      }
-      sourceOrder = [...desired.keys()];
-      rebuildSnapshot();
-      await Promise.all(sourceOrder.map((key) => refreshSource(sources.get(key)!)));
-      rebuildSnapshot();
-    },
-    getSnapshot() {
-      return snapshot;
-    },
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    async close() {
-      const active = [...sources.values()];
-      sources.clear();
-      sourceOrder = [];
-      await Promise.all(active.map((source) => removeSource(source, false)));
-      rebuildSnapshot();
-    },
-  };
+export function createFeedTimeline(
+  posts: FeedPosts,
+  options: FeedTimelineOptions = {},
+): FeedTimeline {
+  return new SpokeFeedTimeline(posts, {
+    createSubscription: options.createSubscription ?? createPostSubscription,
+    streamRetryMs: options.streamRetryMs ?? 1_000,
+    streamRetryMaxMs: options.streamRetryMaxMs ?? 30_000,
+  });
 }
