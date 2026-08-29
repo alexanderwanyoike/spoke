@@ -260,7 +260,7 @@ describe("jolt thread enumeration", () => {
                 contentId: "cacc",
                 deviceId: "dev_1",
                 deviceSequence: 7,
-                createdAt: "2026-06-06T10:00:00.000Z",
+                createdAt: 1_780_740_000,
                 entryHash: "hash_1"
               }
             ]

@@ -73,7 +73,7 @@ function fakeSdk(opts: {
             contentId: reads[`${identity}${path}`]?.contentId || `cid_${path}`,
             deviceId: "dev_1",
             deviceSequence: reads[`${identity}${path}`]?.latestSequence ?? contentReads[`cid_${path}`]?.latestSequence ?? index,
-            createdAt: "2026-06-06T00:00:00.000Z",
+            createdAt: 1_780_704_000,
             entryHash: `hash_${path}`
           })
         );
