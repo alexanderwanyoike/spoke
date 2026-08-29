@@ -4,19 +4,69 @@ import {
   State,
   SubscriptionFailure,
   SubscriptionState,
+  type DataChangeStream,
   type DataSubscription,
   type PresentItem,
 } from "jolt-sdk/data";
 
 import { SpokeData, type Post } from "../data";
 import type { Contact } from "./model";
-import { createFeedTimeline } from "./timeline";
+import {
+  aggregateTimelineState,
+  createFeedTimeline,
+  retryDelay,
+  type FeedTimelineSourceSnapshot,
+} from "./timeline";
 
 function contact(identity: string, displayName: string): Contact {
   return { identity, displayName, relationship: "accepted" };
 }
 
+function idleChanges(): DataChangeStream<Post> {
+  return {
+    async *[Symbol.asyncIterator]() {},
+    async cancel() {},
+  };
+}
+
+function sourceState(
+  state: FeedTimelineSourceSnapshot["state"],
+): FeedTimelineSourceSnapshot {
+  return { identity: "source.jolt", state };
+}
+
 describe("feed timeline", () => {
+  it("aggregates source freshness in explicit priority order", () => {
+    expect(aggregateTimelineState([], 0)).toBe(SubscriptionState.Ready);
+    expect(aggregateTimelineState([
+      sourceState(SubscriptionState.Ready),
+      sourceState(SubscriptionState.Loading),
+    ], 0)).toBe(SubscriptionState.Updating);
+    expect(aggregateTimelineState([
+      sourceState(SubscriptionState.Unavailable),
+    ], 0)).toBe(SubscriptionState.Unavailable);
+    expect(aggregateTimelineState([
+      sourceState(SubscriptionState.Unavailable),
+    ], 1)).toBe(SubscriptionState.Stale);
+    expect(aggregateTimelineState([
+      sourceState(SubscriptionState.Stale),
+      sourceState(SubscriptionState.Cancelled),
+    ], 1)).toBe(SubscriptionState.Cancelled);
+    expect(aggregateTimelineState([
+      sourceState(SubscriptionState.Cancelled),
+      sourceState(SubscriptionState.Revoked),
+    ], 1)).toBe(SubscriptionState.Revoked);
+  });
+
+  it("calculates capped exponential retry delays", () => {
+    expect([0, 1, 2, 3].map((attempt) => retryDelay(attempt, 10, 40))).toEqual([
+      10,
+      20,
+      40,
+      40,
+    ]);
+  });
+
   it("opens from typed Materialized Views and preserves Spoke's feed ordering", async () => {
     const world = SpokeData.testWorld();
     const alice = world.as("alice");
@@ -75,6 +125,7 @@ describe("feed timeline", () => {
       lastVerifiedAt: 1_788_000_000,
       reason: SubscriptionFailure.NetworkUnavailable,
       get: async () => [cached],
+      changes: idleChanges,
       remove: async () => {},
     } as unknown as DataSubscription<Post>;
     const timeline = createFeedTimeline(viewer.posts, {
@@ -113,6 +164,7 @@ describe("feed timeline", () => {
       identity: "alice.jolt",
       state: SubscriptionState.Ready,
       get: async () => [alicePost],
+      changes: idleChanges,
       remove: async () => {},
     } as unknown as DataSubscription<Post>;
     const bob = {
@@ -123,6 +175,7 @@ describe("feed timeline", () => {
       get: async () => {
         throw new Error("Bob is offline");
       },
+      changes: idleChanges,
       remove: async () => {},
     } as unknown as DataSubscription<Post>;
     const timeline = createFeedTimeline(viewer.posts, {
@@ -196,6 +249,7 @@ describe("feed timeline", () => {
           identity,
           state: SubscriptionState.Ready,
           get: async () => [],
+          changes: idleChanges,
           remove: async () => {
             removed.push(identity);
           },
@@ -247,6 +301,7 @@ describe("feed timeline", () => {
       identity: "alice.jolt",
       state: SubscriptionState.Ready,
       get: async () => [malformed, healthy],
+      changes: idleChanges,
       remove: async () => {},
     } as unknown as DataSubscription<Post>;
     const timeline = createFeedTimeline(viewer.posts, {
@@ -276,6 +331,7 @@ describe("feed timeline", () => {
         identity,
         state: SubscriptionState.Ready,
         get: async () => [],
+        changes: idleChanges,
         remove: async () => {},
       } as unknown as DataSubscription<Post>;
     });
@@ -300,6 +356,7 @@ describe("feed timeline", () => {
         identity,
         state: SubscriptionState.Ready,
         get: async () => [],
+        changes: idleChanges,
         remove,
       }) as unknown as DataSubscription<Post>,
     });

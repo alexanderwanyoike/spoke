@@ -14,3 +14,4 @@ export {
   type FeedTimelineSourceSnapshot,
 } from "./timeline";
 export { useSpokeTimeline, type SpokeTimeline } from "./use-spoke-timeline";
+export { useFeedDetails } from "./use-feed-details";

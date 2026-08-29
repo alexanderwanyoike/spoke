@@ -91,6 +91,7 @@ import { toDataImageAttachment } from "./data";
 import {
   displayNameForFeedItem,
   activeContacts,
+  useFeedDetails,
   useSpokeTimeline,
   type Contact,
   type FeedTimelineSnapshot,
@@ -361,41 +362,42 @@ function notificationGroupLabel(receivedAt: number) {
   return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 }
 
-function feedStateLabel(snapshot: FeedTimelineSnapshot) {
+function feedStatusCopy(snapshot: FeedTimelineSnapshot) {
+  const emptyFeed = "Publish a post or add a known identity to build the feed.";
   switch (snapshot.state) {
     case SubscriptionState.Loading:
-      return "loading saved posts";
+      return { status: "loading saved posts", empty: "Loading saved posts…" };
     case SubscriptionState.Updating:
-      return "updating saved posts";
+      return { status: "updating saved posts", empty: "Loading saved posts…" };
     case SubscriptionState.Ready:
-      return "ready";
+      return { status: "ready", empty: emptyFeed };
     case SubscriptionState.Stale:
       switch (snapshot.reason) {
         case SubscriptionFailure.NetworkUnavailable:
-          return "showing saved posts — network unavailable";
+          return {
+            status: "showing saved posts — network unavailable",
+            empty: emptyFeed,
+          };
         default:
-          return "showing saved posts — refresh failed";
+          return { status: "showing saved posts — refresh failed", empty: emptyFeed };
       }
     case SubscriptionState.Unavailable:
+      return {
+        status: "unavailable",
+        empty: "The feed is unavailable. Check Jolt and try again.",
+      };
     case SubscriptionState.Cancelled:
     case SubscriptionState.Revoked:
-      return "unavailable";
+      return { status: "unavailable", empty: emptyFeed };
+    default:
+      return { status: "unavailable", empty: emptyFeed };
   }
 }
 
-function emptyFeedMessage(state: FeedTimelineSnapshot["state"]) {
-  switch (state) {
-    case SubscriptionState.Loading:
-    case SubscriptionState.Updating:
-      return "Loading saved posts…";
-    case SubscriptionState.Unavailable:
-      return "The feed is unavailable. Check Jolt and try again.";
-    case SubscriptionState.Ready:
-    case SubscriptionState.Stale:
-    case SubscriptionState.Cancelled:
-    case SubscriptionState.Revoked:
-      return "Publish a post or add a known identity to build the feed.";
-  }
+function firstError(message: string, ...errors: unknown[]): string {
+  if (message) return message;
+  const error = errors.find((candidate) => candidate !== null && candidate !== undefined);
+  return error === undefined ? "" : apiErrorMessage(error);
 }
 
 function App() {
@@ -493,29 +495,21 @@ function SpokeRuntime() {
     enabled: canUseApp,
   });
   const timeline = useSpokeTimeline(spokeData, { localIdentity, contacts });
-  const feed = timeline.items;
-  const feedError = spokeDataError ?? timeline.error;
-  const displayedError = error || (feedError ? apiErrorMessage(feedError) : "");
+  const feed = timeline.snapshot.items;
+  const displayedError = firstError(error, spokeDataError, timeline.error);
 
   // Threads are author-anchored: the bridge enumerates the post author's
   // accepted-reply Collection (swappable for J1 in card 104). useThreads
   // projects one nested tree per visible post from the monotonic store.
   const threadBridge = useMemo(() => createJoltThreadEnumeration(jolt), [jolt]);
-  const feedDetailKey = useMemo(
-    () => feed.map((item) => item.address).join("\u0000"),
-    [feed]
-  );
-  const feedContactKey = useMemo(
-    () => activeContacts(contacts).map((contact) => contact.identity).join("\u0000"),
-    [contacts]
-  );
-
-  useEffect(() => {
-    if (!canUseApp) return;
-    void loadFeedDetails(feed).catch(() => {});
-    // The keys deliberately ignore freshness-only timeline updates.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canUseApp, feedContactKey, feedDetailKey, jolt, localIdentity, threadBridge]);
+  useFeedDetails({
+    enabled: canUseApp,
+    localIdentity,
+    contacts,
+    items: feed,
+    jolt,
+    threadEnumeration: threadBridge,
+  });
 
   const threadScopes = useMemo<ThreadScope[]>(
     () => feed.map((item) => ({ postId: item.post.id, postAuthor: item.post.author, localIdentity })),
@@ -535,7 +529,7 @@ function SpokeRuntime() {
   );
   const localFeedItems = useMemo(() => feed.filter((item) => item.source === "local"), [feed]);
   const activeContactCount = useMemo(() => activeContacts(contacts).length, [contacts]);
-  const feedStatus = feedStateLabel(timeline);
+  const feedCopy = feedStatusCopy(timeline.snapshot);
   const acceptedContacts = useMemo(
     () =>
       contacts.filter(
@@ -1577,20 +1571,6 @@ function SpokeRuntime() {
   }, [showContactsModal, canUseApp, jolt, sessionToken, contactDraft.identity]);
 
 
-  async function loadFeedDetails(items: readonly FeedItem[], nextContacts = contacts) {
-    const feedContacts = activeContacts(nextContacts);
-    const identities = [localIdentity, ...feedContacts.map((contact) => contact.identity)].filter(
-      Boolean
-    );
-
-    await Promise.all(identities.map((identity) => loadProfile(jolt, identity).catch(() => null)));
-    await Promise.all(
-      items.map((item) =>
-        loadThread(jolt, threadBridge, item.post.author, item.post.id).catch(() => {})
-      )
-    );
-  }
-
   async function refreshConversationsSilently() {
     if (conversationRefreshInFlight.current) {
       return;
@@ -1609,8 +1589,7 @@ function SpokeRuntime() {
 
   async function refreshFeed() {
     await withBusy("feed", async () => {
-      const snapshot = await timeline.refresh();
-      await loadFeedDetails(snapshot.items);
+      await timeline.refresh();
       setNotice("Feed refreshed.");
     });
   }
@@ -2572,7 +2551,7 @@ function SpokeRuntime() {
   const viewTitle: Record<AppView, { title: string; subtitle: string }> = {
     feed: {
       title: "Feed",
-      subtitle: `${localPosts} local posts, ${activeContactCount} active contacts — ${feedStatus}`
+      subtitle: `${localPosts} local posts, ${activeContactCount} active contacts — ${feedCopy.status}`
     },
     profile: {
       title: "Your Profile",
@@ -2762,7 +2741,7 @@ function SpokeRuntime() {
                   {feed.map((item) => renderPostCard(item))}
                   {feed.length === 0 ? (
                     <EmptyState>
-                      {emptyFeedMessage(timeline.state)}
+                      {feedCopy.empty}
                     </EmptyState>
                   ) : null}
                 </div>

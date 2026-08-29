@@ -9,6 +9,7 @@ import {
 import { SubscriptionState } from "jolt-sdk/data";
 
 import type { SpokeApp } from "../data";
+import { activeContacts, normalizeIdentity } from "../follow";
 import {
   createFeedTimeline,
   type FeedTimelineSnapshot,
@@ -21,11 +22,19 @@ const EMPTY_TIMELINE: FeedTimelineSnapshot = Object.freeze({
   sources: Object.freeze([]),
 });
 
-export type SpokeTimeline = FeedTimelineSnapshot & {
+export type SpokeTimeline = {
+  snapshot: FeedTimelineSnapshot;
   refreshing: boolean;
   error: unknown;
   refresh(): Promise<FeedTimelineSnapshot>;
 };
+
+export function feedScopeKey(scope: FeedScope): string {
+  const contacts = [...new Set(
+    activeContacts(scope.contacts).map((contact) => normalizeIdentity(contact.identity)),
+  )].sort();
+  return JSON.stringify([normalizeIdentity(scope.localIdentity), contacts]);
+}
 
 export function useSpokeTimeline(
   data: SpokeApp | null,
@@ -37,7 +46,9 @@ export function useSpokeTimeline(
   }, [data]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const refreshGeneration = useRef(0);
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  const scopeKey = feedScopeKey(scope);
 
   const subscribe = useCallback(
     (listener: () => void) => timeline?.subscribe(listener) ?? (() => {}),
@@ -49,34 +60,49 @@ export function useSpokeTimeline(
   );
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
+  const refresh = useCallback(async () => {
+    if (!timeline) return EMPTY_TIMELINE;
+    setRefreshing(true);
+    setError(null);
+    try {
+      await timeline.open(currentScope.current);
+      return timeline.getSnapshot();
+    } catch (error) {
+      setError(error);
+      throw error;
+    } finally {
+      setRefreshing(false);
+    }
+  }, [timeline]);
+
+  useEffect(() => {
+    if (!timeline) return;
+    const activeTimeline = timeline;
+    let cancelled = false;
+
+    async function openTimeline() {
+      setRefreshing(true);
+      setError(null);
+      try {
+        await activeTimeline.open(currentScope.current);
+      } catch (error) {
+        if (!cancelled) setError(error);
+      } finally {
+        if (!cancelled) setRefreshing(false);
+      }
+    }
+
+    void openTimeline();
+    return () => {
+      cancelled = true;
+    };
+  }, [scopeKey, timeline]);
+
   useEffect(() => {
     return () => {
       void timeline?.close();
     };
   }, [timeline]);
 
-  const refresh = useCallback(async () => {
-    if (!timeline) return EMPTY_TIMELINE;
-    const generation = ++refreshGeneration.current;
-    setRefreshing(true);
-    setError(null);
-    try {
-      await timeline.open({
-        localIdentity: scope.localIdentity,
-        contacts: scope.contacts,
-      });
-      return timeline.getSnapshot();
-    } catch (error) {
-      setError(error);
-      throw error;
-    } finally {
-      if (generation === refreshGeneration.current) setRefreshing(false);
-    }
-  }, [scope.contacts, scope.localIdentity, timeline]);
-
-  useEffect(() => {
-    void refresh().catch(() => {});
-  }, [refresh]);
-
-  return { ...snapshot, refreshing, error, refresh };
+  return { snapshot, refreshing, error, refresh };
 }

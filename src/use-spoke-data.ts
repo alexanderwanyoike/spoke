@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { SpokeData, type SpokeApp } from "./data";
-import { migrateLegacyPosts } from "./feed/migrate-legacy-posts";
+import { importLegacyPostsOnce } from "./feed/import-legacy-posts";
 import { createJoltDataClient, createJoltSdk } from "./jolt";
 
 export type SpokeDataConnection = {
@@ -51,9 +51,21 @@ async function connectSpokeData(identity: string, sessionToken: string) {
     identity,
     client: createJoltDataClient(getSessionToken),
   });
-  void migrateLegacyPosts(data, identity, createJoltSdk(getSessionToken)).catch(() => {
-    // Historical migration is best-effort; typed posts remain usable if one
-    // legacy record or an older node cannot be read.
-  });
+  void importLegacyPostsInBackground(data, identity, getSessionToken);
   return data;
+}
+
+async function importLegacyPostsInBackground(
+  data: SpokeApp,
+  identity: string,
+  getSessionToken: () => string,
+) {
+  try {
+    const result = await importLegacyPostsOnce(data, identity, createJoltSdk(getSessionToken));
+    if (result.skipped.length > 0) {
+      console.warn("Spoke skipped unreadable legacy posts", result.skipped);
+    }
+  } catch (error) {
+    console.warn("Spoke could not import legacy posts", error);
+  }
 }

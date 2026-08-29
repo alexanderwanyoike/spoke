@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Subscription } from "jolt-sdk/data";
 
 import { SpokeData } from "../data";
 import type { EnumeratedRecord, JoltAppendSdk, Reference } from "../jolt";
-import { migrateLegacyPosts, type LegacyPostReader } from "./migrate-legacy-posts";
+import {
+  importLegacyPosts,
+  importLegacyPostsOnce,
+  type LegacyPostReader,
+} from "./import-legacy-posts";
 import type { SpokePost } from "./model";
 
 function legacyPost(): SpokePost {
@@ -50,15 +54,15 @@ function legacyReader(post: SpokePost): LegacyPostReader {
   } as LegacyPostReader & Pick<JoltAppendSdk, "enumerate">;
 }
 
-describe("legacy post migration", () => {
+describe("legacy post import", () => {
   it("idempotently republishes only the local author's Append posts as typed records", async () => {
     const world = SpokeData.testWorld();
     const alice = world.as("alice.jolt");
     const viewer = world.as("viewer.jolt");
     const legacy = legacyPost();
 
-    await migrateLegacyPosts(alice, "alice.jolt", legacyReader(legacy));
-    await migrateLegacyPosts(alice, "alice.jolt", legacyReader(legacy));
+    await importLegacyPosts(alice, "alice.jolt", legacyReader(legacy));
+    await importLegacyPosts(alice, "alice.jolt", legacyReader(legacy));
 
     const subscription = await Subscription.create(viewer.posts.for("alice.jolt"));
     const posts = await subscription.get();
@@ -69,5 +73,38 @@ describe("legacy post migration", () => {
       attachments: [{ id: "photo-1", contentId: "cid-photo" }],
     });
     expect(posts[0]?.value.attachments?.[0]).not.toHaveProperty("address");
+  });
+
+  it("coalesces concurrent startup imports for one identity", async () => {
+    const world = SpokeData.testWorld();
+    const alice = world.as("alice.jolt");
+    const viewer = world.as("viewer.jolt");
+    const reader = legacyReader(legacyPost());
+
+    await Promise.all([
+      importLegacyPostsOnce(alice, "alice.jolt", reader),
+      importLegacyPostsOnce(alice, "alice.jolt", reader),
+    ]);
+
+    const subscription = await Subscription.create(viewer.posts.for("alice.jolt"));
+    expect(await subscription.get()).toHaveLength(1);
+  });
+
+  it("does not enumerate legacy posts again after a completed import", async () => {
+    const world = SpokeData.testWorld();
+    const bob = world.as("bob.jolt");
+    const legacy = { ...legacyPost(), author: "bob.jolt" };
+    const reader = legacyReader(legacy);
+    const enumerate = vi.spyOn(reader, "enumerate");
+    const values = new Map<string, string>();
+    const completionStore = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    };
+
+    await importLegacyPostsOnce(bob, "bob.jolt", reader, { completionStore });
+    await importLegacyPostsOnce(bob, "bob.jolt", reader, { completionStore });
+
+    expect(enumerate).toHaveBeenCalledTimes(1);
   });
 });
