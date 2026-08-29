@@ -1,6 +1,6 @@
 import { Subscription } from "jolt-sdk/data";
 
-import type { SpokeApp } from "../data";
+import { toDataImageAttachment, type SpokeApp } from "../data";
 import { sameIdentity } from "../follow";
 import type { JoltAppendSdk } from "../jolt";
 import type { FeedReader } from "./loaders";
@@ -43,10 +43,7 @@ export async function migrateLegacyPosts(
         body: post.body,
         createdAt,
         threadPath,
-        attachments: post.attachments?.map(({ address, ...attachment }) => ({
-          ...attachment,
-          ...(address ? { address } : {}),
-        })),
+        attachments: post.attachments?.map(toDataImageAttachment),
       });
       knownThreads.add(threadPath);
     } catch {

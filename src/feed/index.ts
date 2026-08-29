@@ -1,6 +1,6 @@
-// Public surface of the feed feature. Consumers import from "./feed" (or
-// "@/feed"); the internal split (model / enumeration / commands / loaders /
-// queries) stays private behind this barrel.
+// Public surface of the feed feature. Components depend on Spoke-facing hooks
+// and models; legacy Append compatibility and timeline mechanics stay behind
+// this barrel.
 
 export * from "./model";
 export { createJoltEnumeration, type EnumerationSource, type PostRef } from "./enumeration";

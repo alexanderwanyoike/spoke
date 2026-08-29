@@ -9,11 +9,13 @@ export type SpokeDataConnection = {
   error: unknown;
 };
 
-export function useSpokeData(options: {
+export type SpokeDataOptions = {
   identity: string;
   sessionToken: string;
   enabled: boolean;
-}): SpokeDataConnection {
+};
+
+export function useSpokeData(options: SpokeDataOptions): SpokeDataConnection {
   const [connection, setConnection] = useState<SpokeDataConnection>({
     data: null,
     error: null,
@@ -49,6 +51,9 @@ async function connectSpokeData(identity: string, sessionToken: string) {
     identity,
     client: createJoltDataClient(getSessionToken),
   });
-  void migrateLegacyPosts(data, identity, createJoltSdk(getSessionToken)).catch(() => {});
+  void migrateLegacyPosts(data, identity, createJoltSdk(getSessionToken)).catch(() => {
+    // Historical migration is best-effort; typed posts remain usable if one
+    // legacy record or an older node cannot be read.
+  });
   return data;
 }

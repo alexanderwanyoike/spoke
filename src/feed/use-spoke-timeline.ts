@@ -9,11 +9,11 @@ import {
 import { SubscriptionState } from "jolt-sdk/data";
 
 import type { SpokeApp } from "../data";
-import type { Contact } from "./model";
 import {
   createFeedTimeline,
   type FeedTimelineSnapshot,
 } from "./timeline";
+import type { FeedScope } from "./queries";
 
 const EMPTY_TIMELINE: FeedTimelineSnapshot = Object.freeze({
   items: Object.freeze([]),
@@ -29,12 +29,12 @@ export type SpokeTimeline = FeedTimelineSnapshot & {
 
 export function useSpokeTimeline(
   data: SpokeApp | null,
-  scope: { localIdentity: string; contacts: Contact[] },
+  scope: FeedScope,
 ): SpokeTimeline {
-  const timeline = useMemo(
-    () => data ? createFeedTimeline(data.posts) : null,
-    [data],
-  );
+  const timeline = useMemo(() => {
+    if (!data) return null;
+    return createFeedTimeline(data.posts);
+  }, [data]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const refreshGeneration = useRef(0);
@@ -49,8 +49,10 @@ export function useSpokeTimeline(
   );
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  useEffect(() => () => {
-    void timeline?.close();
+  useEffect(() => {
+    return () => {
+      void timeline?.close();
+    };
   }, [timeline]);
 
   const refresh = useCallback(async () => {

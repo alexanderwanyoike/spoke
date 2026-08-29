@@ -4,6 +4,7 @@ import {
   SubscriptionState,
   type DataChangeStream,
   type DataSubscription,
+  type DataSubscriptionChange,
   type PresentItem,
   type RemoteCollection,
   type SubscriptionFailureValue,
@@ -18,6 +19,25 @@ import type { FeedScope } from "./queries";
 
 export type FeedPosts = SpokeApp["posts"];
 type PostSubscription = DataSubscription<Post>;
+
+type TimelineSource = {
+  identity: string;
+  active: boolean;
+  items: Map<string, PresentItem<Post>>;
+  state: SubscriptionStateValue;
+  lastVerifiedAt?: number;
+  reason?: SubscriptionFailureValue;
+  subscription?: PostSubscription;
+  subscriptionPromise?: Promise<PostSubscription>;
+  stream?: DataChangeStream<Post>;
+  retryTimer?: ReturnType<typeof setTimeout>;
+  retryAttempts: number;
+  removeWhenReady?: boolean;
+};
+
+type FeedItemSource =
+  | { source: "local" }
+  | { source: "contact"; contact: FeedScope["contacts"][number] };
 
 export type FeedTimelineSnapshot = {
   readonly items: readonly FeedItem[];
@@ -71,30 +91,140 @@ function toSpokePost(item: PresentItem<Post>): SpokePost {
   };
 }
 
+function timelineStateFor(
+  sources: readonly FeedTimelineSourceSnapshot[],
+  hasItems: boolean,
+): SubscriptionStateValue {
+  if (sources.length === 0) return SubscriptionState.Ready;
+
+  const states = new Set(sources.map((source) => source.state));
+  if (states.has(SubscriptionState.Revoked)) {
+    return SubscriptionState.Revoked;
+  }
+  if (states.has(SubscriptionState.Cancelled)) {
+    return SubscriptionState.Cancelled;
+  }
+  if (states.has(SubscriptionState.Stale)) {
+    return SubscriptionState.Stale;
+  }
+  if (states.has(SubscriptionState.Unavailable)) {
+    return hasItems ? SubscriptionState.Stale : SubscriptionState.Unavailable;
+  }
+  if (states.has(SubscriptionState.Loading) || states.has(SubscriptionState.Updating)) {
+    return SubscriptionState.Updating;
+  }
+
+  return SubscriptionState.Ready;
+}
+
+function replaceItems(source: TimelineSource, items: readonly PresentItem<Post>[]) {
+  source.items = new Map(items.map((item) => [item.ref.path, item]));
+}
+
+function applyChange(source: TimelineSource, change: DataSubscriptionChange<Post>) {
+  switch (change.type) {
+    case ChangeType.Snapshot:
+      replaceItems(source, change.items);
+      source.state = change.state;
+      source.lastVerifiedAt = change.lastVerifiedAt;
+      source.reason = change.reason;
+      return;
+
+    case ChangeType.Changed:
+      for (const item of change.items) source.items.set(item.ref.path, item);
+      for (const ref of change.removed) source.items.delete(ref.path);
+      return;
+
+    case ChangeType.State:
+      source.state = change.state;
+      source.lastVerifiedAt = change.lastVerifiedAt;
+      source.reason = change.reason;
+      return;
+
+    case ChangeType.Cancelled:
+      source.state = SubscriptionState.Cancelled;
+      source.items.clear();
+      return;
+
+    case ChangeType.Revoked:
+      source.state = SubscriptionState.Revoked;
+      source.items.clear();
+      return;
+
+    case ChangeType.ResyncRequired:
+      // The stream follows this marker with a complete Snapshot event.
+      return;
+  }
+}
+
+function markRefreshFailed(source: TimelineSource) {
+  source.state = source.items.size > 0
+    ? SubscriptionState.Stale
+    : SubscriptionState.Unavailable;
+}
+
+function feedSourcesFor(scope: FeedScope): Map<string, FeedItemSource> {
+  const sources = new Map<string, FeedItemSource>();
+  if (scope.localIdentity) {
+    sources.set(normalizeIdentity(scope.localIdentity), { source: "local" });
+  }
+  for (const contact of activeContacts(scope.contacts)) {
+    const identity = normalizeIdentity(contact.identity);
+    if (!sources.has(identity)) {
+      sources.set(identity, { source: "contact", contact });
+    }
+  }
+  return sources;
+}
+
+function sourceSnapshotFor(source: TimelineSource): FeedTimelineSourceSnapshot {
+  return Object.freeze({
+    identity: source.identity,
+    state: source.state,
+    lastVerifiedAt: source.lastVerifiedAt,
+    reason: source.reason,
+  });
+}
+
+function feedItemsFor(
+  source: TimelineSource,
+  identity: string,
+  feedSource: FeedItemSource,
+): FeedItem[] {
+  const items: FeedItem[] = [];
+  for (const item of source.items.values()) {
+    let post: SpokePost;
+    try {
+      post = toSpokePost(item);
+    } catch {
+      continue;
+    }
+    if (normalizeIdentity(post.author) !== identity) continue;
+    items.push({
+      ...feedSource,
+      post,
+      address: `${item.ref.identity}${item.ref.path}`,
+    });
+  }
+  return items;
+}
+
+function createPostSubscription(
+  _identity: string,
+  posts: RemoteCollection<Post>,
+): Promise<PostSubscription> {
+  return Subscription.create(posts);
+}
+
 export function createFeedTimeline(
   posts: FeedPosts,
   options: FeedTimelineOptions = {},
 ): FeedTimeline {
-  const createSubscription = options.createSubscription
-    ?? ((_identity: string, remotePosts: RemoteCollection<Post>) => Subscription.create(remotePosts));
+  const createSubscription = options.createSubscription ?? createPostSubscription;
   const streamRetryMs = options.streamRetryMs ?? 1_000;
   const streamRetryMaxMs = options.streamRetryMaxMs ?? 30_000;
-  type Source = {
-    identity: string;
-    active: boolean;
-    items: Map<string, PresentItem<Post>>;
-    state: SubscriptionStateValue;
-    lastVerifiedAt?: number;
-    reason?: SubscriptionFailureValue;
-    subscription?: PostSubscription;
-    subscriptionPromise?: Promise<PostSubscription>;
-    stream?: DataChangeStream<Post>;
-    retryTimer?: ReturnType<typeof setTimeout>;
-    retryAttempts: number;
-    removeWhenReady?: boolean;
-  };
 
-  const sources = new Map<string, Source>();
+  const sources = new Map<string, TimelineSource>();
   const listeners = new Set<() => void>();
   let currentScope: FeedScope = { localIdentity: "", contacts: [] };
   let sourceOrder: string[] = [];
@@ -117,81 +247,25 @@ export function createFeedTimeline(
   }
 
   function rebuildSnapshot() {
-    const feedSources = new Map<
-      string,
-      { source: "local" } | { source: "contact"; contact: FeedScope["contacts"][number] }
-    >();
-    if (currentScope.localIdentity) {
-      feedSources.set(normalizeIdentity(currentScope.localIdentity), { source: "local" });
-    }
-    for (const contact of activeContacts(currentScope.contacts)) {
-      const key = normalizeIdentity(contact.identity);
-      if (!feedSources.has(key)) {
-        feedSources.set(key, { source: "contact", contact });
-      }
+    const feedSources = feedSourcesFor(currentScope);
+    const items: FeedItem[] = [];
+    const sourceSnapshots: FeedTimelineSourceSnapshot[] = [];
+    for (const identity of sourceOrder) {
+      const source = sources.get(identity);
+      if (!source) continue;
+
+      const feedSource = feedSources.get(identity);
+      if (feedSource) items.push(...feedItemsFor(source, identity, feedSource));
+      sourceSnapshots.push(sourceSnapshotFor(source));
     }
 
-    const items: FeedItem[] = [];
-    const sourceSnapshots = sourceOrder.flatMap((key) => {
-      const source = sources.get(key);
-      if (!source) return [];
-      const feedSource = feedSources.get(key);
-      if (feedSource) {
-        for (const item of source.items.values()) {
-          let post: SpokePost;
-          try {
-            post = toSpokePost(item);
-          } catch {
-            continue;
-          }
-          if (normalizeIdentity(post.author) !== key) continue;
-          items.push({
-            ...feedSource,
-            post,
-            address: `${item.ref.identity}${item.ref.path}`,
-          });
-        }
-      }
-      return [Object.freeze({
-        identity: source.identity,
-        state: source.state,
-        lastVerifiedAt: source.lastVerifiedAt,
-        reason: source.reason,
-      })];
-    });
-    const stale = sourceSnapshots.find((source) => source.state === SubscriptionState.Stale);
-    const unavailable = sourceSnapshots.find(
-      (source) => source.state === SubscriptionState.Unavailable,
+    const failed = sourceSnapshots.find((source) =>
+      source.state === SubscriptionState.Stale
+        || source.state === SubscriptionState.Unavailable
     );
-    const revoked = sourceSnapshots.some(
-      (source) => source.state === SubscriptionState.Revoked,
-    );
-    const cancelled = sourceSnapshots.some(
-      (source) => source.state === SubscriptionState.Cancelled,
-    );
-    const pending = sourceSnapshots.some(
-      (source) => source.state === SubscriptionState.Loading
-        || source.state === SubscriptionState.Updating,
-    );
-    const state = sourceSnapshots.length === 0
-      ? SubscriptionState.Ready
-      : revoked
-        ? SubscriptionState.Revoked
-        : cancelled
-          ? SubscriptionState.Cancelled
-          : stale
-        ? SubscriptionState.Stale
-        : unavailable && items.length === 0
-          ? SubscriptionState.Unavailable
-          : unavailable
-            ? SubscriptionState.Stale
-            : pending
-              ? SubscriptionState.Updating
-              : SubscriptionState.Ready;
-    const failed = stale ?? unavailable;
     snapshot = Object.freeze({
       items: Object.freeze(sortFeed(items)),
-      state,
+      state: timelineStateFor(sourceSnapshots, items.length > 0),
       lastVerifiedAt: failed?.lastVerifiedAt,
       reason: failed?.reason,
       sources: Object.freeze(sourceSnapshots),
@@ -199,109 +273,107 @@ export function createFeedTimeline(
     for (const listener of listeners) listener();
   }
 
-  function replaceItems(source: Source, items: readonly PresentItem<Post>[]) {
-    source.items = new Map(items.map((item) => [item.ref.path, item]));
+  function scheduleStreamRetry(source: TimelineSource) {
+    const delay = Math.min(
+      streamRetryMs * 2 ** Math.min(source.retryAttempts, 30),
+      streamRetryMaxMs,
+    );
+    source.retryAttempts += 1;
+    source.retryTimer = setTimeout(() => {
+      source.retryTimer = undefined;
+      if (source.active) startChanges(source);
+    }, delay);
   }
 
-  function startChanges(source: Source) {
-    if (source.stream || !source.subscription
-      || typeof source.subscription.changes !== "function") return;
-    const stream = source.subscription.changes();
-    source.stream = stream;
-    void (async () => {
-      let retry = false;
-      try {
-        for await (const change of stream) {
-          if (!source.active) break;
-          if (change.type === ChangeType.Snapshot) {
-            replaceItems(source, change.items);
-            source.state = change.state;
-            source.lastVerifiedAt = change.lastVerifiedAt;
-            source.reason = change.reason;
-          } else if (change.type === ChangeType.Changed) {
-            for (const item of change.items) source.items.set(item.ref.path, item);
-            for (const ref of change.removed) source.items.delete(ref.path);
-          } else if (change.type === ChangeType.State) {
-            source.state = change.state;
-            source.lastVerifiedAt = change.lastVerifiedAt;
-            source.reason = change.reason;
-          } else if (change.type === ChangeType.Cancelled) {
-            source.state = SubscriptionState.Cancelled;
-            source.items.clear();
-          } else if (change.type === ChangeType.Revoked) {
-            source.state = SubscriptionState.Revoked;
-            source.items.clear();
-          }
-          source.retryAttempts = 0;
-          rebuildSnapshot();
-        }
-      } catch {
-        if (source.active) {
-          retry = true;
-          source.state = source.items.size > 0
-            ? SubscriptionState.Stale
-            : SubscriptionState.Unavailable;
-          rebuildSnapshot();
-        }
-      } finally {
-        if (source.stream === stream) source.stream = undefined;
-        if (retry && source.active) {
-          const delay = Math.min(
-            streamRetryMs * 2 ** Math.min(source.retryAttempts, 30),
-            streamRetryMaxMs,
-          );
-          source.retryAttempts += 1;
-          source.retryTimer = setTimeout(() => {
-            source.retryTimer = undefined;
-            if (source.active) startChanges(source);
-          }, delay);
-        }
+  async function consumeChanges(
+    source: TimelineSource,
+    stream: DataChangeStream<Post>,
+  ) {
+    let shouldRetry = false;
+    try {
+      for await (const change of stream) {
+        if (!source.active) break;
+        applyChange(source, change);
+        source.retryAttempts = 0;
+        rebuildSnapshot();
       }
-    })();
+    } catch {
+      if (source.active) {
+        shouldRetry = true;
+        markRefreshFailed(source);
+        rebuildSnapshot();
+      }
+    } finally {
+      if (source.stream === stream) source.stream = undefined;
+      if (shouldRetry && source.active) scheduleStreamRetry(source);
+    }
   }
 
-  async function refreshSource(source: Source) {
+  function startChanges(source: TimelineSource) {
+    if (source.stream) return;
+    const subscription = source.subscription;
+    if (!subscription || typeof subscription.changes !== "function") return;
+
+    const stream = subscription.changes();
+    source.stream = stream;
+    void consumeChanges(source, stream);
+  }
+
+  async function subscriptionFor(
+    source: TimelineSource,
+  ): Promise<PostSubscription | undefined> {
+    if (source.subscription) return source.subscription;
+
+    const pending = source.subscriptionPromise ?? createSubscription(
+      source.identity,
+      posts.for(normalizeIdentity(source.identity)),
+    );
+    source.subscriptionPromise = pending;
+
+    let subscription: PostSubscription;
+    try {
+      subscription = await pending;
+    } finally {
+      if (source.subscriptionPromise === pending) {
+        source.subscriptionPromise = undefined;
+      }
+    }
+
+    if (!source.active) {
+      if (source.removeWhenReady) await subscription.remove().catch(() => {});
+      return undefined;
+    }
+
+    source.subscription ??= subscription;
+    return source.subscription;
+  }
+
+  async function refreshSource(source: TimelineSource) {
     try {
       const hadStream = source.stream !== undefined;
-      if (!source.subscription) {
-        const pending = source.subscriptionPromise ??= createSubscription(
-          source.identity,
-          posts.for(normalizeIdentity(source.identity)),
-        );
-        let subscription: PostSubscription;
-        try {
-          subscription = await pending;
-        } finally {
-          if (source.subscriptionPromise === pending) source.subscriptionPromise = undefined;
-        }
-        if (!source.active) {
-          if (source.removeWhenReady) await subscription.remove().catch(() => {});
-          return;
-        }
-        source.subscription ??= subscription;
-      }
-      const items = await source.subscription.get();
+      const subscription = await subscriptionFor(source);
+      if (!subscription) return;
+
+      const items = await subscription.get();
       if (!source.active) return;
       // A retained Change Stream may advance while get() returns its cached
       // view. Keep the stream's projection in that case; get() still triggers
       // the bounded refresh and the stream delivers the resulting delta.
       if (!hadStream) replaceItems(source, items);
-      source.state = source.subscription.state;
-      source.lastVerifiedAt = source.subscription.lastVerifiedAt;
-      source.reason = source.subscription.reason;
+      source.state = subscription.state;
+      source.lastVerifiedAt = subscription.lastVerifiedAt;
+      source.reason = subscription.reason;
       source.retryAttempts = 0;
       startChanges(source);
     } catch {
       if (!source.active) return;
-      source.state = source.items.size > 0
-        ? SubscriptionState.Stale
-        : SubscriptionState.Unavailable;
+      markRefreshFailed(source);
       source.lastVerifiedAt = source.subscription?.lastVerifiedAt;
       source.reason = source.subscription?.reason;
     }
   }
 
-  async function removeSource(source: Source, removeSubscription: boolean) {
+  async function removeSource(source: TimelineSource, removeSubscription: boolean) {
     source.active = false;
     source.removeWhenReady = removeSubscription;
     if (source.retryTimer !== undefined) clearTimeout(source.retryTimer);

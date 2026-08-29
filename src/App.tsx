@@ -36,6 +36,8 @@ import {
   Users,
   X
 } from "lucide-react";
+import { SubscriptionFailure, SubscriptionState } from "jolt-sdk/data";
+
 import { AttachmentDraftRow } from "@/components/spoke/attachment-draft-row";
 import { EmptyState } from "@/components/spoke/empty-state";
 import { MediaFrame } from "@/components/spoke/media-frame";
@@ -85,6 +87,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { toDataImageAttachment } from "./data";
 import {
   displayNameForFeedItem,
   activeContacts,
@@ -93,7 +96,6 @@ import {
   type FeedTimelineSnapshot,
   type FeedItem,
 } from "./feed";
-import { SubscriptionFailure, SubscriptionState } from "jolt-sdk/data";
 import {
   addContact as addContactCommand,
   isSpokeFollowRequest,
@@ -359,16 +361,41 @@ function notificationGroupLabel(receivedAt: number) {
   return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 }
 
-function feedStateLabel(snapshot: FeedTimelineSnapshot | null) {
-  if (!snapshot || snapshot.state === SubscriptionState.Loading) return "loading saved posts";
-  if (snapshot.state === SubscriptionState.Updating) return "updating saved posts";
-  if (snapshot.state === SubscriptionState.Ready) return "ready";
-  if (snapshot.state === SubscriptionState.Stale) {
-    return snapshot.reason === SubscriptionFailure.NetworkUnavailable
-      ? "showing saved posts — network unavailable"
-      : "showing saved posts — refresh failed";
+function feedStateLabel(snapshot: FeedTimelineSnapshot) {
+  switch (snapshot.state) {
+    case SubscriptionState.Loading:
+      return "loading saved posts";
+    case SubscriptionState.Updating:
+      return "updating saved posts";
+    case SubscriptionState.Ready:
+      return "ready";
+    case SubscriptionState.Stale:
+      switch (snapshot.reason) {
+        case SubscriptionFailure.NetworkUnavailable:
+          return "showing saved posts — network unavailable";
+        default:
+          return "showing saved posts — refresh failed";
+      }
+    case SubscriptionState.Unavailable:
+    case SubscriptionState.Cancelled:
+    case SubscriptionState.Revoked:
+      return "unavailable";
   }
-  return "unavailable";
+}
+
+function emptyFeedMessage(state: FeedTimelineSnapshot["state"]) {
+  switch (state) {
+    case SubscriptionState.Loading:
+    case SubscriptionState.Updating:
+      return "Loading saved posts…";
+    case SubscriptionState.Unavailable:
+      return "The feed is unavailable. Check Jolt and try again.";
+    case SubscriptionState.Ready:
+    case SubscriptionState.Stale:
+    case SubscriptionState.Cancelled:
+    case SubscriptionState.Revoked:
+      return "Publish a post or add a known identity to build the feed.";
+  }
 }
 
 function App() {
@@ -467,11 +494,8 @@ function SpokeRuntime() {
   });
   const timeline = useSpokeTimeline(spokeData, { localIdentity, contacts });
   const feed = timeline.items;
-  const displayedError = error || (
-    spokeDataError || timeline.error
-      ? apiErrorMessage(spokeDataError ?? timeline.error)
-      : ""
-  );
+  const feedError = spokeDataError ?? timeline.error;
+  const displayedError = error || (feedError ? apiErrorMessage(feedError) : "");
 
   // Threads are author-anchored: the bridge enumerates the post author's
   // accepted-reply Collection (swappable for J1 in card 104). useThreads
@@ -1433,12 +1457,7 @@ function SpokeRuntime() {
         body,
         createdAt: new Date(),
         ...(attachments.length > 0
-          ? {
-              attachments: attachments.map(({ address, ...attachment }) => ({
-                ...attachment,
-                ...(address ? { address } : {})
-              }))
-            }
+          ? { attachments: attachments.map(toDataImageAttachment) }
           : {})
       });
       for (const attachment of attachments) {
@@ -2743,12 +2762,7 @@ function SpokeRuntime() {
                   {feed.map((item) => renderPostCard(item))}
                   {feed.length === 0 ? (
                     <EmptyState>
-                      {timeline.state === SubscriptionState.Loading
-                        || timeline.state === SubscriptionState.Updating
-                        ? "Loading saved posts…"
-                        : timeline.state === SubscriptionState.Unavailable
-                          ? "The feed is unavailable. Check Jolt and try again."
-                          : "Publish a post or add a known identity to build the feed."}
+                      {emptyFeedMessage(timeline.state)}
                     </EmptyState>
                   ) : null}
                 </div>
