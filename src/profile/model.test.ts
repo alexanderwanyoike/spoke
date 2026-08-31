@@ -54,6 +54,42 @@ describe("Spoke profile helpers", () => {
     ).toBe("Alice Remote");
   });
 
+  it("does not let a generated identity fallback hide the fetched profile name", () => {
+    expect(
+      displayNameForProfileIdentity({
+        identity: "bob.jolt",
+        contacts: [{ identity: "bob.jolt", displayName: "bob.jolt", relationship: "accepted" }],
+        profiles: {
+          bob: {
+            schema: "spoke.profile.v1",
+            identity: "bob.jolt",
+            displayName: "Bob",
+            bio: "",
+            updatedAt: "2026-08-31T10:00:00.000Z"
+          }
+        }
+      })
+    ).toBe("Bob");
+  });
+
+  it("keeps an intentional nickname that resembles the contact identity", () => {
+    expect(
+      displayNameForProfileIdentity({
+        identity: "bob.jolt",
+        contacts: [{ identity: "bob.jolt", displayName: "bob", relationship: "accepted" }],
+        profiles: {
+          bob: {
+            schema: "spoke.profile.v1",
+            identity: "bob.jolt",
+            displayName: "Robert",
+            bio: "",
+            updatedAt: "2026-08-31T10:00:00.000Z"
+          }
+        }
+      })
+    ).toBe("bob");
+  });
+
   it("keeps only complete profile links", () => {
     expect(
       profileLinksFromDraft([
