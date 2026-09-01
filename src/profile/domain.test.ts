@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { JoltSdk, Reference } from "../jolt";
+import type { Reference } from "../jolt";
 import { createStore } from "../common/store";
 import { publishProfile, PROFILE_PATH } from "./commands";
+import type { ProfileWriter } from "./commands";
 import { loadProfile } from "./loaders";
+import type { ProfileReader } from "./loaders";
 import { selectProfile, selectProfiles } from "./queries";
 import type { SpokeProfile } from "./model";
 
@@ -23,10 +25,10 @@ function encode(value: unknown): number[] {
 // A fakeable SDK adapter: the seam is an interface, so the domain is testable
 // without touching the Jolt transport or the daemon.
 function fakeSdk(
-  overrides: Partial<JoltSdk> & {
+  overrides: Partial<ProfileWriter & ProfileReader> & {
     reads?: Record<string, { latestSequence: number; contentId: string; bytes: number[] }>;
   } = {}
-): JoltSdk {
+): ProfileWriter & ProfileReader {
   const reads = overrides.reads || {};
   return {
     async publishJson(path) {
@@ -41,16 +43,6 @@ function fakeSdk(
       return value === null
         ? null
         : { ref, value, latestSequence: hit.latestSequence, contentId: hit.contentId };
-    },
-    async readContent(contentId, ref, latestSequence, decode) {
-      const hit = Object.values(reads).find((item) => item.contentId === contentId);
-      if (!hit) {
-        return null;
-      }
-      const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(hit.bytes))));
-      return value === null
-        ? null
-        : { ref, value, latestSequence, contentId };
     },
     ...overrides
   };

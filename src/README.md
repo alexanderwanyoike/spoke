@@ -128,26 +128,29 @@ Collection of append records does not. See
 
 ## The Jolt SDK seam (`src/jolt/`)
 
-`index.ts` exposes a **fakeable** SDK, split into capability interfaces so a
-feature depends only on what it uses (and tests pass a plain object):
+`index.ts` binds the released, transport-independent `jolt-sdk` to Spoke's web
+or desktop runtime. Feature modules narrow those SDK interfaces with `Pick` so
+each command or loader depends only on the methods it uses (and tests pass a
+small plain object):
 
 - `JoltSdk` — `publishJson`, `read(ref, decode)` (public publications)
 - `JoltEncryptedSdk` — `publishEncryptedJson`, `readEncrypted`, `listPublished`
 - `JoltIngressSdk` — `sendObject`, `listPendingIngress`, `openIngress`, `acceptIngress`, `rejectIngress`
 - `JoltAppendSdk` — `publishAppend`, `enumerate` (the J1 append-record door)
 
-`createJoltSdk` implements all four and is where **ACL marshalling** happens: the
-domain hands in a `Decoder<T>` and gets back a `Versioned<T>`; wire DTOs
-(snake_case daemon fields like `AppendRecordInfo`) are mapped to domain shapes
-(camelCase `EnumeratedRecord`) here, so transport field shapes never leak up.
+`createJoltSdk` returns the released client's fakeable domain surface. The
+domain hands in a `Decoder<T>` and gets back a `Versioned<T>`; `jolt-sdk` maps
+wire DTOs (snake_case daemon fields like `AppendRecordInfo`) to domain shapes
+(camelCase `EnumeratedRecord`) before they reach Spoke.
 
-`transport.ts` is the only module that talks to the daemon and is **app-agnostic**
-(no Spoke types/namespaces). Spoke's session capabilities live in
-[`src/session.ts`](./session.ts).
+The same barrel owns Spoke's generic App API compatibility declaration and
+check. [`../spoke-compatibility.json`](../spoke-compatibility.json) is shared by
+runtime startup and signed update manifests. Spoke's authorization capabilities
+remain separate in [`src/session.ts`](./session.ts).
 
 ### How Spoke reaches the daemon
 
-| Concern | Daemon route (`/app/v1`) | Transport fn |
+| Concern | Daemon route (`/app/v1`) | SDK operation |
 |---|---|---|
 | Session | `/sessions/request`, `/session` | `requestSession`, `getCurrentSession` |
 | Public read | `/resolve` + `/fetch` | `read` (via `resolveAddress`, `fetchTarget`) |
@@ -157,10 +160,11 @@ domain hands in a `Decoder<T>` and gets back a `Versioned<T>`; wire DTOs
 | Encrypted | `/encrypted/publish`, `/encrypted/decrypt` | `publishEncrypted*`, `readEncrypted` |
 | Ingress (DMs/follows) | `/ingress/*` | `sendObject`, `listPendingIngress`, … |
 
-On **web** these are `fetch` calls through the `/jolt-api` dev proxy; on
-**desktop** they go through Tauri `invoke` commands in
-[`../src-tauri/src/lib.rs`](../src-tauri/src/lib.rs) (`daemon_request`,
-`daemon_publish_json`, `daemon_publish_bytes`, `daemon_append`).
+On **web** these are `fetch` calls through the `/jolt-api` dev proxy. On
+**desktop** `jolt-sdk` invokes the audited commands supplied by the shared
+`tauri-plugin-jolt` adapter. Spoke's SDK / ACL seam rejects writes outside
+`/spoke/*` before either adapter is called; the daemon independently enforces
+the approved session capabilities.
 
 ## Features at a glance
 
@@ -185,10 +189,11 @@ command an auto-accept would, so both paths converge on one code path.
 
 ## Testing
 
-Because every feature depends on the SDK *interface*, tests pass a small fake
+Because every feature depends on a narrow SDK *interface*, tests pass a small fake
 object (a `Map`-backed stand-in) instead of a real daemon — no network, no Tauri.
 Domain tests (`*/domain.test.ts`) exercise commands/loaders/queries against fakes;
-transport wire calls are tested in `jolt/transport.test.ts`. The monotonicity
+Spoke's SDK binding is covered in `jolt/sdk.test.ts`, while generic transport
+wire contracts live in the released SDK's own test suite. The monotonicity
 guarantees (a stale refetch can't drop a known record) are asserted directly.
 
 ## Where to start reading

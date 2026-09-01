@@ -16,8 +16,10 @@ import {
 } from "./model";
 import type { ThreadEnumeration } from "./enumeration";
 
+export type ThreadWriter = Pick<JoltSdk, "publishJson">;
+
 export async function submitReply(
-  sdk: JoltSdk,
+  sdk: ThreadWriter,
   reply: SpokeReplyV2,
   store: Store = defaultStore
 ): Promise<SpokeReplyV2> {
@@ -31,7 +33,7 @@ export async function submitReply(
 }
 
 export async function acceptReply(
-  sdk: JoltSdk,
+  sdk: ThreadWriter,
   enumeration: ThreadEnumeration,
   reply: SpokeReplyV2,
   store: Store = defaultStore
@@ -62,7 +64,7 @@ export async function acceptReply(
 }
 
 export async function unacceptReply(
-  sdk: JoltSdk,
+  sdk: ThreadWriter,
   enumeration: ThreadEnumeration,
   postAuthor: string,
   ref: AcceptedReplyRef,

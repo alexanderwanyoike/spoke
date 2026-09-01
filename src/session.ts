@@ -15,6 +15,8 @@ export const SPOKE_CAPABILITIES = [
   "decrypt:/spoke/*",
   "enumerate:self:/spoke/*",
   "enumerate:any:/spoke/*",
+  "delete:/spoke/posts/*",
+  "subscribe:any:/spoke/posts/*",
   "ingress:send",
   "ingress:read",
   "ingress:decide"

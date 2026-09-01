@@ -11,6 +11,9 @@ import { normalizeIdentity } from "../follow";
 import { store as defaultStore, type Store } from "../common/store";
 import { makeOutgoingPath, makeReceivedPath, messageBelongsToConversation, type SpokeMessage } from "./model";
 
+export type MessageSender = Pick<JoltIngressSdk, "sendObject">;
+export type MessageWriter = Pick<JoltSdk, "publishJson">;
+
 function foldMessage(
   store: Store,
   ownerIdentity: string,
@@ -28,7 +31,7 @@ function foldMessage(
 }
 
 export async function sendMessage(
-  sdk: JoltIngressSdk,
+  sdk: MessageSender,
   message: SpokeMessage,
   store: Store = defaultStore
 ): Promise<SpokeMessage> {
@@ -44,7 +47,7 @@ export async function sendMessage(
 }
 
 export async function acceptReceivedMessage(
-  sdk: JoltSdk,
+  sdk: MessageWriter,
   localIdentity: string,
   message: SpokeMessage,
   store: Store = defaultStore

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { EnumeratedRecord, JoltAppendSdk, JoltSdk, Reference } from "../jolt";
+import type { EnumeratedRecord, JoltAppendSdk, Reference } from "../jolt";
 import { createStore } from "../common/store";
 import type { Contact, SpokePost } from "./model";
 import { createJoltEnumeration } from "./enumeration";
 import { publishPost } from "./commands";
 import { loadFeed } from "./loaders";
+import type { FeedReader } from "./loaders";
 import { selectFeed } from "./queries";
 
 function post(overrides: Partial<SpokePost>): SpokePost {
@@ -37,14 +38,11 @@ function fakeSdk(opts: {
   contentReads?: Record<string, { latestSequence: number; bytes: number[] }>;
   enumerations?: Record<string, string[]>;
   onPublishAppend?: (path: string, body: object) => void;
-}): JoltSdk & JoltAppendSdk {
+}): FeedReader & JoltAppendSdk {
   const reads = opts.reads || {};
   const contentReads = opts.contentReads || {};
   const enumerations = opts.enumerations || {};
   return {
-    async publishJson(path) {
-      return { contentId: `cid_${path}`, latestSequence: 1, path, address: null };
-    },
     async read(ref: Reference, decode) {
       const hit = reads[`${ref.identity}${ref.path}`];
       if (!hit) return null;
@@ -75,7 +73,7 @@ function fakeSdk(opts: {
             contentId: reads[`${identity}${path}`]?.contentId || `cid_${path}`,
             deviceId: "dev_1",
             deviceSequence: reads[`${identity}${path}`]?.latestSequence ?? contentReads[`cid_${path}`]?.latestSequence ?? index,
-            createdAt: "2026-06-06T00:00:00.000Z",
+            createdAt: 1_780_704_000,
             entryHash: `hash_${path}`
           })
         );

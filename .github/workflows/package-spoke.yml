@@ -14,6 +14,7 @@ on:
       - "scripts/install-spoke.sh"
       - "scripts/verify-distribution.mjs"
       - "scripts/write-spoke-update-manifest.mjs"
+      - "spoke-compatibility.json"
       - "package-lock.json"
       - "package.json"
       - "vite.config.ts"

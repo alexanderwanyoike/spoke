@@ -9,8 +9,10 @@ import { store as defaultStore, type Store } from "../common/store";
 import { decodePost } from "./model";
 import type { EnumerationSource } from "./enumeration";
 
+export type FeedReader = Pick<JoltSdk, "read" | "readContent">;
+
 async function loadAuthorPosts(
-  sdk: JoltSdk,
+  sdk: FeedReader,
   enumeration: EnumerationSource,
   identity: string,
   store: Store
@@ -35,7 +37,7 @@ async function loadAuthorPosts(
 }
 
 export async function loadFeed(
-  sdk: JoltSdk,
+  sdk: FeedReader,
   enumeration: EnumerationSource,
   identities: string[],
   store: Store = defaultStore

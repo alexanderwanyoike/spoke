@@ -60,8 +60,9 @@ export function displayNameForProfileIdentity(input: {
   }
 
   const contact = contacts.find((item) => sameIdentity(item.identity, identity));
-  if (contact?.displayName.trim()) {
-    return contact.displayName.trim();
+  const localNickname = contact?.displayName.trim();
+  if (contact && localNickname && localNickname !== contact.identity.trim()) {
+    return localNickname;
   }
 
   const profile = Object.entries(profiles).find(([profileIdentity]) =>

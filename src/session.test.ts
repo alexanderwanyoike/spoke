@@ -9,6 +9,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import { SPOKE_CAPABILITIES, requestSpokeSession } from "./session";
+import { SPOKE_COMPATIBILITY } from "./jolt";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
@@ -52,5 +53,18 @@ describe("Spoke session bootstrap", () => {
         })
       })
     );
+  });
+
+  it("requests the authority and App API features declared by SpokeData", () => {
+    expect(SPOKE_CAPABILITIES).toEqual(expect.arrayContaining([
+      "publish:/spoke/*",
+      "delete:/spoke/posts/*",
+      "subscribe:any:/spoke/posts/*",
+    ]));
+    expect(SPOKE_COMPATIBILITY.requiredFeatures).toEqual({
+      "data.records": 5,
+      "data.subscriptions": 1,
+      "data.change-streams": 1,
+    });
   });
 });

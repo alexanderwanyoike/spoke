@@ -8,13 +8,16 @@
 // See docs/CONTEXT.md ("Jolt SDK / ACL").
 
 import {
-  apiErrorMessage,
+  apiErrorMessage as sdkApiErrorMessage,
+  createDataClient,
   createJoltClient,
   makeId,
   operations as ops,
   referenceKey,
   referenceTarget,
   type FetchResult,
+  type AppCompatibilityDeclaration,
+  type CompatibilityCheckOptions,
   type JoltAppendSdk,
   type JoltEncryptedSdk,
   type JoltIngressSdk,
@@ -24,8 +27,10 @@ import {
 } from "jolt-sdk";
 import { HttpTransport } from "jolt-sdk/transport-http";
 import { isTauriRuntime, TauriTransport } from "jolt-sdk/transport-tauri";
+import appCompatibility from "../../spoke-compatibility.json";
+import { isJoltUnavailableError, JOLT_UNAVAILABLE_MESSAGE } from "./errors";
 
-export { apiErrorMessage, makeId, referenceKey, referenceTarget };
+export { makeId, referenceKey, referenceTarget };
 export type {
   Decoder,
   EnumeratedRecord,
@@ -52,10 +57,10 @@ export type {
 } from "jolt-sdk";
 
 // One transport for the whole app, chosen by runtime. Desktop goes through
-// the Tauri commands in src-tauri; web goes through the vite proxy so the
+// the shared Jolt Tauri plugin; web goes through the vite proxy so the
 // browser never needs CORS access to the daemon.
 function makeTransport(): JoltTransport {
-  return isTauriRuntime() ? new TauriTransport() : HttpTransport.viteProxy();
+  return isTauriRuntime() ? new TauriTransport({ plugin: true }) : HttpTransport.viteProxy();
 }
 
 let transport: JoltTransport | null = null;
@@ -64,11 +69,62 @@ function getTransport(): JoltTransport {
   return transport;
 }
 
+function getClient(getSessionToken: () => string = () => "") {
+  return createJoltClient({ transport: getTransport(), getSessionToken });
+}
+
+/** Advanced host seam consumed only by Spoke's typed Data application. */
+export function createJoltDataClient(getSessionToken: () => string) {
+  return createDataClient({ transport: getTransport(), getSessionToken });
+}
+
+function assertSpokePath(path: string) {
+  if (!path.startsWith("/spoke/")) {
+    throw new Error("Spoke can only write under /spoke/");
+  }
+}
+
+export const SPOKE_COMPATIBILITY = {
+  appApi: appCompatibility.app_api,
+  requiredFeatures: appCompatibility.required_features,
+  optionalFeatures: appCompatibility.optional_features
+} as const satisfies AppCompatibilityDeclaration;
+
+export function checkSpokeCompatibility(
+  declaration: AppCompatibilityDeclaration = SPOKE_COMPATIBILITY,
+  options?: CompatibilityCheckOptions
+) {
+  return getClient().checkCompatibility(declaration, options);
+}
+
+export function apiErrorMessage(error: unknown) {
+  return isJoltUnavailableError(error) ? JOLT_UNAVAILABLE_MESSAGE : sdkApiErrorMessage(error);
+}
+
 /** The fakeable adapter Spoke's commands and queries depend on. */
 export function createJoltSdk(
   getSessionToken: () => string
 ): JoltSdk & JoltEncryptedSdk & JoltIngressSdk & JoltAppendSdk {
-  return createJoltClient({ transport: getTransport(), getSessionToken });
+  const client = getClient(getSessionToken);
+  return {
+    ...client,
+    async publishJson(path, body, options) {
+      assertSpokePath(path);
+      return await client.publishJson(path, body, options);
+    },
+    async publishAppend(path, body, options) {
+      assertSpokePath(path);
+      return await client.publishAppend(path, body, options);
+    },
+    async publishEncryptedJson(path, body, recipients, options) {
+      assertSpokePath(path);
+      return await client.publishEncryptedJson(path, body, recipients, options);
+    },
+    async sendObject(recipient, path, body, options) {
+      assertSpokePath(path);
+      return await client.sendObject(recipient, path, body, options);
+    }
+  };
 }
 
 // App-shell daemon operations (bootstrap, session, media) that sit outside
@@ -76,23 +132,23 @@ export function createJoltSdk(
 // signatures preserved.
 
 export function getStatus() {
-  return ops.getStatus(getTransport());
+  return getClient().getStatus();
 }
 
 export function requestSession(req: SessionRequest) {
-  return ops.requestSession(getTransport(), req);
+  return getClient().requestSession(req);
 }
 
 export function getSessionRequestStatus(requestId: string) {
-  return ops.getSessionRequestStatus(getTransport(), requestId);
+  return getClient().getSessionRequestStatus(requestId);
 }
 
 export function getCurrentSession(sessionToken: string) {
-  return ops.getCurrentSession(getTransport(), sessionToken);
+  return getClient(() => sessionToken).getCurrentSession();
 }
 
 export function listPublished(sessionToken: string) {
-  return ops.listPublished(getTransport(), sessionToken);
+  return getClient(() => sessionToken).listPublished();
 }
 
 export function fetchTarget(sessionToken: string, target: string) {
@@ -109,6 +165,7 @@ export async function publishBinary(
   file: File | Blob,
   options: { fileName: string; mimeType: string }
 ) {
+  assertSpokePath(path);
   return ops.publishBytes(
     getTransport(),
     sessionToken,
@@ -124,6 +181,7 @@ export async function publishEncryptedBinary(
   file: File | Blob,
   options: { mimeType: string; recipients: string[] }
 ) {
+  assertSpokePath(path);
   return ops.publishEncryptedBytes(
     getTransport(),
     sessionToken,
