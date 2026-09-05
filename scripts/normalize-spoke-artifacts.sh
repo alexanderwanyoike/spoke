@@ -10,10 +10,12 @@ Usage:
     --bundle KIND \
     --dist-dir DIR \
     --console-asset NAME \
-    --updater-asset NAME
+    --updater-asset NAME \
+    [--deb-asset NAME]
 
 Bundle kinds:
   appimage  Linux AppImage bundle
+  linux     Linux AppImage bundle plus the .deb package (requires --deb-asset)
   dmg       macOS DMG bundle plus .app.tar.gz updater payload
   nsis      Windows NSIS setup bundle
 
@@ -26,6 +28,7 @@ BUNDLE_KIND=""
 DIST_DIR=""
 CONSOLE_ASSET=""
 UPDATER_ASSET=""
+DEB_ASSET=""
 REQUIRE_UPDATER_ARTIFACTS="${SPOKE_REQUIRE_UPDATER_ARTIFACTS:-0}"
 
 while [[ $# -gt 0 ]]; do
@@ -44,6 +47,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --updater-asset)
       UPDATER_ASSET="${2:-}"
+      shift 2
+      ;;
+    --deb-asset)
+      DEB_ASSET="${2:-}"
       shift 2
       ;;
     --help|-h)
@@ -81,12 +88,24 @@ hash_file() {
 
 mkdir -p "$DIST_DIR"
 
+copy_appimage() {
+  cp src-tauri/target/release/bundle/appimage/*.AppImage "$DIST_DIR/$CONSOLE_ASSET"
+  if compgen -G "src-tauri/target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
+    cp src-tauri/target/release/bundle/appimage/*.AppImage.sig "$DIST_DIR/$UPDATER_ASSET.sig"
+  fi
+}
+
 case "$BUNDLE_KIND" in
   appimage)
-    cp src-tauri/target/release/bundle/appimage/*.AppImage "$DIST_DIR/$CONSOLE_ASSET"
-    if compgen -G "src-tauri/target/release/bundle/appimage/*.AppImage.sig" > /dev/null; then
-      cp src-tauri/target/release/bundle/appimage/*.AppImage.sig "$DIST_DIR/$UPDATER_ASSET.sig"
+    copy_appimage
+    ;;
+  linux)
+    if [[ -z "$DEB_ASSET" ]]; then
+      echo "--deb-asset is required for the linux bundle kind" >&2
+      exit 2
     fi
+    copy_appimage
+    cp src-tauri/target/release/bundle/deb/*.deb "$DIST_DIR/$DEB_ASSET"
     ;;
   dmg)
     cp src-tauri/target/release/bundle/dmg/*.dmg "$DIST_DIR/$CONSOLE_ASSET"
@@ -123,4 +142,7 @@ fi
 hash_file "$DIST_DIR/$CONSOLE_ASSET"
 if [[ -f "$DIST_DIR/$UPDATER_ASSET" && "$UPDATER_ASSET" != "$CONSOLE_ASSET" ]]; then
   hash_file "$DIST_DIR/$UPDATER_ASSET"
+fi
+if [[ -n "$DEB_ASSET" && -f "$DIST_DIR/$DEB_ASSET" ]]; then
+  hash_file "$DIST_DIR/$DEB_ASSET"
 fi
