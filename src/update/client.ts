@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import {
@@ -22,6 +23,9 @@ export type SpokeUpdateAvailable = {
 export type SpokeUpdateUnavailable = {
   available: false;
   currentVersion?: string;
+  // Installed from a system package (.deb, .rpm). The updater only publishes
+  // the AppImage on Linux, so these installs update through the package.
+  managedByPackage?: boolean;
 };
 
 export type SpokeUpdateCheck = SpokeUpdateAvailable | SpokeUpdateUnavailable;
@@ -67,6 +71,10 @@ async function inspectUpdate(update: Update): Promise<PendingSpokeUpdate> {
 export const tauriSpokeUpdateClient: SpokeUpdateClient = {
   async check() {
     pendingUpdate = null;
+    const installKind = await invoke<string>("spoke_install_kind");
+    if (installKind === "deb" || installKind === "rpm") {
+      return { available: false, managedByPackage: true };
+    }
     const update = await check();
 
     if (!update) {

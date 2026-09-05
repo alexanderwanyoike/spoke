@@ -1098,7 +1098,11 @@ function SpokeRuntime() {
       const nextUpdateCheck = await updateClient.check();
       setUpdateCheck(nextUpdateCheck);
       if (!nextUpdateCheck.available) {
-        setNotice("Spoke is up to date.");
+        setNotice(
+          nextUpdateCheck.managedByPackage
+            ? "Spoke was installed from a system package. Install the next release's package to update."
+            : "Spoke is up to date."
+        );
         return;
       }
 
