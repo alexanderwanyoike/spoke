@@ -57,6 +57,8 @@ required_assets=(
   "spoke-x86_64.AppImage"
   "spoke-x86_64.AppImage.sha256"
   "spoke-x86_64.AppImage.sig"
+  "spoke-amd64.deb"
+  "spoke-amd64.deb.sha256"
   "spoke-aarch64.dmg"
   "spoke-aarch64.dmg.sha256"
   "spoke-aarch64.app.tar.gz"
