@@ -133,6 +133,8 @@ requests and publishes release assets for tags:
 spoke-x86_64.AppImage
 spoke-x86_64.AppImage.sha256
 spoke-x86_64.AppImage.sig
+spoke-amd64.deb
+spoke-amd64.deb.sha256
 spoke-aarch64.dmg
 spoke-aarch64.dmg.sha256
 spoke-aarch64.app.tar.gz
@@ -143,6 +145,17 @@ spoke-x86_64-setup.exe.sha256
 spoke-x86_64-setup.exe.sig
 latest.json
 ```
+
+On Debian, Ubuntu, and Linux Mint the `.deb` is the recommended install. It
+registers the applications-menu entry and icon that a bare AppImage cannot,
+and it uses the system GTK and GLib instead of bundled copies:
+
+```bash
+sudo apt install ./spoke-amd64.deb
+```
+
+The `.deb` does not self-update; install the next release the same way. The
+AppImage remains the self-updating build and the path the install script uses.
 
 Packaged Spoke updates are signed and verified before installation. Spoke uses
 its own updater key, separate from Jolt Console and Pastey.
