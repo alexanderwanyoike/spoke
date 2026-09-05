@@ -153,6 +153,10 @@ export async function acceptFollowRequest(
   if (sameIdentity(request.sender, localIdentity)) {
     throw new Error("Refusing to accept a follow request from your own identity.");
   }
+  // The requester only learns of acceptance from the response, so it goes
+  // first: a local "accepted" edge with no delivered response shows a contact
+  // in Messages who never hears back.
+  const response = await sendFollowResponse(sdk, localIdentity, request, "accepted");
   const contact = await publishContact(
     sdk,
     localIdentity,
@@ -164,7 +168,6 @@ export async function acceptFollowRequest(
     {},
     store
   );
-  const response = await sendFollowResponse(sdk, localIdentity, request, "accepted");
   return { response, contact };
 }
 
