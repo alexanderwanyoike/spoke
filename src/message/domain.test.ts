@@ -32,14 +32,17 @@ function fakeJolt(localIdentity: string) {
     return value === null ? null : { ref, value, latestSequence: rec.seq, contentId: rec.contentId };
   }
 
+  const reads: string[] = [];
   const sdk: MessageSender & MessageWriter & ConversationLoaderSdk = {
     async publishJson(path, body) {
       return publish(path, body);
     },
     async read(ref, decode) {
+      reads.push(ref.path);
       return readHit(ref, decode) as never;
     },
     async readEncrypted(ref, decode) {
+      reads.push(ref.path);
       return readHit(ref, decode) as never;
     },
     async listPublished() {
@@ -57,7 +60,7 @@ function fakeJolt(localIdentity: string) {
     }
   };
 
-  return { sdk, sent };
+  return { sdk, sent, reads };
 }
 
 function message(overrides: Partial<SpokeMessage> = {}): SpokeMessage {
@@ -153,5 +156,32 @@ describe("message commands", () => {
     await loadConversations(sdk, "alice.jolt", rebuilt);
     const reloaded = Object.values(selectConversations(rebuilt.getSnapshot(), "alice.jolt"))[0];
     expect(reloaded.messages).toHaveLength(2);
+  });
+
+  it("loadConversations reads only what the store does not already hold", async () => {
+    const { sdk, reads } = fakeJolt("alice.jolt");
+    const store = createStore();
+    await sendMessage(sdk, message({ id: "m1", body: "First" }), store);
+    await acceptReceivedMessage(
+      sdk,
+      "alice.jolt",
+      message({ id: "m2", sender: "bob.jolt", recipients: ["alice.jolt"], body: "Second" }),
+      store
+    );
+    reads.length = 0;
+
+    // The store already holds both copies from the local commands, so an
+    // unchanged inventory must not re-read (and re-decrypt) either of them.
+    await loadConversations(sdk, "alice.jolt", store);
+    expect(reads).toEqual([]);
+
+    // A copy that arrived outside this store (another device, a restart) is
+    // read exactly once, and only that one.
+    const fresh = createStore();
+    await sendMessage(sdk, message({ id: "m3", body: "Third" }), fresh);
+    await loadConversations(sdk, "alice.jolt", store);
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).toContain("m3");
+    expect(Object.values(selectConversations(store.getSnapshot(), "alice.jolt"))[0].messages).toHaveLength(3);
   });
 });
