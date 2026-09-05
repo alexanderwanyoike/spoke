@@ -240,6 +240,9 @@ h1 em { color: var(--primary); font-style: normal; font-weight: 500; }
 .download-format { margin-top: 15px; color: var(--muted); }
 .download-action { display: flex; justify-content: space-between; margin-top: auto; padding-top: 38px; font-size: 12px; font-weight: 650; }
 .download-action b { margin-left: 9px; color: var(--primary); font-weight: 600; }
+.download-choice .download-actions { display: grid; gap: 12px; margin-top: auto; padding-top: 30px; }
+.download-choice .download-action { margin-top: 0; padding-top: 0; color: inherit; text-decoration: none; }
+.download-choice .download-action:hover { color: var(--primary); }
 .download-foot { display: flex; justify-content: space-between; gap: 32px; margin-top: 24px; color: var(--muted); font-size: 12px; }
 .download-foot p { max-width: 650px; margin: 0; line-height: 1.6; }
 .download-foot > span { display: flex; gap: 24px; white-space: nowrap; }
@@ -301,6 +304,8 @@ h1 em { color: var(--primary); font-style: normal; font-weight: 500; }
   .download-format { display: none; }
   .download-action { margin: 0; padding: 0; font-size: 0; }
   .download-action b { margin: 0; font-size: 16px; }
+  .download-choice .download-actions { display: flex; gap: 16px; margin: 0; padding: 0; }
+  .download-choice .download-action { font-size: 11px; }
   .download-foot { align-items: flex-start; flex-direction: column; }
   .download-foot > span { align-items: flex-start; flex-direction: column; gap: 12px; white-space: normal; }
   .macos-help { grid-template-columns: 1fr; gap: 10px; }
