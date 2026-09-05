@@ -1,26 +1,14 @@
 name: Package Spoke
 
 on:
+  # Feature PRs run tests only (ci.yml). Packaging is expensive, so it runs
+  # here only when a PR touches packaging itself (Linux only), on release PRs
+  # to main (all platforms), on tags, and on demand.
   pull_request:
     branches:
       - dev
-    paths:
-      - ".github/workflows/package-spoke.yml"
-      - "src/**"
-      - "src-tauri/**"
-      - "scripts/package-spoke.sh"
-      - "scripts/normalize-spoke-artifacts.sh"
-      - "scripts/assemble-spoke-release.sh"
-      - "scripts/install-spoke.sh"
-      - "scripts/verify-distribution.mjs"
-      - "scripts/write-spoke-update-manifest.mjs"
-      - "spoke-compatibility.json"
-      - "package-lock.json"
-      - "package.json"
-      - "vite.config.ts"
+      - main
   push:
-    branches:
-      - dev
     tags:
       - "v*"
   workflow_dispatch:
@@ -29,33 +17,60 @@ permissions:
   contents: write
 
 jobs:
+  plan:
+    name: Decide what to package
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Choose the packaging matrix
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          linux='{"name":"Linux AppImage and deb","runner":"ubuntu-22.04","bundle":"linux","artifact_name":"spoke-linux-x86_64","console_asset":"spoke-x86_64.AppImage","updater_asset":"spoke-x86_64.AppImage","deb_asset":"spoke-amd64.deb"}'
+          macos='{"name":"macOS DMG","runner":"macos-latest","bundle":"dmg","artifact_name":"spoke-macos-aarch64","console_asset":"spoke-aarch64.dmg","updater_asset":"spoke-aarch64.app.tar.gz"}'
+          windows='{"name":"Windows NSIS","runner":"windows-latest","bundle":"nsis","artifact_name":"spoke-windows-x86_64","console_asset":"spoke-x86_64-setup.exe","updater_asset":"spoke-x86_64-setup.exe"}'
+
+          # A PR to dev packages only when it touches one of these files.
+          packaging_paths=(
+            .github/workflows/package-spoke.yml
+            scripts/package-spoke.sh
+            scripts/normalize-spoke-artifacts.sh
+            scripts/assemble-spoke-release.sh
+            scripts/install-spoke.sh
+            scripts/verify-distribution.mjs
+            scripts/write-spoke-update-manifest.mjs
+            src-tauri/tauri.conf.json
+            src-tauri/Cargo.toml
+            spoke-compatibility.json
+            package.json
+          )
+
+          matrix="[]"
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" || "$GITHUB_BASE_REF" == "main" ]]; then
+            matrix="[$linux,$macos,$windows]"
+          elif gh api "repos/$GITHUB_REPOSITORY/pulls/${{ github.event.pull_request.number }}/files" \
+              --paginate -q '.[].filename' \
+              | grep -Eq -e "^src-tauri/capabilities/" -f <(printf '%s\n' "${packaging_paths[@]}" | sed 's/[.]/\\./g; s/^/^/; s/$/$/'); then
+            matrix="[$linux]"
+          fi
+
+          echo "Packaging matrix: $matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   package:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
+    needs: plan
+    if: needs.plan.outputs.matrix != '[]'
 
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: Linux AppImage and deb
-            runner: ubuntu-22.04
-            bundle: linux
-            artifact_name: spoke-linux-x86_64
-            console_asset: spoke-x86_64.AppImage
-            updater_asset: spoke-x86_64.AppImage
-            deb_asset: spoke-amd64.deb
-          - name: macOS DMG
-            runner: macos-latest
-            bundle: dmg
-            artifact_name: spoke-macos-aarch64
-            console_asset: spoke-aarch64.dmg
-            updater_asset: spoke-aarch64.app.tar.gz
-          - name: Windows NSIS
-            runner: windows-latest
-            bundle: nsis
-            artifact_name: spoke-windows-x86_64
-            console_asset: spoke-x86_64-setup.exe
-            updater_asset: spoke-x86_64-setup.exe
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
 
     steps:
       - name: Checkout
