@@ -1,9 +1,8 @@
-import type { ChangeEvent, KeyboardEvent } from "react";
+import { useRef, type ChangeEvent } from "react";
 import { ArrowLeft, ImagePlus, MessageCircle, RefreshCw, Search, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { Contact } from "@/feed";
 import { messagePreview, type ConversationMessage } from "@/message";
@@ -11,6 +10,7 @@ import type { SpokeMessageAttachment } from "@/media";
 import { AttachmentDraftRow } from "./attachment-draft-row";
 import { EmptyState } from "./empty-state";
 import { MediaFrame } from "./media-frame";
+import { MessageComposer } from "./message-composer";
 import type { AvatarRenderer, MessageThread, PendingImageAttachment } from "./types";
 
 type MessagesViewProps = {
@@ -19,7 +19,6 @@ type MessagesViewProps = {
   activeThread: MessageThread | null;
   activeThreadMessages: ConversationMessage[];
   threadSearch: string;
-  messageDrafts: Record<string, string>;
   messageAttachments: Record<string, PendingImageAttachment[]>;
   messageAttachmentUrls: Record<string, string>;
   messageAttachmentErrors: Record<string, string>;
@@ -33,10 +32,8 @@ type MessagesViewProps = {
   onRefreshIncoming: () => void;
   onBackToFeed: () => void;
   onOpenProfile: (identity: string) => void;
-  onMessageDraftChange: (identity: string, value: string) => void;
-  onMessageKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>, contact: Contact) => void;
   onAddMessageAttachments: (identity: string, event: ChangeEvent<HTMLInputElement>) => void;
-  onSendMessage: (contact: Contact) => void;
+  onSendMessage: (contact: Contact, body: string) => Promise<boolean>;
   onUpdateMessageAttachmentAlt: (identity: string, attachmentId: string, alt: string) => void;
   onRemoveMessageAttachment: (identity: string, attachmentId: string) => void;
   onMessageImageFailed: (key: string) => void;
@@ -48,7 +45,6 @@ export function MessagesView({
   activeThread,
   activeThreadMessages,
   threadSearch,
-  messageDrafts,
   messageAttachments,
   messageAttachmentUrls,
   messageAttachmentErrors,
@@ -62,14 +58,15 @@ export function MessagesView({
   onRefreshIncoming,
   onBackToFeed,
   onOpenProfile,
-  onMessageDraftChange,
-  onMessageKeyDown,
   onAddMessageAttachments,
   onSendMessage,
   onUpdateMessageAttachmentAlt,
   onRemoveMessageAttachment,
   onMessageImageFailed
 }: MessagesViewProps) {
+  // Unsent text per thread, kept while the user switches threads. A ref, not
+  // state: the composer re-renders itself, this view must not.
+  const drafts = useRef<Record<string, string>>({});
   return (
     <section className="grid min-h-[calc(100vh-11rem)] overflow-hidden rounded-xl border spoke-border bg-card shadow-sm shadow-foreground/5 lg:grid-cols-[360px_minmax(0,1fr)]">
       <aside className="border-b spoke-border bg-muted/20 lg:border-b-0 lg:border-r" aria-label="Conversations">
@@ -210,13 +207,14 @@ export function MessagesView({
 
             <div className="border-t spoke-border bg-card p-4 shadow-[0_-1px_8px_color-mix(in_oklch,var(--foreground),transparent_94%)]">
               <div className="mx-auto grid w-full max-w-4xl gap-3">
-                <Textarea
-                  className="min-h-16"
-                  rows={2}
-                  value={messageDrafts[activeThread.contact.identity] || ""}
-                  onChange={(event) => onMessageDraftChange(activeThread.contact.identity, event.target.value)}
-                  onKeyDown={(event) => onMessageKeyDown(event, activeThread.contact)}
-                  placeholder={`Message ${activeThread.contact.displayName}`}
+                <MessageComposer
+                  key={activeThread.contact.identity}
+                  contact={activeThread.contact}
+                  initialValue={drafts.current[activeThread.contact.identity] || ""}
+                  onDraftChange={(identity, value) => {
+                    drafts.current[identity] = value;
+                  }}
+                  onSend={onSendMessage}
                 />
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -235,7 +233,11 @@ export function MessagesView({
                   </div>
                   <Button
                     type="button"
-                    onClick={() => onSendMessage(activeThread.contact)}
+                    onClick={() => {
+                      void onSendMessage(activeThread.contact, drafts.current[activeThread.contact.identity] || "").then((sent) => {
+                        if (sent) drafts.current[activeThread.contact.identity] = "";
+                      });
+                    }}
                     disabled={busy === `message:${activeThread.contact.identity}`}
                     title="Send encrypted message"
                   >

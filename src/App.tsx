@@ -448,7 +448,6 @@ function SpokeRuntime() {
   const [handledNotifications, setHandledNotifications] = useState<HandledNotification[]>([]);
   const [review, setReview] = useState<ReviewState>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
-  const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [threadSearch, setThreadSearch] = useState("");
   const [messageAttachments, setMessageAttachments] = useState<Record<string, PendingImageAttachment[]>>({});
   const [messageAttachmentUrls, setMessageAttachmentUrls] = useState<Record<string, string>>({});
@@ -1633,14 +1632,15 @@ function SpokeRuntime() {
     });
   }
 
-  async function sendMessage(contact: Contact) {
-    const body = (messageDrafts[contact.identity] || "").trim();
+  async function sendMessage(contact: Contact, draft: string): Promise<boolean> {
+    const body = draft.trim();
     const pendingAttachments = messageAttachments[contact.identity] || [];
     if (!body && pendingAttachments.length === 0) {
       setError("Message body or image is required.");
-      return;
+      return false;
     }
 
+    let sent = false;
     await withBusy(`message:${contact.identity}`, async () => {
       const messageId = makeId("msg");
       const attachments = await Promise.all(
@@ -1689,7 +1689,6 @@ function SpokeRuntime() {
           }));
         }
       }
-      setMessageDrafts((current) => ({ ...current, [contact.identity]: "" }));
       for (const attachment of pendingAttachments) {
         URL.revokeObjectURL(attachment.previewUrl);
       }
@@ -1699,15 +1698,9 @@ function SpokeRuntime() {
           ? "Encrypted message and images submitted to recipient ingress."
           : "Encrypted message submitted to recipient ingress."
       );
+      sent = true;
     });
-  }
-
-  function handleMessageKeyDown(event: KeyboardEvent<HTMLTextAreaElement>, contact: Contact) {
-    if (event.key !== "Enter" || event.shiftKey) {
-      return;
-    }
-    event.preventDefault();
-    void sendMessage(contact);
+    return sent;
   }
 
   // One ingress pass through the inbox seam: auto-applied records fold straight
@@ -2799,18 +2792,13 @@ function SpokeRuntime() {
                 messageAttachmentKey={messageAttachmentKey}
                 messageAttachmentUrls={messageAttachmentUrls}
                 messageAttachments={messageAttachments}
-                messageDrafts={messageDrafts}
                 messageThreads={messageThreads}
                 renderAvatar={renderAvatar}
                 threadSearch={threadSearch}
                 visibleMessageThreads={visibleMessageThreads}
                 onAddMessageAttachments={addMessageAttachments}
                 onBackToFeed={() => setActiveView("feed")}
-                onMessageDraftChange={(identity, value) =>
-                  setMessageDrafts((current) => ({ ...current, [identity]: value }))
-                }
                 onMessageImageFailed={markMessageImageFailed}
-                onMessageKeyDown={handleMessageKeyDown}
                 onOpenProfile={openProfile}
                 onRefreshIncoming={refreshIncoming}
                 onRemoveMessageAttachment={removeMessageAttachment}
