@@ -137,6 +137,7 @@ import {
 } from "./message";
 import {
   acceptInboxRecord,
+  reconcileIngressRecords,
   createInboxHandlers,
   processInbox,
   rejectInboxRecord
@@ -791,13 +792,19 @@ function SpokeRuntime() {
     saveJson(SESSION_KEY, session);
   }, [session]);
 
+  // The retry tick re-renders the whole app, so it only runs while some image
+  // actually failed; an idle app with everything loaded must not repaint.
+  const mediaRetryPending =
+    Object.keys(attachmentErrors).length > 0 ||
+    Object.keys(messageAttachmentErrors).length > 0 ||
+    Object.keys(profileAvatarErrors).length > 0;
   useEffect(() => {
-    if (!canUseApp) {
+    if (!canUseApp || !mediaRetryPending) {
       return;
     }
     const timer = window.setInterval(() => setMediaRetryTick((current) => current + 1), MEDIA_RETRY_MS);
     return () => window.clearInterval(timer);
-  }, [canUseApp]);
+  }, [canUseApp, mediaRetryPending]);
 
   useEffect(() => {
     if (!canUseApp || !sessionToken || visibleProfileIdentities.length === 0) {
@@ -1708,7 +1715,7 @@ function SpokeRuntime() {
   // the rest stay for manual review.
   async function loadIncomingSnapshot() {
     const { visible, autoHandled } = await processInbox(jolt, inboxHandlers, inboxContext);
-    setIncoming(visible);
+    setIncoming((current) => reconcileIngressRecords(current, visible));
     if (autoHandled.length > 0) {
       setReview((current) => {
         const next = { ...current };

@@ -143,3 +143,4 @@ export async function rejectInboxRecord(
 }
 
 export { createInboxHandlers } from "./handlers";
+export { reconcileIngressRecords, sameIngressRecords } from "./records";

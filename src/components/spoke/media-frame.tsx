@@ -36,9 +36,12 @@ export function MediaFrame({
           </div>
         </div>
       ) : (
+        // Static on purpose: a spinning placeholder for an image that never
+        // arrives keeps the web view repainting forever, which is CPU the
+        // compose box then has to compete with.
         <div className="grid min-h-32 place-items-center bg-muted/40 p-4 text-sm text-muted-foreground">
           <div className="grid place-items-center gap-2">
-            <Loader2 className="size-5 animate-spin" />
+            <Loader2 className="size-5" />
             {loadingLabel}
           </div>
         </div>
