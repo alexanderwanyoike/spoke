@@ -100,8 +100,12 @@ export async function processInbox(
       continue;
     }
     try {
-      await acceptTolerant(sdk, record.ingress_id);
+      // Apply the social effect before consuming the envelope: consuming first
+      // would drop a record whose effect then failed (offline peer, expired
+      // reachability), with no way to retry it. Effects are idempotent, so a
+      // record consumed by a concurrent pass is merely re-applied.
       await handler.accept(sdk, payload, ctx);
+      await acceptTolerant(sdk, record.ingress_id);
       autoHandled.push(record);
     } catch {
       // Anything that fails to auto-apply falls back to manual review.
@@ -112,7 +116,8 @@ export async function processInbox(
   return { visible, autoHandled };
 }
 
-// The manual "Accept" action for a reviewed record.
+// The manual "Accept" action for a reviewed record. The envelope stays pending
+// until the handler's effect has succeeded, so a failed accept can be retried.
 export async function acceptInboxRecord(
   sdk: InboxSdk,
   handlers: InboxHandler[],
@@ -120,8 +125,8 @@ export async function acceptInboxRecord(
   payload: unknown,
   ctx: InboxContext
 ): Promise<void> {
-  await acceptTolerant(sdk, ingressId);
   await handlerFor(handlers, payload)?.accept(sdk, payload, ctx);
+  await acceptTolerant(sdk, ingressId);
 }
 
 // The manual "Reject" action: reject the envelope and run any handler-specific

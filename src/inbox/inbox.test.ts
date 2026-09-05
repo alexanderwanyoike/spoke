@@ -202,3 +202,79 @@ describe("inbox seam", () => {
     expect(sent.some((s) => (s.body as SpokeFollowResponse).decision === "rejected")).toBe(true);
   });
 });
+
+describe("inbox seam: delivery failures stay recoverable", () => {
+  // The requester learns about acceptance only through the response envelope.
+  // If that send fails (expired reachability, peer offline), nothing may be
+  // committed locally and the request must remain pending so the user can retry.
+  function failNextSend(sdk: InboxSdk, error: Error) {
+    const original = sdk.sendObject;
+    let failed = false;
+    sdk.sendObject = async (...args) => {
+      if (!failed) {
+        failed = true;
+        throw error;
+      }
+      return original(...args);
+    };
+  }
+
+  it("keeps a follow request pending when the acceptance response fails to send", async () => {
+    const { sdk, enqueue, accepted, sent, store, handlers, ctx } = setup();
+    enqueue("ing_req", "carol.jolt", followRequest(), "spoke.follow_request.v1");
+    failNextSend(sdk, new Error("reachability record is expired"));
+
+    await expect(acceptInboxRecord(sdk, handlers, "ing_req", followRequest(), ctx)).rejects.toThrow(
+      "reachability record is expired"
+    );
+
+    expect(accepted).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(readContacts("alice.jolt", store)).toEqual([]);
+    expect((await sdk.listPendingIngress()).map((r) => r.ingress_id)).toEqual(["ing_req"]);
+  });
+
+  it("a retried accept after a failed send completes the acceptance", async () => {
+    const { sdk, enqueue, accepted, sent, store, handlers, ctx } = setup();
+    enqueue("ing_req", "carol.jolt", followRequest(), "spoke.follow_request.v1");
+    failNextSend(sdk, new Error("reachability record is expired"));
+    await acceptInboxRecord(sdk, handlers, "ing_req", followRequest(), ctx).catch(() => {});
+
+    await acceptInboxRecord(sdk, handlers, "ing_req", followRequest(), ctx);
+
+    expect(accepted).toEqual(["ing_req"]);
+    expect(sent.map((s) => (s.body as SpokeFollowResponse).decision)).toEqual(["accepted"]);
+    expect(readContacts("alice.jolt", store)).toEqual([
+      { identity: "carol.jolt", displayName: "Carol", relationship: "accepted" }
+    ]);
+    expect(await sdk.listPendingIngress()).toEqual([]);
+  });
+
+  it("auto-applied records stay pending when the handler fails", async () => {
+    const { sdk, enqueue, accepted, store, handlers, ctx } = setup();
+    await acceptFollowRequest(sdk, "alice.jolt", followRequest({ sender: "bob.jolt", displayName: "Bob" }), store);
+    const message: SpokeMessage = {
+      schema: "spoke.message.v1",
+      id: "msg_1",
+      conversationId: conversationIdForParticipants(["bob.jolt", "alice.jolt"]),
+      sender: "bob.jolt",
+      recipients: ["alice.jolt"],
+      body: "Hello Alice",
+      createdAt: "2026-06-18T12:00:00.000Z"
+    };
+    enqueue("ing_msg", "bob.jolt", message, "spoke.message.v1");
+    const original = sdk.publishJson;
+    sdk.publishJson = async () => {
+      throw new Error("daemon unavailable");
+    };
+
+    const result = await processInbox(sdk, handlers, ctx);
+
+    expect(accepted).toEqual([]);
+    expect(result.visible.map((r) => r.ingress_id)).toEqual(["ing_msg"]);
+    sdk.publishJson = original;
+    const retried = await processInbox(sdk, handlers, ctx);
+    expect(retried.autoHandled.map((r) => r.ingress_id)).toEqual(["ing_msg"]);
+    expect(accepted).toEqual(["ing_msg"]);
+  });
+});
