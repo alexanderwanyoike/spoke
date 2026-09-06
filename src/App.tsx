@@ -137,6 +137,10 @@ import {
 } from "./message";
 import {
   acceptInboxRecord,
+  reconcileIngressRecords,
+  incomingKind,
+  incomingPreview,
+  incomingSenderName,
   createInboxHandlers,
   processInbox,
   rejectInboxRecord
@@ -277,26 +281,6 @@ function isSpokeReply(value: unknown): value is SpokeReply {
 
 function replyDraftKey(postId: string, parentId: string) {
   return `${postId}:${parentId}`;
-}
-
-function incomingKind(payload: SpokeIncomingPayload) {
-  if (isSpokeFollowRequest(payload)) return "follow request";
-  if (isSpokeFollowResponse(payload)) return "follow response";
-  if (isSpokeMessage(payload)) return "message";
-  return "reply";
-}
-
-function incomingPreview(payload: SpokeIncomingPayload) {
-  if (isSpokeFollowRequest(payload)) {
-    return payload.message || `${payload.sender} wants to follow you.`;
-  }
-  if (isSpokeFollowResponse(payload)) {
-    return `${payload.sender} ${payload.decision} your follow request.`;
-  }
-  if (isSpokeMessage(payload)) {
-    return messagePreview(payload);
-  }
-  return payload.body;
 }
 
 function isAnyReply(payload: unknown): payload is SpokeReply | SpokeReplyV2 {
@@ -791,13 +775,19 @@ function SpokeRuntime() {
     saveJson(SESSION_KEY, session);
   }, [session]);
 
+  // The retry tick re-renders the whole app, so it only runs while some image
+  // actually failed; an idle app with everything loaded must not repaint.
+  const mediaRetryPending =
+    Object.keys(attachmentErrors).length > 0 ||
+    Object.keys(messageAttachmentErrors).length > 0 ||
+    Object.keys(profileAvatarErrors).length > 0;
   useEffect(() => {
-    if (!canUseApp) {
+    if (!canUseApp || !mediaRetryPending) {
       return;
     }
     const timer = window.setInterval(() => setMediaRetryTick((current) => current + 1), MEDIA_RETRY_MS);
     return () => window.clearInterval(timer);
-  }, [canUseApp]);
+  }, [canUseApp, mediaRetryPending]);
 
   useEffect(() => {
     if (!canUseApp || !sessionToken || visibleProfileIdentities.length === 0) {
@@ -1013,6 +1003,19 @@ function SpokeRuntime() {
     mediaRetryTick,
     sessionToken
   ]);
+
+  // Follow requests are always reviewed by hand, but the reviewer should see
+  // who is asking without a click: open them as soon as they appear.
+  useEffect(() => {
+    if (!canUseApp || !sessionToken) {
+      return;
+    }
+    for (const record of incoming) {
+      if (record.schema_hint === "spoke.follow_request.v1" && !review[record.ingress_id]) {
+        void openIncoming(record);
+      }
+    }
+  }, [canUseApp, incoming, review, sessionToken]);
 
   useEffect(() => {
     if (!canUseApp || !sessionToken || incoming.length === 0) {
@@ -1708,7 +1711,7 @@ function SpokeRuntime() {
   // the rest stay for manual review.
   async function loadIncomingSnapshot() {
     const { visible, autoHandled } = await processInbox(jolt, inboxHandlers, inboxContext);
-    setIncoming(visible);
+    setIncoming((current) => reconcileIngressRecords(current, visible));
     if (autoHandled.length > 0) {
       setReview((current) => {
         const next = { ...current };
@@ -2442,6 +2445,10 @@ function SpokeRuntime() {
   function renderNotificationCard(record: IngressRecord) {
     const opened = review[record.ingress_id]?.opened;
     const profile = profileForIdentity(record.sender_identity);
+    // A sender without a public profile is still not just an id: a follow
+    // request carries the name they chose for themselves.
+    const senderName =
+      profile?.displayName || (opened ? incomingSenderName(opened) : undefined) || displayNameForIdentity(record.sender_identity);
     const kind = opened ? incomingKind(opened) : record.schema_hint || "encrypted object";
     const notificationFilter = notificationFilterForRecord(record, opened);
     return (
@@ -2452,13 +2459,13 @@ function SpokeRuntime() {
             className="size-auto self-start p-0 hover:bg-transparent"
             type="button"
             onClick={() => openProfile(record.sender_identity)}
-            title={`View ${displayNameForIdentity(record.sender_identity)}`}
+            title={`View ${senderName}`}
           >
             {renderAvatar(record.sender_identity)}
           </Button>
           <div className="min-w-0 space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <strong className="truncate">{displayNameForIdentity(record.sender_identity)}</strong>
+              <strong className="truncate">{senderName}</strong>
               <Badge variant={notificationFilter === "follows" ? "default" : "secondary"}>
                 {kind}
               </Badge>
