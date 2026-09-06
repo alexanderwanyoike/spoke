@@ -5,6 +5,20 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Blurred shadows cause expensive full-window paints in WebKitGTK on Linux.
+   Keep surfaces flat while preserving zero-blur rings and edge shadows. */
+@theme {
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+  --shadow-lg: 0 0 #0000;
+  --shadow-xl: 0 0 #0000;
+  --shadow-2xl: 0 0 #0000;
+  --shadow-inner: inset 0 0 #0000;
+  --inset-shadow-xs: inset 0 0 #0000;
+  --inset-shadow-sm: inset 0 0 #0000;
+}
+
 /* Register the design tokens as Tailwind v4 theme colors so the semantic
    utilities (bg-background, bg-card, text-foreground, border-border, ...)
    are generated. Without this mapping Tailwind never emits those classes, so
@@ -130,10 +144,7 @@ body,
 body {
   margin: 0;
   min-width: 320px;
-  background:
-    radial-gradient(circle at top left, color-mix(in oklch, var(--primary), transparent 82%), transparent 32rem),
-    radial-gradient(circle at bottom right, color-mix(in oklch, var(--chart-2), transparent 86%), transparent 34rem),
-    var(--background);
+  background: var(--background);
   color: var(--foreground);
 }
 
@@ -194,7 +205,11 @@ img {
 
 .spoke-dialog-panel {
   background: var(--popover);
-  box-shadow:
-    0 24px 64px color-mix(in oklch, black, transparent 62%),
-    0 0 0 1px color-mix(in oklch, var(--foreground), transparent 86%);
+}
+
+/* Keep keyboard focus explicit in the flat theme, including on controls
+   styled with outline-none. */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
