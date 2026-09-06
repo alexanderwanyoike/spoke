@@ -1,0 +1,66 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { MessageSquare, Sun, Moon, LogOut } from "lucide-react";
+
+export function AppShell({
+  identity,
+  disconnect,
+  children
+}: {
+  identity: string;
+  disconnect(): void;
+  children: ReactNode;
+}) {
+  const [dark, setDark] = useState(() => {
+    const saved = localStorage.getItem("spoke.appearance");
+    if (saved) return saved === "dark";
+    return matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    localStorage.setItem("spoke.appearance", dark ? "dark" : "light");
+  }, [dark]);
+  return (
+    <div className="spoke-shell">
+      <aside className="app-rail">
+        <Link className="brand" to="/messages" aria-label="Spoke messages">
+          <img src="/favicon.svg" alt="" />
+          <span>Spoke</span>
+        </Link>
+        <nav aria-label="Main navigation">
+          <Link className="rail-link active" aria-label="Messages" to="/messages">
+            <MessageSquare size={19} />
+            <span>Messages</span>
+          </Link>
+        </nav>
+        <div className="rail-bottom">
+          <button
+            className="rail-link"
+            onClick={() => setDark((value) => !value)}
+            aria-label={dark ? "Use light appearance" : "Use dark appearance"}
+          >
+            {dark ? <Sun size={18} /> : <Moon size={18} />}
+            <span>Appearance</span>
+          </button>
+          <div className="rail-account">
+            <span className="account-mark">{identity.slice(0, 1).toUpperCase()}</span>
+            <div>
+              <strong>{identity}</strong>
+              <small>Your Jolt identity</small>
+            </div>
+          </div>
+          <button
+            className="rail-link"
+            aria-label="Forget access"
+            onClick={disconnect}
+            title="Forgets access on this device. Revoke the session in Jolt Console."
+          >
+            <LogOut size={16} />
+            <span>Forget access</span>
+          </button>
+        </div>
+      </aside>
+      {children}
+    </div>
+  );
+}

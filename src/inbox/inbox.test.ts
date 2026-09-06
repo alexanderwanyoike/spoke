@@ -263,8 +263,8 @@ describe("inbox seam: delivery failures stay recoverable", () => {
       createdAt: "2026-06-18T12:00:00.000Z"
     };
     enqueue("ing_msg", "bob.jolt", message, "spoke.message.v1");
-    const original = sdk.publishJson;
-    sdk.publishJson = async () => {
+    const original = sdk.publishEncryptedJson;
+    sdk.publishEncryptedJson = async () => {
       throw new Error("daemon unavailable");
     };
 
@@ -272,7 +272,7 @@ describe("inbox seam: delivery failures stay recoverable", () => {
 
     expect(accepted).toEqual([]);
     expect(result.visible.map((r) => r.ingress_id)).toEqual(["ing_msg"]);
-    sdk.publishJson = original;
+    sdk.publishEncryptedJson = original;
     const retried = await processInbox(sdk, handlers, ctx);
     expect(retried.autoHandled.map((r) => r.ingress_id)).toEqual(["ing_msg"]);
     expect(accepted).toEqual(["ing_msg"]);

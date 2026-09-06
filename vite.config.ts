@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
         "@": path.resolve(__dirname, "./src")
       }
     },
+    build: { rollupOptions: { input: { main: path.resolve(__dirname, "index.html"), messages: path.resolve(__dirname, "messages.html") } } },
     server: {
       port: 5178,
       proxy: {

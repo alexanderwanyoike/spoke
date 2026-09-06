@@ -100,14 +100,14 @@ not as requiring an upgrade.
 ## Desktop Development
 
 ```sh
-npm install
-npm run desktop:dev
+yarn install --frozen-lockfile
+yarn desktop:dev
 ```
 
 Build the Linux AppImage:
 
 ```sh
-npm run desktop:build
+yarn desktop:build
 ```
 
 The AppImage is written to:
@@ -119,7 +119,7 @@ src-tauri/target/release/bundle/appimage/Spoke_0.1.0_amd64.AppImage
 For web development:
 
 ```sh
-npm run dev
+yarn dev
 ```
 
 The Vite dev server listens on `http://127.0.0.1:5178` and proxies the local daemon from `VITE_JOLT_DAEMON_URL` or `http://127.0.0.1:9862`.
@@ -171,3 +171,10 @@ its own updater key, separate from Jolt Console and Pastey.
 7. On the recipient Spoke instance, refresh Incoming, open the ingress item, then accept or reject it.
 
 The current reply flow uses existing daemon APIs only: Spoke encrypts and publishes an outgoing object under the sender's `/spoke/outgoing/*`, fetches the encrypted bytes by CID, then submits those bytes to the recipient daemon `/api/v1/ingress`.
+
+### New Messages slice
+
+The replacement Messages entry is available at `/messages.html` during development.
+A fictional, interactive preview lives at `/messages-preview.html` and is excluded
+from production builds. See [the slice guide](docs/messages-slice.md) for ownership,
+verification, privacy changes and the remaining cutover work.

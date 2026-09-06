@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PublishResult } from "../jolt";
 import { createStore } from "../common/store";
 import {
@@ -33,8 +33,8 @@ function fakeJolt(localIdentity: string) {
   }
 
   const reads: string[] = [];
-  const sdk: MessageSender & MessageWriter & ConversationLoaderSdk = {
-    async publishJson(path, body) {
+  const sdk: MessageSender & MessageWriter & ConversationLoaderSdk & Pick<import("../jolt").JoltSdk, "read"> = {
+    async publishEncryptedJson(path, body) {
       return publish(path, body);
     },
     async read(ref, decode) {
@@ -184,4 +184,39 @@ describe("message commands", () => {
     expect(reads[0]).toContain("m3");
     expect(Object.values(selectConversations(store.getSnapshot(), "alice.jolt"))[0].messages).toHaveLength(3);
   });
+});
+
+it("persists incoming message bodies encrypted to the receiving identity", async () => {
+  const incoming = message({ sender: "bob.jolt", recipients: ["alice.jolt"] });
+  const publishJson = vi.fn().mockResolvedValue({ latestSequence: 1 });
+  const publishEncryptedJson = vi.fn().mockResolvedValue({ latestSequence: 1 });
+  const writer = { publishJson, publishEncryptedJson };
+  await acceptReceivedMessage(writer, "alice.jolt", incoming, createStore());
+  expect(publishEncryptedJson).toHaveBeenCalledWith("/spoke/messages/received/msg_1", incoming, ["alice.jolt"]);
+  expect(publishJson).not.toHaveBeenCalled();
+});
+
+it("decrypts received copies without falling back to public reads", async () => {
+  const incoming = message({ sender: "bob.jolt", recipients: ["alice.jolt"] });
+  const node = fakeJolt("alice.jolt");
+  await acceptReceivedMessage(node.sdk, "alice.jolt", incoming, createStore());
+  const read = vi.spyOn(node.sdk, "read");
+  const encrypted = vi.spyOn(node.sdk, "readEncrypted");
+  await loadConversations(node.sdk, "alice.jolt", createStore());
+  expect(encrypted).toHaveBeenCalled();
+  expect(read).not.toHaveBeenCalled();
+});
+
+it("reports an unavailable inventory instead of claiming an empty conversation list", async () => {
+  const node = fakeJolt("alice.jolt");
+  node.sdk.listPublished = vi.fn().mockRejectedValue(new Error("Node unavailable"));
+  await expect(loadConversations(node.sdk, "alice.jolt", createStore())).rejects.toThrow("Node unavailable");
+});
+
+it("reports saved copies that cannot be decrypted without hiding readable messages", async () => {
+  const node = fakeJolt("alice.jolt");
+  await sendMessage(node.sdk, message(), createStore());
+  node.sdk.readEncrypted = vi.fn().mockResolvedValue(null);
+  const result = await loadConversations(node.sdk, "alice.jolt", createStore());
+  expect(result).toEqual({ unavailableCount: 1 });
 });
