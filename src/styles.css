@@ -130,10 +130,7 @@ body,
 body {
   margin: 0;
   min-width: 320px;
-  background:
-    radial-gradient(circle at top left, color-mix(in oklch, var(--primary), transparent 82%), transparent 32rem),
-    radial-gradient(circle at bottom right, color-mix(in oklch, var(--chart-2), transparent 86%), transparent 34rem),
-    var(--background);
+  background: var(--background);
   color: var(--foreground);
 }
 
@@ -194,7 +191,20 @@ img {
 
 .spoke-dialog-panel {
   background: var(--popover);
-  box-shadow:
-    0 24px 64px color-mix(in oklch, black, transparent 62%),
-    0 0 0 1px color-mix(in oklch, var(--foreground), transparent 86%);
+}
+
+/* Flat surfaces avoid the expensive full-window shadow paints seen in
+   WebKitGTK on Linux. Include portals and pseudo-elements as well as the app
+   shell; component shadow utilities must not bring the cost back. */
+*,
+*::before,
+*::after {
+  box-shadow: none !important;
+}
+
+/* Tailwind rings use box-shadow too. Keep keyboard focus visible without
+   reintroducing shadows, including on controls styled with outline-none. */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
