@@ -48,10 +48,22 @@ This does not retract or encrypt received copies previously published as plainte
 
 Focused failing tests preceded the received-copy fix, failure reporting, image composer, snapshot lifecycle, session restoration, stable send retries, cancellation and receipt acknowledgement retry. The updated existing inbox failure test exercises encrypted persistence.
 
-Verified locally: 140 tests across 30 files, production TypeScript/Vite build of both entries, distribution contract and shell syntax. Dependency installation uses Yarn's frozen lockfile. Formatting of the new files uses Prettier with the repository configuration; packaging and Tauri build commands now use Yarn consistently.
+Verified locally: 153 tests across 34 files, production TypeScript/Vite build of both entries, distribution contract and shell syntax. Dependency installation uses Yarn's frozen lockfile. Formatting of the new files uses Prettier with the repository configuration; packaging and Tauri build commands now use Yarn consistently.
 
 Browser checks exercised conversation switching, retained drafts, failed send/retry, search, narrow back navigation, theme switching and the image dialog's Escape/focus-return behavior. Measured CSS widths were about 433, 1222 and 1422 pixels because the in-app browser scales its requested viewport; DOM bounds showed no page overflow. The real connection entry reached identity selection through the running daemon without requesting new access. A fresh preview load produced no new browser errors after the development hot-reload refactor.
 
 No real person was messaged and no new app grant was approved. Two-device delivery, native WebKitGTK behavior/performance and signed desktop packaging remain unverified for this slice. Dependency tools still report the pre-existing Vitest/Vite major-version mismatch and harmless upstream Zod annotation warnings.
 
 Before default cutover: contact/request review and connection settings, richer media, durable outbox semantics, historical-data policy, public profile names through typed Data resources, and native/two-device verification. Posts/feed/people/activity/settings are separate feature slices. Console remains a later implementation with the agreed fixed 1100 × 760 window.
+
+## Component regression coverage
+
+| Tests | Components and behavior exercised |
+| --- | --- |
+| `src/app/App.test.tsx` | Actual App, shell, MessageSession, MessagesPage, conversation list/panel and avatars: routes, search, draft retention, refresh recovery, read-only history, appearance and access teardown |
+| `src/connection/ConnectionBoundary.test.tsx` | Input validation, one approval request, pending-to-connected transition, retained child state during network failure, revocation and startup retry |
+| `src/message/components/MessageImage.test.tsx` | Failed-load retry, dialog accessibility, Escape/focus return, image decoding failure and URL cleanup after retry/unmount |
+| `src/message/components/MessageList.test.tsx` | Recent-history bound and explicit earlier-message navigation; delivery labels are also exercised through App |
+| `src/message/components/MessageComposer.test.tsx` | Composer, ImagePicker and DraftImages: text/image submission, retained drafts, pending edits, attachment descriptions/removal, empty validation and Shift+Enter |
+
+These tests render the production components and replace the SDK/network boundary. Display-only components are covered through their consuming screen. Bootstrap entry files and the fictional development harness retain build/browser smoke verification rather than duplicate rendering tests. The coverage follow-up adds tests for existing behavior; it changes no production behavior.

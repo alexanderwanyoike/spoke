@@ -7,7 +7,10 @@ import "@testing-library/jest-dom/vitest";
 import { MessageComposer } from "./MessageComposer";
 import { createDrafts } from "../drafts";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 it("keeps a failed draft when switching conversations and retries the same message", async () => {
   const user = userEvent.setup();
@@ -67,7 +70,6 @@ it("sends an image without text and rejects unsupported files before sending", a
   await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
   expect(send.mock.calls[0][1].images[0].file.name).toBe("photo.png");
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
-  vi.unstubAllGlobals();
 });
 
 it("sends once and clears the textbox through both button and keyboard submission", async () => {
@@ -84,4 +86,42 @@ it("sends once and clears the textbox through both button and keyboard submissio
   await user.type(input, "Another message{Enter}");
   await waitFor(() => expect(input).toHaveValue(""));
   expect(send).toHaveBeenCalledTimes(2);
+});
+
+it("edits image descriptions without releasing previews and removes only the chosen attachment", async () => {
+  vi.stubGlobal("URL", {
+    createObjectURL: vi.fn((file: File) => `blob:${file.name}`),
+    revokeObjectURL: vi.fn()
+  });
+  const user = userEvent.setup();
+  const send = vi.fn().mockResolvedValue(undefined);
+  render(<MessageComposer recipient="bob" name="Bob" drafts={createDrafts()} send={send} />);
+  await user.upload(screen.getByLabelText("Attach images"), [
+    new File(["a"], "one.png", { type: "image/png" }),
+    new File(["b"], "two.png", { type: "image/png" })
+  ]);
+  await user.type(screen.getByRole("textbox", { name: "Description for two.png" }), "A mountain");
+  expect(URL.revokeObjectURL).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Remove one.png" }));
+  expect(screen.queryByRole("img", { name: "one.png" })).not.toBeInTheDocument();
+  expect(URL.revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:one.png");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(send).toHaveBeenCalledOnce());
+  expect(send.mock.calls[0][1].images).toHaveLength(1);
+  expect(send.mock.calls[0][1].images[0].alt).toBe("A mountain");
+});
+
+it("validates empty messages and preserves Shift+Enter as a newline", async () => {
+  const user = userEvent.setup();
+  const send = vi.fn().mockResolvedValue(undefined);
+  render(<MessageComposer recipient="bob" name="Bob" drafts={createDrafts()} send={send} />);
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  expect(await screen.findByText("Write a message or attach an image.")).toBeVisible();
+  expect(send).not.toHaveBeenCalled();
+  await user.type(
+    screen.getByRole("textbox", { name: "Message Bob" }),
+    "First{Shift>}{Enter}{/Shift}Second"
+  );
+  expect(screen.getByRole("textbox", { name: "Message Bob" })).toHaveValue("First\nSecond");
+  expect(send).not.toHaveBeenCalled();
 });
