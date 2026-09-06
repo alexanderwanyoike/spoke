@@ -10,8 +10,6 @@ revokes access in Jolt Console; Spoke never receives the identity's private key.
 Contacts and messages use application-owned schemas under `/spoke/*`, above Jolt's
 generic encrypted publication and recipient-controlled ingress APIs.
 
-See [the Messages guide](docs/messages-slice.md) for architecture, behavior and verification.
-
 ## Run
 
 Spoke is desktop-first. Run Jolt Console first and let it start the local Jolt
