@@ -1,30 +1,39 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { LockKeyhole } from "lucide-react";
 import { sessionApi } from "./api";
 import { sessionPersistence } from "./persistence";
 import { createSessionConnection } from "./session";
 
-const AccessInput = z.object({ identity: z.string().trim().min(1, "Enter your Jolt identity.") });
-function AccessForm({
+function ConnectToJolt({
   identity,
   request
 }: {
   identity: string;
   request(identity: string): Promise<void>;
 }) {
-  const form = useForm({ resolver: zodResolver(AccessInput), defaultValues: { identity } });
+  const [requesting, setRequesting] = useState(false);
+  async function connect() {
+    setRequesting(true);
+    try {
+      await request(identity);
+    } finally {
+      setRequesting(false);
+    }
+  }
   return (
-    <form onSubmit={form.handleSubmit((value) => request(value.identity))}>
-      <label htmlFor="identity">Your Jolt identity</label>
-      <input id="identity" autoComplete="off" {...form.register("identity")} />
-      <p role="alert">{form.formState.errors.identity?.message}</p>
-      <button className="primary-button" disabled={form.formState.isSubmitting}>
+    <div className="connect-to-jolt">
+      <div className="detected-identity">
+        <span className="privacy-dot" />
+        <div>
+          <strong>Jolt is ready</strong>
+          <span>{identity}</span>
+        </div>
+      </div>
+      <p>Spoke needs your permission to message through Jolt. Approve access in Jolt Console.</p>
+      <button className="primary-button" disabled={requesting} onClick={() => void connect()}>
         Connect to Jolt
       </button>
-    </form>
+    </div>
   );
 }
 
@@ -60,7 +69,11 @@ export function ConnectionBoundary({ children }: { children(session: Ready): Rea
         <p>Private conversations, through your own Jolt identity.</p>
         {state.kind === "checking" && <p role="status">Connecting to Jolt…</p>}
         {state.kind === "access" && (
-          <AccessForm key={state.identity} identity={state.identity} request={connection.request} />
+          <ConnectToJolt
+            key={state.identity}
+            identity={state.identity}
+            request={connection.request}
+          />
         )}
         {state.kind === "pending" && (
           <div role="status">
@@ -74,7 +87,6 @@ export function ConnectionBoundary({ children }: { children(session: Ready): Rea
             Try again
           </button>
         )}
-        <small>Jolt must be running on this device.</small>
       </section>
     </main>
   );

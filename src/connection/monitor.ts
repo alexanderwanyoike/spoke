@@ -36,7 +36,8 @@ export class ConnectionMonitor {
   disconnect = () => {
     this.cancel();
     this.access.forget();
-    this.publish({ kind: "access", identity: "", error: "" });
+    this.publish({ kind: "checking", error: "" });
+    void this.refresh();
   };
 
   private cancel() {

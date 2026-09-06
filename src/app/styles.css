@@ -706,20 +706,37 @@ textarea {
   line-height: 1.8;
   color: var(--muted);
 }
-.connection-card form {
-  margin: 30px 0;
+.connect-to-jolt {
+  margin-top: 30px;
 }
-.connection-card label {
+.detected-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.detected-identity .privacy-dot {
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.detected-identity strong {
   display: block;
-  font-size: 12px;
-  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 550;
 }
-.connection-card input {
-  padding: 12px;
-  width: 100%;
+.detected-identity div > span {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
-.connection-card form button {
+.connect-to-jolt button {
   width: 100%;
+  margin-top: 8px;
 }
 .connection-card h2 {
   font-size: 17px;

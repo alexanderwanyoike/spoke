@@ -14,14 +14,12 @@ function fixture() {
     identity: vi.fn().mockResolvedValue("alice"),
     request: vi.fn(),
     poll: vi.fn(),
-    current: vi
-      .fn()
-      .mockResolvedValue({
-        status: "active",
-        identity: "alice",
-        granted_capabilities: [...SPOKE_CAPABILITIES],
-        app_id: "spoke.local"
-      })
+    current: vi.fn().mockResolvedValue({
+      status: "active",
+      identity: "alice",
+      granted_capabilities: [...SPOKE_CAPABILITIES],
+      app_id: "spoke.local"
+    })
   };
   return { persistence, api };
 }
@@ -60,5 +58,21 @@ it("resumes an existing pending request", async () => {
   const connection = createSessionConnection(api, persistence);
   await connection.refresh();
   expect(connection.getSnapshot().kind).toBe("pending");
+  expect(api.request).not.toHaveBeenCalled();
+});
+
+it("rediscovers the local identity after forgetting access", async () => {
+  const { persistence, api } = fixture();
+  const connection = createSessionConnection(api, persistence);
+  await connection.refresh();
+  persistence.read.mockReturnValue(null as never);
+  api.identity.mockResolvedValue("current-local-identity");
+  connection.disconnect();
+  await vi.waitFor(() =>
+    expect(connection.getSnapshot()).toMatchObject({
+      kind: "access",
+      identity: "current-local-identity"
+    })
+  );
   expect(api.request).not.toHaveBeenCalled();
 });

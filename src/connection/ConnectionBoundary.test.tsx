@@ -43,7 +43,7 @@ async function mount() {
     );
   });
 }
-it("validates access input, requests once, and opens the connected subtree after approval", async () => {
+it("uses the detected identity without an input, requests once, and opens after approval", async () => {
   vi.mocked(sessionApi.request).mockResolvedValue({ request_id: "request", status: "pending" });
   vi.mocked(sessionApi.poll).mockResolvedValue({
     request_id: "request",
@@ -61,17 +61,9 @@ it("validates access input, requests once, and opens the connected subtree after
     granted_capabilities: [...SPOKE_CAPABILITIES]
   });
   await mount();
-  fireEvent.change(screen.getByRole("textbox", { name: "Your Jolt identity" }), {
-    target: { value: "" }
-  });
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Connect to Jolt" }));
-  });
-  expect(screen.getByRole("alert")).toHaveTextContent("Enter your Jolt identity.");
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  expect(screen.getByText("alice")).toBeVisible();
   expect(sessionApi.request).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByRole("textbox", { name: "Your Jolt identity" }), {
-    target: { value: " alice " }
-  });
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect to Jolt" }));
   });
@@ -126,5 +118,6 @@ it("allows retry after startup failure without exposing connected children", asy
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   });
-  expect(screen.getByRole("textbox", { name: "Your Jolt identity" })).toHaveValue("alice");
+  expect(screen.getByText("alice")).toBeVisible();
+  expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
 });
