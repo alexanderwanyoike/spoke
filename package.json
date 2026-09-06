@@ -12,7 +12,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri",
     "test": "vitest run",
-    "verify:distribution": "node scripts/verify-distribution.mjs"
+    "verify:distribution": "node scripts/verify-distribution.mjs",
+    "test:integration": "node scripts/test-messages-integration.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

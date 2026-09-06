@@ -1,69 +1,72 @@
-# Messages: first replacement slice
+# Messages: functional replacement slice
 
-This branch implements the first Spoke UI slice from the combined Claude/Codex research of 6 September 2026. It is a development milestone, not the full Spoke cutover.
+Messages is the production application at `/`. The old App.tsx, its stylesheet, both alternate entries, the fictional preview and its SVG have been removed. This implements the first slice from the combined Claude/Codex research, not the remaining Spoke screens. No protocol or Console changes are included.
 
-Run `yarn install --frozen-lockfile`, then `yarn dev`. The default port is 5178. If that port is occupied, use `yarn dev --port 5179 --strictPort`.
+## Run and use
 
-- `/messages.html` is the new application entry with the current Jolt SDK, compatibility checks and session approval. It requires a running Jolt daemon and accepted contacts.
-- `/messages-preview.html#/messages/conv_alex_maya` renders the same components against fictional in-memory data. It has an offline switch and sends no real messages. This entry is excluded from production builds.
-- `/index.html` remains the shipped app entry while subsequent features are replaced. The new entry never imports `src/App.tsx` or its runtime. Both real entries are built so this slice remains reviewable before cutover.
+Run `yarn install --frozen-lockfile`, then `yarn dev`. Open `http://127.0.0.1:5178`, with Jolt running locally. `VITE_JOLT_DAEMON_URL` can select another daemon. The same entry is built for desktop.
 
-## Ownership
+1. Connect your identity and approve Spoke in Jolt Console. Saved approved access and pending requests are reused.
+2. Choose **New conversation**, enter the other identity and a local contact name, and send a request.
+3. The recipient opens **New conversation** and accepts or declines the verified incoming request. Acceptance creates an encrypted contact edge and sends an encrypted response. The requester validates that response against their own saved outgoing request.
+4. Once accepted, select the conversation and send text or images. Both sides retain encrypted copies that load again after restarting Spoke.
 
-| Area | Owns |
-| --- | --- |
-| `src/app/App.tsx` | Connection boundary, shell and routes |
-| `src/connection/` | Persisted access, approval polling, compatibility, session expiry and revocation |
-| `src/message/gateway.ts` | Current SDK binding and a private store for this identity/session |
-| `src/message/resource.ts` | One coalesced refresh loop, retained data and freshness |
-| `src/message/send-workflow.ts` | Contact authorization, encrypted uploads, stable send attempts |
-| `src/message/receive.ts` | Envelope/payload agreement, accepted-contact rules, encrypted persistence before acknowledgement |
-| `src/message/drafts.ts` | In-memory per-conversation drafts and preview URL lifetime |
-| `src/message/components/` | List, conversation, history, composer and image viewer |
+No sample contacts, messages, media or alternate gateway run in the application. Fixtures exist only in tests. Packaged desktop users retain the signed update flow through **Updates**.
 
-React Hook Form owns the form. Zod validates message input, incoming message records and persisted session data at boundaries. The router owns selected conversations. Context supplies stable services; `useSyncExternalStore` subscribes to the Messages snapshot. There is no global UI store, Redux or Zustand.
+## Ownership and invariants
 
-Messages use the existing SDK encrypted publication and ingress contracts. The typed Data SDK does not currently expose an encrypted Messages collection. This slice does not invent a public collection or a second protocol. Existing typed profile/post resources remain available for their later feature slices. No historical contact/post localStorage importer runs from the new entry.
+| Area                              | Responsibility                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------- |
+| `src/app/App.tsx`                 | Connection, shell and routes; no data workflows                                 |
+| `src/connection/access.ts`        | Spoke capability policy, approval and saved access restoration                  |
+| `src/connection/monitor.ts`       | Subscription, single-flight checks, polling and cancelled lifetimes             |
+| `src/contacts/contracts.ts`       | Validated contact/request/response records and envelope identity agreement      |
+| `src/contacts/repository.ts`      | Encrypted contact hydration and send/request eligibility                        |
+| `src/contacts/service.ts`         | Request, review, accept/decline and correlated response application             |
+| `src/message/gateway.ts`          | Runtime wiring to the current Jolt SDK                                          |
+| `src/message/application.ts`      | Compose an identity's private projection and messaging use cases                |
+| `src/message/send-workflow.ts`    | Outbox attempts: authorize, prepare, deliver; preserve IDs and uploads on retry |
+| `src/message/receive.ts`          | Validate authentic participants, persist encrypted history, then acknowledge    |
+| `src/message/media-repository.ts` | Encrypted image publication and decryption                                      |
+| `src/message/resource.ts`         | Observable snapshot, freshness, coalesced refresh and cancellation              |
+| `src/message/drafts.ts`           | Per-conversation draft and object URL lifetime                                  |
+| `src/update/UpdateControl.tsx`    | Explicit update checking and installation through the signed updater client     |
 
-The synchronous Messages snapshot is a feature projection of encrypted SDK data, not another authoritative database. The refresh loop runs five seconds after the previous load finishes; manual refresh coalesces with an in-flight load. Inventory is shared across the contact and message load. Unchanged message copies retain the existing loader's sequence checks. Rendering history is bounded to the latest 100 messages with an explicit earlier-history action; initial inventory enumeration is not paginated.
+Domain rules are named at application boundaries rather than repeated inside JSX. React Hook Form owns editable form state; Zod validates boundary records. The router owns selection. Context carries stable services and `useSyncExternalStore` subscribes to the feature snapshot. Redux and Zustand are not needed for this slice.
 
-## Behavior
+The SDK remains the data authority. Messages use its encrypted publication and ingress APIs: the current typed Data client does not expose an encrypted Messages collection. There is no public-read fallback or historical localStorage importer. The in-memory projection belongs to one identity/session and is discarded on ended access.
 
-- Desktop list/thread layout and narrow single-pane navigation, light/dark appearance, search and empty states.
-- Text and up to four JPEG/PNG/WebP images, 5 MB each; optional descriptions and a keyboard-accessible viewer.
-- Button and Enter share one submission path. Shift+Enter preserves a newline; composition events do not submit.
-- Failed sends retain drafts and message IDs. Navigation retains separate drafts. A late success cannot erase newer edits. Drafts are memory-only and clear on application reload or ended access.
-- Successful sends in this session say “Sent”, never “Delivered”. Loaded outgoing copies say “Outgoing copy” because their presence alone does not prove successful ingress delivery.
-- Refresh failure retains the last available data with a notice. Missing/undecodable encrypted copies are counted visibly.
-- Existing saved or pending access is reused. “Forget access” clears this browser's saved token; revocation remains in Console.
-- Stopping the session aborts subsequent stages of pending work. SDK requests already dispatched cannot be recalled by the frontend.
+Schema hints are optional transport metadata. Incoming classification uses the validated decrypted payload and checks it against the authenticated envelope. The real-node regression caught and fixed the earlier requirement for a schema hint, which the current SDK does not send.
 
-## Privacy change and historical data
+## Behavior and scope
 
-New received copies are encrypted to the receiving identity. The reader uses encrypted reads for both outgoing and received copies. Regression tests verify these SDK calls and the absence of a public-write/public-read fallback.
+- Responsive list/thread navigation, search, neutral light/dark appearance and accessible dialogs.
+- Text and up to four JPEG/PNG/WebP images, 5 MB each, with optional image descriptions.
+- Enter and the Send button share submission; Shift+Enter and composition preserve editing.
+- Failed sends retain drafts and retry identity. A late success cannot erase newer edits.
+- Current-session successful sends say **Sent**. Reloaded outgoing copies say **Outgoing copy**; neither claims delivery receipts.
+- A failed refresh retains the last data and exposes retry. Unreadable encrypted records are counted visibly.
+- Request review handles verified contact requests. Unsupported or unverified incoming items remain pending and are counted, never silently accepted.
+- **Forget access** clears local saved access. Revocation remains in Console. Already dispatched SDK operations cannot be recalled by the frontend.
 
-This does not retract or encrypt received copies previously published as plaintext. They are not imported by this reader; unreadable copies produce a notice. A historical-data decision is required before making this entry the shipped default. The existing app entry also receives the encrypted write/read fix on this branch.
+Posts, feed, profile editing, richer media, activity and other settings are later slices. Their domain modules remain for that work, but the old application shell is not shipped alongside this one. This branch has not been released.
 
-## Verification and remaining work
+Historical plaintext received copies are neither imported nor made private retroactively. A release decision about those copies remains necessary. This branch does not delete users' historical data.
 
-Focused failing tests preceded the received-copy fix, failure reporting, image composer, snapshot lifecycle, session restoration, stable send retries, cancellation and receipt acknowledgement retry. The updated existing inbox failure test exercises encrypted persistence.
+## Verification
 
-Verified locally: 153 tests across 34 files, production TypeScript/Vite build of both entries, distribution contract and shell syntax. Dependency installation uses Yarn's frozen lockfile. Formatting of the new files uses Prettier with the repository configuration; packaging and Tauri build commands now use Yarn consistently.
+`./scripts/test-local.sh` runs the full fast suite, TypeScript/Vite production build and distribution contract. The current result is **164 passing tests across 37 files**. The real-node test is intentionally skipped by this command and run separately:
 
-Browser checks exercised conversation switching, retained drafts, failed send/retry, search, narrow back navigation, theme switching and the image dialog's Escape/focus-return behavior. Measured CSS widths were about 433, 1222 and 1422 pixels because the in-app browser scales its requested viewport; DOM bounds showed no page overflow. The real connection entry reached identity selection through the running daemon without requesting new access. A fresh preview load produced no new browser errors after the development hot-reload refactor.
+```sh
+JOLT_BINARY=/absolute/path/to/jolt yarn test:integration
+```
 
-No real person was messaged and no new app grant was approved. Two-device delivery, native WebKitGTK behavior/performance and signed desktop packaging remain unverified for this slice. Dependency tools still report the pre-existing Vitest/Vite major-version mismatch and harmless upstream Zod annotation warnings.
+Verified with Jolt **0.5.3** and the installed `jolt-sdk` **0.3.x**. The harness allocates loopback ports, creates two disposable XDG profiles, disables mDNS/public bootstrapping, connects them over TCP and grants access only to those generated identities. It cleans up its own processes and profiles after success. It does not use the user's daemon or contacts.
 
-Before default cutover: contact/request review and connection settings, richer media, durable outbox semantics, historical-data policy, public profile names through typed Data resources, and native/two-device verification. Posts/feed/people/activity/settings are separate feature slices. Console remains a later implementation with the agreed fixed 1100 × 760 window.
+That test executes the production application services against real Jolt: request and acceptance, bidirectional text/image exchange, exact decrypted image bytes, both histories reopened from fresh application instances, and absence of message text in public reads. No gateway is mocked. `yarn test:integration --keep` retains the disposable nodes for browser review until the harness is stopped; it prints their ports and temporary directory.
 
-## Component regression coverage
+Browser verification used the production `/` entry against those nodes: actual pending-to-approved sessions, encrypted history and image loading, text and PNG sends from the production composer observed on the other node, a decrypted full-size image, and the contact dialog in light appearance. Component tests cover the full contact form and decision UI, failure/retry, route/search, drafts, stale recovery, approval/revocation, image dialog and URL lifetime, bounded history, and updater compatibility gating.
 
-| Tests | Components and behavior exercised |
-| --- | --- |
-| `src/app/App.test.tsx` | Actual App, shell, MessageSession, MessagesPage, conversation list/panel and avatars: routes, search, draft retention, refresh recovery, read-only history, appearance and access teardown |
-| `src/connection/ConnectionBoundary.test.tsx` | Input validation, one approval request, pending-to-connected transition, retained child state during network failure, revocation and startup retry |
-| `src/message/components/MessageImage.test.tsx` | Failed-load retry, dialog accessibility, Escape/focus return, image decoding failure and URL cleanup after retry/unmount |
-| `src/message/components/MessageList.test.tsx` | Recent-history bound and explicit earlier-message navigation; delivery labels are also exercised through App |
-| `src/message/components/MessageComposer.test.tsx` | Composer, ImagePicker and DraftImages: text/image submission, retained drafts, pending edits, attachment descriptions/removal, empty validation and Shift+Enter |
+Focused failing tests preceded contact request/review behavior, missing-hint receipt, accepted-contact protection and update controls. Existing tests guarded the connection/outbox/resource refactors. Entry/build-script/docs changes are tooling changes; test-first does not apply to them.
 
-These tests render the production components and replace the SDK/network boundary. Display-only components are covered through their consuming screen. Bootstrap entry files and the fictional development harness retain build/browser smoke verification rather than duplicate rendering tests. The coverage follow-up adds tests for existing behavior; it changes no production behavior.
+Remaining verification: physical two-device networking, native WebKitGTK behavior/performance and a signed desktop package. Local TCP verification does not establish those results. Drafts/retry bookkeeping are memory-only; a durable outbox and initial-inventory pagination are follow-ups. Existing Vite/Vitest and upstream Zod annotation warnings remain.

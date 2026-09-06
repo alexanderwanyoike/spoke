@@ -1,3 +1,4 @@
+import type { ContactRequest } from "../contacts";
 import { sameIdentity, type Contact } from "../follow";
 import {
   conversationIdForParticipants,
@@ -15,6 +16,8 @@ export type ConversationView = Conversation & {
 export type MessagesData = {
   conversations: ConversationView[];
   pendingCount: number;
+  contactRequests: ContactRequest[];
+  requestedContacts: Contact[];
   unavailableCount?: number;
 };
 

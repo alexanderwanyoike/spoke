@@ -1,7 +1,12 @@
 import { expect, it, vi } from "vitest";
 import { createMessagesResource } from "./resource";
 import type { MessagesData } from "./view-model";
-const data: MessagesData = { conversations: [], pendingCount: 0 };
+const data: MessagesData = {
+  conversations: [],
+  pendingCount: 0,
+  contactRequests: [],
+  requestedContacts: []
+};
 
 it("coalesces refreshes and keeps the last successful data on failure", async () => {
   let finish!: (data: MessagesData) => void;

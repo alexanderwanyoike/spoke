@@ -59,3 +59,10 @@ it("retries acknowledgement without publishing a received copy again", async () 
   expect(sdk.publishEncryptedJson).toHaveBeenCalledTimes(1);
   expect(sdk.acceptIngress).toHaveBeenCalledTimes(2);
 });
+
+it("receives SDK messages without an optional schema hint", async () => {
+  const { store, sdk, record } = fixture();
+  sdk.listPendingIngress.mockResolvedValue([{ ...record, schema_hint: null }]);
+  expect(await receiveMessages(sdk, "alice", store)).toBe(0);
+  expect(sdk.acceptIngress).toHaveBeenCalledWith("envelope");
+});

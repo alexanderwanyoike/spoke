@@ -27,8 +27,8 @@ export function MessagesPage() {
       )}
       {snapshot.data.pendingCount > 0 && (
         <div className="pending-notice" role="status">
-          {snapshot.data.pendingCount} incoming item(s) still need review. Request review is not
-          included in this Messages preview.
+          {snapshot.data.pendingCount} incoming item(s) could not be verified as contact requests or
+          messages from accepted contacts.
         </div>
       )}
       {Boolean(snapshot.data.unavailableCount) && (
@@ -44,7 +44,7 @@ export function MessagesPage() {
           <section className="no-conversation">
             <MessagesSquare size={38} strokeWidth={1.25} />
             <h2>A space for your people.</h2>
-            <p>Choose a conversation to pick up where you left off.</p>
+            <p>Choose a conversation, or send a contact request to someone new.</p>
             {conversationId && <p>This conversation is not available in the current list.</p>}
           </section>
         )}

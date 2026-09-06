@@ -1,3 +1,4 @@
+import { ContactDialog } from "../../contacts";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { Search, RefreshCw } from "lucide-react";
@@ -6,7 +7,7 @@ import { Avatar } from "./Avatar";
 
 export function ConversationList() {
   const snapshot = useMessagesSnapshot();
-  const { resource } = useMessagesServices();
+  const { resource, requestContact, decideContact } = useMessagesServices();
   const [search, setSearch] = useState("");
   const query = search.trim().toLocaleLowerCase();
   const conversations = snapshot.data.conversations.filter((item) =>
@@ -28,6 +29,12 @@ export function ConversationList() {
           <RefreshCw size={17} />
         </button>
       </header>
+      <ContactDialog
+        requests={snapshot.data.contactRequests}
+        requestedContacts={snapshot.data.requestedContacts}
+        onRequest={requestContact}
+        onDecide={decideContact}
+      />
       <label className="conversation-search">
         <Search size={17} />
         <input

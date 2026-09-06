@@ -15,13 +15,22 @@ export function conversation(recipient = "bob", name = "Bob"): ConversationView 
   };
 }
 export function gatewayFixture(conversations = [conversation(), conversation("carol", "Carol")]) {
-  const data: MessagesData = { conversations, pendingCount: 0 };
+  const data: MessagesData = {
+    conversations,
+    pendingCount: 0,
+    contactRequests: [],
+    requestedContacts: []
+  };
   return {
     data,
     gateway: {
       load: vi.fn<MessagesGateway["load"]>().mockResolvedValue(data),
       send: vi.fn<MessagesGateway["send"]>().mockResolvedValue(undefined),
       loadImage: vi.fn<MessagesGateway["loadImage"]>().mockResolvedValue(new Blob(["image"])),
+      contacts: {
+        request: vi.fn().mockResolvedValue(undefined),
+        decide: vi.fn().mockResolvedValue(undefined)
+      },
       confirmed: new Set<string>()
     }
   };

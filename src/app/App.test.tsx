@@ -136,7 +136,14 @@ it("persists appearance and aborts the Messages load when access is forgotten", 
   await user.click(screen.getByRole("button", { name: "Forget access" }));
   expect(signal?.aborted).toBe(true);
   expect(localStorage.getItem("spoke.session")).toBeNull();
-  await act(async () => complete({ conversations: [conversation()], pendingCount: 0 }));
+  await act(async () =>
+    complete({
+      conversations: [conversation()],
+      pendingCount: 0,
+      contactRequests: [],
+      requestedContacts: []
+    })
+  );
   expect(screen.queryByRole("heading", { name: "Messages" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Connect to Jolt" })).toBeVisible();
 });

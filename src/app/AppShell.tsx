@@ -1,3 +1,5 @@
+import { isTauri } from "@tauri-apps/api/core";
+import { UpdateControl } from "../update/UpdateControl";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { MessageSquare, Sun, Moon, LogOut } from "lucide-react";
@@ -34,6 +36,7 @@ export function AppShell({
           </Link>
         </nav>
         <div className="rail-bottom">
+          {isTauri() && <UpdateControl />}
           <button
             className="rail-link"
             onClick={() => setDark((value) => !value)}
