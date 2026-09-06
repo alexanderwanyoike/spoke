@@ -205,7 +205,7 @@ export function MessagesView({
               </div>
             </ScrollArea>
 
-            <div className="border-t spoke-border bg-card p-4 shadow-[0_-1px_8px_color-mix(in_oklch,var(--foreground),transparent_94%)]">
+            <div className="border-t spoke-border bg-card p-4">
               <div className="mx-auto grid w-full max-w-4xl gap-3">
                 <MessageComposer
                   key={activeThread.contact.identity}
