@@ -1,3 +1,4 @@
+import { MessageRecord } from "./schema";
 // Message model: types + pure domain helpers and tolerant decoders. A direct
 // message is an Append Record: the sender keeps an encrypted outgoing copy under
 // /spoke/messages/outgoing/{id} and the recipient keeps a received copy under
@@ -85,16 +86,13 @@ export function messageTargetsIdentity(message: SpokeMessage, identity: string) 
 }
 
 export function isSpokeMessage(value: unknown): value is SpokeMessage {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const schema = (value as { schema?: unknown }).schema;
-  return schema === "spoke.message.v1" || schema === "spoke.message.v2";
+  return MessageRecord.safeParse(value).success;
 }
 
-// Tolerant reader: validate an already-parsed JSON value into a message, or null.
-export const decodeMessage: Decoder<SpokeMessage> = (value) =>
-  isSpokeMessage(value) ? value : null;
+export const decodeMessage: Decoder<SpokeMessage> = value => {
+  const parsed = MessageRecord.safeParse(value);
+  return parsed.success ? parsed.data : null;
+};
 
 export function messagePreview(message: SpokeMessage) {
   if (message.body.trim()) {

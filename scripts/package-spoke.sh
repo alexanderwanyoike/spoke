@@ -170,11 +170,11 @@ fi
 
 echo "==> Installing Spoke dependencies if needed"
 if [[ ! -d "$ROOT_DIR/node_modules" ]]; then
-  (cd "$ROOT_DIR" && npm ci)
+  (cd "$ROOT_DIR" && yarn install --frozen-lockfile)
 fi
 
 echo "==> Building Spoke web assets"
-(cd "$ROOT_DIR" && npm run build)
+(cd "$ROOT_DIR" && yarn build)
 
 if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" ]]; then
   if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" && -z "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]]; then
@@ -197,7 +197,7 @@ TAURI_BUILD_ARGS=(build -- --bundles "$TAURI_BUNDLE_KIND")
 if [[ "$CREATE_UPDATER_ARTIFACTS" == "1" ]]; then
   TAURI_BUILD_ARGS+=(--config '{"bundle":{"createUpdaterArtifacts":true}}')
 fi
-(cd "$ROOT_DIR" && run_with_retries 3 npm run tauri "${TAURI_BUILD_ARGS[@]}")
+(cd "$ROOT_DIR" && run_with_retries 3 yarn tauri "${TAURI_BUILD_ARGS[@]}")
 
 echo "==> Bundle artifacts"
 find "$ROOT_DIR/src-tauri/target/release/bundle" -maxdepth 3 -type f \( \

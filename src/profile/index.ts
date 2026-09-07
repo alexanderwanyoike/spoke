@@ -18,3 +18,5 @@ export {
 export { publishProfile, PROFILE_PATH } from "./commands";
 export { loadProfile } from "./loaders";
 export { selectProfile, selectProfiles, useProfile, useProfiles } from "./queries";
+export { AccountIdentity } from "./AccountIdentity";
+export { createAccountProfile } from "./account";

@@ -4,9 +4,9 @@
   "version": "0.3.4",
   "identifier": "net.jolt.spoke",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "yarn dev",
     "devUrl": "http://127.0.0.1:5178",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "yarn build",
     "frontendDist": "../dist"
   },
   "app": {

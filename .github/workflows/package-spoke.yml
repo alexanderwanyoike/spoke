@@ -88,8 +88,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: package-lock.json
+          cache: yarn
+          cache-dependency-path: yarn.lock
 
       - name: Verify distribution contract
         run: node scripts/verify-distribution.mjs
