@@ -1,8 +1,8 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { UpdateControl } from "../update/UpdateControl";
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
-import { MessageSquare, Sun, Moon, LogOut } from "lucide-react";
+import { Link, NavLink } from "react-router-dom";
+import { MessageSquare, Sun, Moon, LogOut, UserRound } from "lucide-react";
 
 export function AppShell({
   account,
@@ -30,10 +30,14 @@ export function AppShell({
           <span>Spoke</span>
         </Link>
         <nav aria-label="Main navigation">
-          <Link className="rail-link active" aria-label="Messages" to="/messages">
+          <NavLink className="rail-link" aria-label="Messages" to="/messages">
             <MessageSquare size={19} />
             <span>Messages</span>
-          </Link>
+          </NavLink>
+          <NavLink className="rail-link" aria-label="My profile" to="/profile">
+            <UserRound size={19} />
+            <span>My profile</span>
+          </NavLink>
         </nav>
         <div className="rail-bottom">
           {isTauri() && <UpdateControl />}

@@ -72,7 +72,7 @@ try {
     join(directory, "nodes.json"),
     JSON.stringify({ alice: alice.port, bob: bob.port })
   );
-  const test = spawn("yarn", ["test", "tests/integration/messages.test.ts"], {
+  const test = spawn("yarn", ["test", "tests/integration"], {
     stdio: "inherit",
     env: {
       ...process.env,

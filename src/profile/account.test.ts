@@ -38,3 +38,12 @@ it.each([null, {}, { ...profile, displayName: "   " }, { ...profile, identity: "
     expect(await loadAccountName(profileReader(value), "alice")).toBeNull();
   }
 );
+
+it("rejects malformed profile fields before they reach the UI", async () => {
+  expect(
+    await loadAccountName(
+      profileReader({ schema: "spoke.profile.v2", identity: "alice", displayName: 42 }),
+      "alice"
+    )
+  ).toBeNull();
+});
