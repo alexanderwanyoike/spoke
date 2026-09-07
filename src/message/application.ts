@@ -1,5 +1,5 @@
 import { createStore } from "../common/store";
-import type { Contact } from "../follow";
+import type { Contact, SpokeFollowResponse } from "../follow";
 import { ContactRepository, ContactService } from "../contacts";
 import type { JoltEncryptedSdk, JoltIngressSdk } from "../jolt";
 import { loadConversations } from "./loaders";
@@ -11,20 +11,21 @@ import type { MessageMedia } from "./media-repository";
 import type { MessagesGateway } from "./gateway";
 
 type MessagingSdk = JoltEncryptedSdk & JoltIngressSdk;
+export type SessionEffects = {
+  reviewInbox?(contacts: Contact[], signal?: AbortSignal): Promise<number | void>;
+  contactAccepted?(response: SpokeFollowResponse): Promise<void>;
+};
 
 /** One identity's private projection and use cases. The SDK remains the data authority. */
 export function createMessagesApplication(
   identity: string,
   sdk: MessagingSdk,
   media: MessageMedia,
-  reviewAdditionalInbox: (
-    contacts: Contact[],
-    signal?: AbortSignal
-  ) => Promise<void> = async () => {}
+  effects: SessionEffects = {}
 ): MessagesGateway {
   const store = createStore();
   const contacts = new ContactRepository(sdk, identity, store);
-  const contactService = new ContactService(sdk, identity, store);
+  const contactService = new ContactService(sdk, identity, store, effects.contactAccepted);
   const sender = createMessageSender({
     identity,
     sdk,
@@ -37,7 +38,7 @@ export function createMessagesApplication(
     signal?.throwIfAborted();
     const inventory = await contacts.refresh();
     const requests = await contactService.review(signal);
-    await reviewAdditionalInbox(contacts.all(), signal);
+    const reviewedRequests = await effects.reviewInbox?.(contacts.all(), signal);
     const pendingCount = await receiveMessages(sdk, identity, store, signal);
     const { unavailableCount } = await loadConversations(
       { ...sdk, listPublished: async () => inventory },
@@ -53,7 +54,7 @@ export function createMessagesApplication(
       contacts: contacts.all(),
       contactRequests: requests,
       requestedContacts: contacts.all().filter((contact) => contact.relationship === "requested"),
-      pendingCount: Math.max(0, pendingCount - requests.length),
+      pendingCount: Math.max(0, pendingCount - requests.length - (reviewedRequests || 0)),
       unavailableCount
     };
   }

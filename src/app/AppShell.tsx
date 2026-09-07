@@ -2,7 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { UpdateControl } from "../update/UpdateControl";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { MessageSquare, Sun, Moon, LogOut, UserRound, UsersRound, House } from "lucide-react";
+import { MessageSquare, Sun, Moon, LogOut, UserRound, UsersRound, House, Bell } from "lucide-react";
 
 export function AppShell({
   account,
@@ -41,6 +41,10 @@ export function AppShell({
           <NavLink className="rail-link" aria-label="People" to="/people">
             <UsersRound size={19} />
             <span>People</span>
+          </NavLink>
+          <NavLink className="rail-link" aria-label="Activity" to="/activity">
+            <Bell size={19} />
+            <span>Activity</span>
           </NavLink>
           <NavLink className="rail-link" aria-label="My profile" to="/profile">
             <UserRound size={19} />

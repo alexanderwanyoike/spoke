@@ -3,7 +3,7 @@ import type { ContactActions } from "../contacts";
 import type { SpokeMessageAttachment } from "../media";
 import type { MessageDraft } from "./drafts";
 import type { MessagesData } from "./view-model";
-import { createMessagesApplication } from "./application";
+import { createMessagesApplication, type SessionEffects } from "./application";
 import { createMessageMedia } from "./media-repository";
 
 export interface MessagesGateway {
@@ -17,12 +17,12 @@ export interface MessagesGateway {
 export function createMessagesGateway(
   identity: string,
   token: string,
-  reviewAdditionalInbox?: Parameters<typeof createMessagesApplication>[3]
+  effects?: SessionEffects
 ): MessagesGateway {
   return createMessagesApplication(
     identity,
     createJoltSdk(() => token),
     createMessageMedia(identity, token),
-    reviewAdditionalInbox
+    effects
   );
 }

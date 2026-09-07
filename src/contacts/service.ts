@@ -5,7 +5,8 @@ import {
   applyIncomingResponse,
   requestFollow,
   sendFollowResponse,
-  sameIdentity
+  sameIdentity,
+  type SpokeFollowResponse
 } from "../follow";
 import type { JoltEncryptedSdk, JoltIngressSdk, IngressRecord } from "../jolt";
 import {
@@ -23,7 +24,8 @@ export class ContactService {
   constructor(
     private sdk: ContactSdk,
     private identity: string,
-    private store: Store
+    private store: Store,
+    private onAcceptedResponse: (response: SpokeFollowResponse) => Promise<void> = async () => {}
   ) {}
 
   async request(input: ContactInput, signal?: AbortSignal) {
@@ -93,6 +95,7 @@ export class ContactService {
       return;
     signal?.throwIfAborted();
     await applyIncomingResponse(this.sdk, this.identity, response, this.store);
+    if (response.decision === "accepted") await this.onAcceptedResponse(response);
     signal?.throwIfAborted();
     await this.sdk.acceptIngress(record.ingress_id);
   }

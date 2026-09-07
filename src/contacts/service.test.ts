@@ -114,3 +114,30 @@ it("sends the introduction and sender name without replacing the recipient's loc
     { identity: "bob", displayName: "Bob at the bookshop", relationship: "requested" }
   ]);
 });
+
+it("saves an accepted-response event before acknowledging it, and retries a failed event write", async () => {
+  const { sdk, store, request } = fixture();
+  const response = {
+    schema: "spoke.follow_response.v1",
+    id: "response",
+    requestId: "request",
+    sender: "bob",
+    recipient: "alice",
+    decision: "accepted",
+    createdAt: "2026-09-07T00:00:00Z"
+  };
+  sdk.openIngress.mockResolvedValue(response as never);
+  sdk.readEncrypted.mockResolvedValue({
+    value: { ...request, sender: "alice", recipient: "bob" }
+  } as never);
+  const record = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("Storage offline"))
+    .mockResolvedValueOnce(undefined);
+  const service = new ContactService(sdk as never, "alice", store, record);
+  await expect(service.review()).rejects.toThrow("Storage offline");
+  expect(sdk.acceptIngress).not.toHaveBeenCalled();
+  await service.review();
+  expect(record).toHaveBeenLastCalledWith(response);
+  expect(sdk.acceptIngress).toHaveBeenCalledWith("inbox");
+});

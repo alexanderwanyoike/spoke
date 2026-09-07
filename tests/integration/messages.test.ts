@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { ActivityRepository } from "../../src/activity/repository";
 import { participant } from "./participant";
 const enabled = process.env.SPOKE_INTEGRATION === "1";
 
@@ -21,6 +22,21 @@ it.skipIf(!enabled)(
     });
     await bob.app.contacts.decide(requests[0].ingressId, "accepted");
     expect((await alice.app.load()).conversations[0].canSend).toBe(true);
+    const activity = new ActivityRepository(alice.identity, alice.sdk);
+    const acceptedActivity = await activity.load();
+    expect(acceptedActivity.contacts).toHaveLength(1);
+    expect(acceptedActivity.contacts[0].actor).toBe(bob.identity);
+    const eventId = acceptedActivity.contacts[0].id;
+    await activity.markRead([eventId]);
+    expect((await new ActivityRepository(alice.identity, alice.sdk).load()).read.has(eventId)).toBe(
+      true
+    );
+    expect(
+      await bob.sdk.readEncrypted(
+        { identity: alice.identity, path: `/spoke/activity/read/${encodeURIComponent(eventId)}` },
+        (value) => value
+      )
+    ).toBeNull();
     const id = `integration_${Date.now()}`;
     await alice.app.send(bob.identity, { id, body: "Text sent through real Jolt", images: [] });
     expect(

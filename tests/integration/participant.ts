@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect } from "vitest";
 import { createJoltClient, operations } from "jolt-sdk";
 import { HttpTransport } from "jolt-sdk/transport-http";
+import { ActivityRepository } from "../../src/activity/repository";
 import { createMessagesApplication } from "../../src/message/application";
 import { createMessageMedia } from "../../src/message/media-repository";
 import { SPOKE_CAPABILITIES } from "../../src/session";
@@ -44,12 +45,17 @@ export async function participant(port: number) {
       JSON.stringify({ identity, token, requestId: request.request_id, status: "active" }),
       { mode: 0o600 }
     );
+  const activity = new ActivityRepository(identity, sdk);
+  const effects = {
+    contactAccepted: (response: Parameters<ActivityRepository["contactAccepted"]>[0]) =>
+      activity.contactAccepted(response)
+  };
   return {
     identity,
     sdk,
     token,
     requestId: request.request_id,
-    app: createMessagesApplication(identity, sdk, media),
-    reopen: () => createMessagesApplication(identity, sdk, media)
+    app: createMessagesApplication(identity, sdk, media, effects),
+    reopen: () => createMessagesApplication(identity, sdk, media, effects)
   };
 }
