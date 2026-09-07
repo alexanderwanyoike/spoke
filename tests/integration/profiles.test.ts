@@ -3,6 +3,8 @@ import { operations } from "jolt-sdk";
 import { participant } from "./participant";
 import { createProfileRepository } from "../../src/profile/repository";
 import { createPublicImages } from "../../src/media/public";
+import { createProfileNames } from "../../src/profile/names";
+import { normalizeIdentity } from "../../src/follow";
 
 it.skipIf(process.env.SPOKE_INTEGRATION !== "1")(
   "publishes, updates and remotely reads a profile and its public picture",
@@ -33,6 +35,11 @@ it.skipIf(process.env.SPOKE_INTEGRATION !== "1")(
     expect(
       (await createProfileRepository(bob.identity, bob.sdk).load(alice.identity)).profile
         ?.displayName
+    ).toBe("Alice");
+    expect(
+      (await createProfileNames(bob.sdk).load([alice.identity])).get(
+        normalizeIdentity(alice.identity)
+      )
     ).toBe("Alice");
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1cAAAAASUVORK5CYII=",

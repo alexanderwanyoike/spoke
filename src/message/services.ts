@@ -4,7 +4,7 @@ import type { MessagesGateway } from "./gateway";
 import { createMessagesResource } from "./resource";
 
 export function createServices(gateway: MessagesGateway) {
-  const resource = createMessagesResource(gateway.load);
+  const resource = createMessagesResource(gateway.load, gateway.resolveNames);
   let lifetime = new AbortController();
   return {
     start() {

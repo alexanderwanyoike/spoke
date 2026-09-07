@@ -20,6 +20,7 @@ export { loadProfile } from "./loaders";
 export { selectProfile, selectProfiles, useProfile, useProfiles } from "./queries";
 export { AccountIdentity } from "./AccountIdentity";
 export { createAccountProfile } from "./account";
+export { createProfileNames } from "./names";
 
 export { createProfilesGateway } from "./repository";
 export { ProfilePage } from "./ProfilePage";

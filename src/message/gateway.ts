@@ -8,6 +8,7 @@ import { createMessageMedia } from "./media-repository";
 
 export interface MessagesGateway {
   load(signal?: AbortSignal): Promise<MessagesData>;
+  resolveNames?(data: MessagesData): Promise<MessagesData>;
   send(recipient: string, draft: MessageDraft, signal?: AbortSignal): Promise<void>;
   loadImage(attachment: SpokeMessageAttachment): Promise<Blob>;
   contacts: ContactActions;

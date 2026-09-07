@@ -29,7 +29,10 @@ export class MessagesResource {
   private polling = false;
   private request = new AbortController();
 
-  constructor(private load: (signal: AbortSignal) => Promise<MessagesData>) {}
+  constructor(
+    private load: (signal: AbortSignal) => Promise<MessagesData>,
+    private resolveNames?: (data: MessagesData) => Promise<MessagesData>
+  ) {}
 
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => {
@@ -52,12 +55,16 @@ export class MessagesResource {
 
   refresh = (): Promise<void> => {
     if (this.pending) return this.pending;
+    this.request.abort();
     this.publish({ ...this.snapshot, refreshing: true });
     this.request = new AbortController();
     const { signal } = this.request;
     this.pending = this.load(signal)
       .then((data) => {
-        if (!signal.aborted) this.loaded(data);
+        if (!signal.aborted) {
+          this.loaded(data);
+          void this.updateNames(data, signal);
+        }
       })
       .catch((cause) => {
         if (!signal.aborted) this.failed(cause);
@@ -70,6 +77,16 @@ export class MessagesResource {
 
   private loaded(data: MessagesData) {
     this.publish({ status: "ready", data, error: "", updatedAt: Date.now(), refreshing: false });
+  }
+
+  private async updateNames(data: MessagesData, signal: AbortSignal) {
+    if (!this.resolveNames) return;
+    try {
+      const named = await this.resolveNames(data);
+      if (!signal.aborted) this.publish({ ...this.snapshot, data: named });
+    } catch {
+      // Names are optional presentation data; inbox freshness is tracked independently.
+    }
   }
 
   private failed(cause: unknown) {
@@ -90,6 +107,9 @@ export class MessagesResource {
   }
 }
 
-export function createMessagesResource(load: (signal: AbortSignal) => Promise<MessagesData>) {
-  return new MessagesResource(load);
+export function createMessagesResource(
+  load: (signal: AbortSignal) => Promise<MessagesData>,
+  resolveNames?: (data: MessagesData) => Promise<MessagesData>
+) {
+  return new MessagesResource(load, resolveNames);
 }

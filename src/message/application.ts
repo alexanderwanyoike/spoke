@@ -1,16 +1,17 @@
 import { createStore } from "../common/store";
-import type { Contact, SpokeFollowResponse } from "../follow";
+import { normalizeIdentity, sameIdentity, type Contact, type SpokeFollowResponse } from "../follow";
+import { createProfileNames } from "../profile";
 import { ContactRepository, ContactService } from "../contacts";
-import type { JoltEncryptedSdk, JoltIngressSdk } from "../jolt";
+import type { JoltEncryptedSdk, JoltIngressSdk, JoltSdk } from "../jolt";
 import { loadConversations } from "./loaders";
 import { readConversations } from "./queries";
-import { conversationViews } from "./view-model";
+import { conversationViews, type MessagesData } from "./view-model";
 import { createMessageSender } from "./send-workflow";
 import { receiveMessages } from "./receive";
 import type { MessageMedia } from "./media-repository";
 import type { MessagesGateway } from "./gateway";
 
-type MessagingSdk = JoltEncryptedSdk & JoltIngressSdk;
+type MessagingSdk = JoltEncryptedSdk & JoltIngressSdk & Pick<JoltSdk, "read">;
 export type SessionEffects = {
   reviewInbox?(contacts: Contact[], signal?: AbortSignal): Promise<number | void>;
   contactAccepted?(response: SpokeFollowResponse): Promise<void>;
@@ -24,6 +25,7 @@ export function createMessagesApplication(
   effects: SessionEffects = {}
 ): MessagesGateway {
   const store = createStore();
+  const profileNames = createProfileNames(sdk);
   const contacts = new ContactRepository(sdk, identity, store);
   const contactService = new ContactService(sdk, identity, store, effects.contactAccepted);
   const sender = createMessageSender({
@@ -59,5 +61,17 @@ export function createMessagesApplication(
     };
   }
 
-  return { ...sender, contacts: contactService, load, loadImage: media.load };
+  async function resolveNames(data: MessagesData): Promise<MessagesData> {
+    const unnamed = data.conversations.filter((item) => sameIdentity(item.name, item.recipient));
+    const names = await profileNames.load(unnamed.map((item) => item.recipient));
+    return {
+      ...data,
+      conversations: data.conversations.map((item) => {
+        if (!sameIdentity(item.name, item.recipient)) return item;
+        return { ...item, name: names.get(normalizeIdentity(item.recipient)) || item.name };
+      })
+    };
+  }
+
+  return { ...sender, contacts: contactService, load, resolveNames, loadImage: media.load };
 }
