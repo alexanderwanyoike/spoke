@@ -40,7 +40,7 @@ Projection, never reading one blob.
 ## Consequences
 
 - The data model no longer loses writes under multi-writer Jolt.
-- Reads require *enumerating* records under a path prefix. Jolt does not yet
+- Reads require _enumerating_ records under a path prefix. Jolt does not yet
   expose an app API for this, so it is being added (see the Jolt enumeration
   card). Until it lands, Spoke reads Collections through a temporary
   Spoke-maintained index behind a swappable seam; the index is best-effort and

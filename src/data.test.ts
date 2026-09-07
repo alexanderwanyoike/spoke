@@ -18,13 +18,13 @@ describe("Spoke Data SDK application", () => {
             id: "photo-1",
             contentId: "bafk-photo-1",
             mimeType: "image/jpeg",
-            size: 1024,
-          } as unknown as ImageAttachment,
-        ],
-      }),
+            size: 1024
+          } as unknown as ImageAttachment
+        ]
+      })
     ).rejects.toMatchObject({
       name: "SchemaValidationError",
-      field: "kind",
+      field: "kind"
     });
   });
 
@@ -34,30 +34,30 @@ describe("Spoke Data SDK application", () => {
       identity: "alice.jolt",
       displayName: "Alice",
       bio: "Building Jolt",
-      updatedAt: new Date("2026-08-28T12:00:00.000Z"),
+      updatedAt: new Date("2026-08-28T12:00:00.000Z")
     });
     const updatedProfile = await createdProfile.update({
       bio: "Building Spoke on Jolt",
-      updatedAt: new Date("2026-08-28T12:05:00.000Z"),
+      updatedAt: new Date("2026-08-28T12:05:00.000Z")
     });
 
     expect(updatedProfile.ref).toEqual(createdProfile.ref);
     expect(updatedProfile.ref).toEqual({
       identity: "alice.jolt",
-      path: "/spoke/profile",
+      path: "/spoke/profile"
     });
 
     const first = await spoke.posts.create({
       author: "alice.jolt",
       title: "Hello",
       body: "First post",
-      createdAt: new Date("2026-08-28T12:10:00.000Z"),
+      createdAt: new Date("2026-08-28T12:10:00.000Z")
     });
     const second = await spoke.posts.create({
       author: "alice.jolt",
       title: "Again",
       body: "Second post",
-      createdAt: new Date("2026-08-28T12:11:00.000Z"),
+      createdAt: new Date("2026-08-28T12:11:00.000Z")
     });
     const edited = await first.update({ body: "Edited first post" });
     const deleted = await second.delete();
@@ -65,7 +65,7 @@ describe("Spoke Data SDK application", () => {
       author: "alice.jolt",
       title: "Again",
       body: "Restored second post",
-      createdAt: new Date("2026-08-28T12:11:00.000Z"),
+      createdAt: new Date("2026-08-28T12:11:00.000Z")
     });
 
     expect(first.ref).not.toEqual(second.ref);

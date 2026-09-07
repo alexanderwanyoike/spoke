@@ -12,10 +12,7 @@ import { PROFILE_PATH } from "./commands";
 import type { SpokeProfile } from "./model";
 import type { ProfilesByIdentity } from "./model";
 
-export function selectProfile(
-  snapshot: StoreSnapshot,
-  identity: string
-): SpokeProfile | undefined {
+export function selectProfile(snapshot: StoreSnapshot, identity: string): SpokeProfile | undefined {
   const entry = snapshot.get(
     referenceKey({ identity: normalizeIdentity(identity), path: PROFILE_PATH })
   );
@@ -37,7 +34,10 @@ export function selectProfiles(snapshot: StoreSnapshot): ProfilesByIdentity {
   return profiles;
 }
 
-export function useProfile(identity: string, store: Store = defaultStore): SpokeProfile | undefined {
+export function useProfile(
+  identity: string,
+  store: Store = defaultStore
+): SpokeProfile | undefined {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   return useMemo(() => selectProfile(snapshot, identity), [snapshot, identity]);
 }

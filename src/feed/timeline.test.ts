@@ -6,7 +6,7 @@ import {
   SubscriptionState,
   type DataChangeStream,
   type DataSubscription,
-  type PresentItem,
+  type PresentItem
 } from "jolt-sdk/data";
 
 import { SpokeData, type Post } from "../data";
@@ -15,7 +15,7 @@ import {
   aggregateTimelineState,
   createFeedTimeline,
   retryDelay,
-  type FeedTimelineSourceSnapshot,
+  type FeedTimelineSourceSnapshot
 } from "./timeline";
 
 function contact(identity: string, displayName: string): Contact {
@@ -25,80 +25,79 @@ function contact(identity: string, displayName: string): Contact {
 function idleChanges(): DataChangeStream<Post> {
   return {
     async *[Symbol.asyncIterator]() {},
-    async cancel() {},
+    async cancel() {}
   };
 }
 
-function sourceState(
-  state: FeedTimelineSourceSnapshot["state"],
-): FeedTimelineSourceSnapshot {
+function sourceState(state: FeedTimelineSourceSnapshot["state"]): FeedTimelineSourceSnapshot {
   return { identity: "source.jolt", state };
 }
 
 describe("feed timeline", () => {
   it("aggregates source freshness in explicit priority order", () => {
     expect(aggregateTimelineState([], 0)).toBe(SubscriptionState.Ready);
-    expect(aggregateTimelineState([
-      sourceState(SubscriptionState.Ready),
-      sourceState(SubscriptionState.Loading),
-    ], 0)).toBe(SubscriptionState.Updating);
-    expect(aggregateTimelineState([
-      sourceState(SubscriptionState.Unavailable),
-    ], 0)).toBe(SubscriptionState.Unavailable);
-    expect(aggregateTimelineState([
-      sourceState(SubscriptionState.Unavailable),
-    ], 1)).toBe(SubscriptionState.Stale);
-    expect(aggregateTimelineState([
-      sourceState(SubscriptionState.Stale),
-      sourceState(SubscriptionState.Cancelled),
-    ], 1)).toBe(SubscriptionState.Cancelled);
-    expect(aggregateTimelineState([
-      sourceState(SubscriptionState.Cancelled),
-      sourceState(SubscriptionState.Revoked),
-    ], 1)).toBe(SubscriptionState.Revoked);
+    expect(
+      aggregateTimelineState(
+        [sourceState(SubscriptionState.Ready), sourceState(SubscriptionState.Loading)],
+        0
+      )
+    ).toBe(SubscriptionState.Updating);
+    expect(aggregateTimelineState([sourceState(SubscriptionState.Unavailable)], 0)).toBe(
+      SubscriptionState.Unavailable
+    );
+    expect(aggregateTimelineState([sourceState(SubscriptionState.Unavailable)], 1)).toBe(
+      SubscriptionState.Stale
+    );
+    expect(
+      aggregateTimelineState(
+        [sourceState(SubscriptionState.Stale), sourceState(SubscriptionState.Cancelled)],
+        1
+      )
+    ).toBe(SubscriptionState.Cancelled);
+    expect(
+      aggregateTimelineState(
+        [sourceState(SubscriptionState.Cancelled), sourceState(SubscriptionState.Revoked)],
+        1
+      )
+    ).toBe(SubscriptionState.Revoked);
   });
 
   it("calculates capped exponential retry delays", () => {
-    expect([0, 1, 2, 3].map((attempt) => retryDelay(attempt, 10, 40))).toEqual([
-      10,
-      20,
-      40,
-      40,
-    ]);
+    expect([0, 1, 2, 3].map((attempt) => retryDelay(attempt, 10, 40))).toEqual([10, 20, 40, 40]);
   });
 
   it("opens from typed Materialized Views and preserves Spoke's feed ordering", async () => {
     const world = SpokeData.testWorld();
-    const alice = world.as("alice");
-    const bob = world.as("bob");
-    const viewer = world.as("viewer");
+    const alice = world.as("alice.jolt");
+    const bob = world.as("bob.jolt");
+    const viewer = world.as("viewer.jolt");
 
     await alice.posts.create({
       author: "alice.jolt",
       displayName: "Alice",
       title: "Older",
       body: "Alice's post",
-      createdAt: new Date("2026-08-29T09:00:00.000Z"),
+      createdAt: new Date("2026-08-29T09:00:00.000Z")
     });
     await bob.posts.create({
       author: "bob.jolt",
       displayName: "Bob",
       title: "Newer",
       body: "Bob's post",
-      createdAt: new Date("2026-08-29T10:00:00.000Z"),
+      createdAt: new Date("2026-08-29T10:00:00.000Z")
     });
 
     const timeline = createFeedTimeline(viewer.posts);
     await timeline.open({
       localIdentity: "viewer.jolt",
-      contacts: [contact("alice.jolt", "Alice"), contact("bob.jolt", "Bob")],
+      contacts: [contact("alice.jolt", "Alice"), contact("bob.jolt", "Bob")]
     });
 
     const view = timeline.getSnapshot();
     expect(view.state).toBe(SubscriptionState.Ready);
     expect(view.items.map((item) => item.post.title)).toEqual(["Newer", "Older"]);
     expect(view.items.map((item) => item.source)).toEqual(["contact", "contact"]);
-    expect(view.items[0]?.address).toMatch(/^bob\/spoke\/posts\//);
+    expect(view.items[0]?.address).toMatch(/^bob\.jolt\/spoke\/posts\//);
 
     await timeline.close();
   });
@@ -112,11 +111,11 @@ describe("feed timeline", () => {
         author: "alice.jolt",
         title: "Still visible",
         body: "Cached before Alice went offline",
-        createdAt: new Date("2026-08-29T09:00:00.000Z"),
+        createdAt: new Date("2026-08-29T09:00:00.000Z")
       },
       isPresent: () => true,
       isDeleted: () => false,
-      isConflicted: () => false,
+      isConflicted: () => false
     } as unknown as PresentItem<Post>;
     const subscription = {
       id: "sub_alice",
@@ -126,25 +125,23 @@ describe("feed timeline", () => {
       reason: SubscriptionFailure.NetworkUnavailable,
       get: async () => [cached],
       changes: idleChanges,
-      remove: async () => {},
+      remove: async () => {}
     } as unknown as DataSubscription<Post>;
     const timeline = createFeedTimeline(viewer.posts, {
-      createSubscription: async () => subscription,
+      createSubscription: async () => subscription
     });
 
     await timeline.open({
       localIdentity: "",
-      contacts: [contact("alice.jolt", "Alice")],
+      contacts: [contact("alice.jolt", "Alice")]
     });
 
     expect(timeline.getSnapshot()).toMatchObject({
       state: SubscriptionState.Stale,
       reason: SubscriptionFailure.NetworkUnavailable,
-      lastVerifiedAt: 1_788_000_000,
+      lastVerifiedAt: 1_788_000_000
     });
-    expect(timeline.getSnapshot().items.map((item) => item.post.title)).toEqual([
-      "Still visible",
-    ]);
+    expect(timeline.getSnapshot().items.map((item) => item.post.title)).toEqual(["Still visible"]);
   });
 
   it("keeps healthy followed content visible when another identity is unavailable", async () => {
@@ -156,8 +153,8 @@ describe("feed timeline", () => {
         author: "alice.jolt",
         title: "Alice is here",
         body: "A verified post",
-        createdAt: new Date("2026-08-29T09:00:00.000Z"),
-      },
+        createdAt: new Date("2026-08-29T09:00:00.000Z")
+      }
     } as unknown as PresentItem<Post>;
     const alice = {
       id: "sub_alice",
@@ -165,7 +162,7 @@ describe("feed timeline", () => {
       state: SubscriptionState.Ready,
       get: async () => [alicePost],
       changes: idleChanges,
-      remove: async () => {},
+      remove: async () => {}
     } as unknown as DataSubscription<Post>;
     const bob = {
       id: "sub_bob",
@@ -176,16 +173,18 @@ describe("feed timeline", () => {
         throw new Error("Bob is offline");
       },
       changes: idleChanges,
-      remove: async () => {},
+      remove: async () => {}
     } as unknown as DataSubscription<Post>;
     const timeline = createFeedTimeline(viewer.posts, {
-      createSubscription: async (identity) => identity === "alice.jolt" ? alice : bob,
+      createSubscription: async (identity) => (identity === "alice.jolt" ? alice : bob)
     });
 
-    await expect(timeline.open({
-      localIdentity: "",
-      contacts: [contact("alice.jolt", "Alice"), contact("bob.jolt", "Bob")],
-    })).resolves.toBeUndefined();
+    await expect(
+      timeline.open({
+        localIdentity: "",
+        contacts: [contact("alice.jolt", "Alice"), contact("bob.jolt", "Bob")]
+      })
+    ).resolves.toBeUndefined();
 
     const view = timeline.getSnapshot();
     expect(view.items.map((item) => item.post.title)).toEqual(["Alice is here"]);
@@ -195,25 +194,25 @@ describe("feed timeline", () => {
       {
         identity: "bob.jolt",
         state: SubscriptionState.Unavailable,
-        reason: SubscriptionFailure.NetworkUnavailable,
-      },
+        reason: SubscriptionFailure.NetworkUnavailable
+      }
     ]);
   });
 
   it("inserts a newly verified post from the local Change Stream", async () => {
     const world = SpokeData.testWorld();
-    const alice = world.as("alice");
-    const viewer = world.as("viewer");
+    const alice = world.as("alice.jolt");
+    const viewer = world.as("viewer.jolt");
     await alice.posts.create({
       author: "alice.jolt",
       title: "First",
       body: "Already cached",
-      createdAt: new Date("2026-08-29T09:00:00.000Z"),
+      createdAt: new Date("2026-08-29T09:00:00.000Z")
     });
     const timeline = createFeedTimeline(viewer.posts);
     await timeline.open({
       localIdentity: "",
-      contacts: [contact("alice.jolt", "Alice")],
+      contacts: [contact("alice.jolt", "Alice")]
     });
     const changed = vi.fn();
     const unsubscribe = timeline.subscribe(changed);
@@ -222,13 +221,13 @@ describe("feed timeline", () => {
       author: "alice.jolt",
       title: "Second",
       body: "Arrived as a delta",
-      createdAt: new Date("2026-08-29T10:00:00.000Z"),
+      createdAt: new Date("2026-08-29T10:00:00.000Z")
     });
 
     await vi.waitFor(() => {
       expect(timeline.getSnapshot().items.map((item) => item.post.title)).toEqual([
         "Second",
-        "First",
+        "First"
       ]);
     });
     expect(changed).toHaveBeenCalled();
@@ -252,9 +251,9 @@ describe("feed timeline", () => {
           changes: idleChanges,
           remove: async () => {
             removed.push(identity);
-          },
+          }
         } as unknown as DataSubscription<Post>;
-      },
+      }
     });
     const alice = contact("alice.jolt", "Alice");
     const bob = contact("bob.jolt", "Bob");
@@ -267,9 +266,7 @@ describe("feed timeline", () => {
     await timeline.open({ localIdentity: "", contacts: [alice] });
     expect(created).toEqual(["alice.jolt", "bob.jolt"]);
     expect(removed).toEqual(["bob.jolt"]);
-    expect(timeline.getSnapshot().sources.map((source) => source.identity)).toEqual([
-      "alice.jolt",
-    ]);
+    expect(timeline.getSnapshot().sources.map((source) => source.identity)).toEqual(["alice.jolt"]);
 
     await timeline.close();
   });
@@ -283,8 +280,8 @@ describe("feed timeline", () => {
         author: "alice.jolt",
         title: "Healthy",
         body: "Still rendered",
-        createdAt: new Date("2026-08-29T09:00:00.000Z"),
-      },
+        createdAt: new Date("2026-08-29T09:00:00.000Z")
+      }
     } as unknown as PresentItem<Post>;
     const malformed = {
       state: State.Present,
@@ -293,8 +290,8 @@ describe("feed timeline", () => {
         author: "alice.jolt",
         title: "Malformed",
         body: "Historical invalid date",
-        createdAt: "not-a-date",
-      },
+        createdAt: "not-a-date"
+      }
     } as unknown as PresentItem<Post>;
     const subscription = {
       id: "sub_alice",
@@ -302,19 +299,19 @@ describe("feed timeline", () => {
       state: SubscriptionState.Ready,
       get: async () => [malformed, healthy],
       changes: idleChanges,
-      remove: async () => {},
+      remove: async () => {}
     } as unknown as DataSubscription<Post>;
     const timeline = createFeedTimeline(viewer.posts, {
-      createSubscription: async () => subscription,
+      createSubscription: async () => subscription
     });
 
-    await expect(timeline.open({
-      localIdentity: "",
-      contacts: [contact("alice.jolt", "Alice")],
-    })).resolves.toBeUndefined();
-    expect(timeline.getSnapshot().items.map((item) => item.post.title)).toEqual([
-      "Healthy",
-    ]);
+    await expect(
+      timeline.open({
+        localIdentity: "",
+        contacts: [contact("alice.jolt", "Alice")]
+      })
+    ).resolves.toBeUndefined();
+    expect(timeline.getSnapshot().items.map((item) => item.post.title)).toEqual(["Healthy"]);
     expect(timeline.getSnapshot().state).toBe(SubscriptionState.Ready);
   });
 
@@ -332,7 +329,7 @@ describe("feed timeline", () => {
         state: SubscriptionState.Ready,
         get: async () => [],
         changes: idleChanges,
-        remove: async () => {},
+        remove: async () => {}
       } as unknown as DataSubscription<Post>;
     });
     const timeline = createFeedTimeline(viewer.posts, { createSubscription: created });
@@ -351,19 +348,20 @@ describe("feed timeline", () => {
     const viewer = SpokeData.test({ identity: "viewer.jolt" });
     const remove = vi.fn(async () => {});
     const timeline = createFeedTimeline(viewer.posts, {
-      createSubscription: async (identity) => ({
-        id: `sub_${identity}`,
-        identity,
-        state: SubscriptionState.Ready,
-        get: async () => [],
-        changes: idleChanges,
-        remove,
-      }) as unknown as DataSubscription<Post>,
+      createSubscription: async (identity) =>
+        ({
+          id: `sub_${identity}`,
+          identity,
+          state: SubscriptionState.Ready,
+          get: async () => [],
+          changes: idleChanges,
+          remove
+        }) as unknown as DataSubscription<Post>
     });
 
     await timeline.open({
       localIdentity: "",
-      contacts: [contact("alice.jolt", "Alice")],
+      contacts: [contact("alice.jolt", "Alice")]
     });
     await timeline.close();
 
@@ -379,8 +377,8 @@ describe("feed timeline", () => {
         author: "alice.jolt",
         title: "No longer authorized",
         body: "Must disappear after revocation",
-        createdAt: new Date("2026-08-29T09:00:00.000Z"),
-      },
+        createdAt: new Date("2026-08-29T09:00:00.000Z")
+      }
     } as unknown as PresentItem<Post>;
     const subscription = {
       id: "sub_alice",
@@ -391,17 +389,17 @@ describe("feed timeline", () => {
         async *[Symbol.asyncIterator]() {
           yield { type: ChangeType.Revoked };
         },
-        cancel: async () => {},
+        cancel: async () => {}
       }),
-      remove: async () => {},
+      remove: async () => {}
     } as unknown as DataSubscription<Post>;
     const timeline = createFeedTimeline(viewer.posts, {
-      createSubscription: async () => subscription,
+      createSubscription: async () => subscription
     });
 
     await timeline.open({
       localIdentity: "",
-      contacts: [contact("alice.jolt", "Alice")],
+      contacts: [contact("alice.jolt", "Alice")]
     });
     await vi.waitFor(() => {
       expect(timeline.getSnapshot().state).toBe(SubscriptionState.Revoked);
@@ -420,8 +418,8 @@ describe("feed timeline", () => {
         author: "alice.jolt",
         title: "Recovered",
         body: "Delivered after retry",
-        createdAt: new Date("2026-08-29T09:00:00.000Z"),
-      },
+        createdAt: new Date("2026-08-29T09:00:00.000Z")
+      }
     } as unknown as PresentItem<Post>;
     let attempts = 0;
     const subscription = {
@@ -438,27 +436,25 @@ describe("feed timeline", () => {
               type: ChangeType.Changed,
               cursor: "cursor_2",
               items: [recovered],
-              removed: [],
+              removed: []
             };
           },
-          cancel: async () => {},
+          cancel: async () => {}
         };
       },
-      remove: async () => {},
+      remove: async () => {}
     } as unknown as DataSubscription<Post>;
     const timeline = createFeedTimeline(viewer.posts, {
       createSubscription: async () => subscription,
-      streamRetryMs: 0,
+      streamRetryMs: 0
     });
 
     await timeline.open({
       localIdentity: "",
-      contacts: [contact("alice.jolt", "Alice")],
+      contacts: [contact("alice.jolt", "Alice")]
     });
     await vi.waitFor(() => {
-      expect(timeline.getSnapshot().items.map((item) => item.post.title)).toEqual([
-        "Recovered",
-      ]);
+      expect(timeline.getSnapshot().items.map((item) => item.post.title)).toEqual(["Recovered"]);
     });
     expect(attempts).toBe(2);
 
@@ -481,20 +477,20 @@ describe("feed timeline", () => {
             async *[Symbol.asyncIterator]() {
               throw new Error("still offline");
             },
-            cancel: async () => {},
+            cancel: async () => {}
           };
         },
-        remove: async () => {},
+        remove: async () => {}
       } as unknown as DataSubscription<Post>;
       const timeline = createFeedTimeline(viewer.posts, {
         createSubscription: async () => subscription,
         streamRetryMs: 10,
-        streamRetryMaxMs: 40,
+        streamRetryMaxMs: 40
       });
 
       await timeline.open({
         localIdentity: "",
-        contacts: [contact("alice.jolt", "Alice")],
+        contacts: [contact("alice.jolt", "Alice")]
       });
       await vi.advanceTimersByTimeAsync(0);
       expect(attempts).toBe(1);

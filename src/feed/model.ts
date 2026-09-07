@@ -2,13 +2,14 @@ import type { Decoder } from "../jolt";
 import type { SpokeAttachment } from "../media";
 // The contact graph belongs to the follow feature (ADR 0004). Re-exported here
 // so existing feed consumers keep importing Contact/activeContacts from "@/feed".
-import { activeContacts } from "../follow";
+import { activeContacts, displayNameForContact } from "../follow";
 import type { Contact } from "../follow";
 
 export { activeContacts };
 export type { Contact };
 
 export type SpokePost = {
+  link?: { url: string; title: string };
   schema: "spoke.post.v1" | "spoke.post.v2";
   id: string;
   author: string;
@@ -33,8 +34,8 @@ export function sortFeed(items: FeedItem[]) {
 }
 
 export function displayNameForFeedItem(item: FeedItem) {
-  if (item.source === "contact") {
-    return item.contact?.displayName || item.post.displayName || item.post.author;
+  if (item.source === "contact" && item.contact) {
+    return displayNameForContact(item.contact, item.post.displayName);
   }
 
   return item.post.displayName || item.post.author;

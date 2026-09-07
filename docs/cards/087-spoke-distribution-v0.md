@@ -29,4 +29,3 @@ Implemented across Spoke PRs #6 and #9:
 
 - Installed Spoke requests access through Jolt Console.
 - Installed Spoke publishes and reads a post against packaged Jolt.
-

@@ -2,7 +2,7 @@
 
 **Type:** HITL then AFK  
 **Milestone:** Spoke Social Network  
-**Status:** Implemented; polish remaining  
+**Status:** Implemented; polish remaining
 
 ## Why
 
@@ -45,4 +45,3 @@ Implemented across Spoke PRs #11, #13, #14, #15, and #18:
 - Published social graph.
 - Typing indicators.
 - Read receipts without protocol support.
-

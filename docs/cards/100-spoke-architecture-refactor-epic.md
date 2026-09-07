@@ -54,17 +54,17 @@ never the source of social truth.
 
 ## Cards (vertical tracer slices, smallest first)
 
-| Card | Title | Track | Status | Depends on | PR |
-|------|-------|-------|--------|------------|----|
-| J1   | Jolt: append-record enumeration + append publish | jolt repo | done (merged to jolt `dev`) | — | jolt #155 |
-| J2   | Jolt: live remote-identity device-writer sync (094 follow-up) | jolt repo | done (merged to jolt `dev`) | J1 | jolt #156 |
-| 101  | Spoke: Jolt SDK seam + monotonic store (profile tracer) | spoke | done | — | #24 |
-| 102  | Spoke: feed vertical | spoke | done | 101 | #25 |
-| 091  | Spoke: visible thread conversations (REWRITE to append model) | spoke | done | 101 | #26 |
-| 103  | Spoke: messages + follows vertical | spoke | done | 101 | #27 |
-| 104  | Spoke: swap bridge enumeration → J1 door (now un-phased: J2 done) | spoke | done | J1, J2, 102, 091 | — |
-| 105  | Spoke: complete the Jolt SDK seam (relocate transport, evict Spoke types from `api.ts`) | spoke | done | 101 | — |
-| 099  | Spoke: compatibility boundary (tolerant readers/strict writers) | spoke | exists on `codex/spoke-compatibility-boundary-card`, NOT on `dev` | — | #22 |
+| Card | Title                                                                                   | Track     | Status                                                            | Depends on       | PR        |
+| ---- | --------------------------------------------------------------------------------------- | --------- | ----------------------------------------------------------------- | ---------------- | --------- |
+| J1   | Jolt: append-record enumeration + append publish                                        | jolt repo | done (merged to jolt `dev`)                                       | —                | jolt #155 |
+| J2   | Jolt: live remote-identity device-writer sync (094 follow-up)                           | jolt repo | done (merged to jolt `dev`)                                       | J1               | jolt #156 |
+| 101  | Spoke: Jolt SDK seam + monotonic store (profile tracer)                                 | spoke     | done                                                              | —                | #24       |
+| 102  | Spoke: feed vertical                                                                    | spoke     | done                                                              | 101              | #25       |
+| 091  | Spoke: visible thread conversations (REWRITE to append model)                           | spoke     | done                                                              | 101              | #26       |
+| 103  | Spoke: messages + follows vertical                                                      | spoke     | done                                                              | 101              | #27       |
+| 104  | Spoke: swap bridge enumeration → J1 door (now un-phased: J2 done)                       | spoke     | done                                                              | J1, J2, 102, 091 | —         |
+| 105  | Spoke: complete the Jolt SDK seam (relocate transport, evict Spoke types from `api.ts`) | spoke     | done                                                              | 101              | —         |
+| 099  | Spoke: compatibility boundary (tolerant readers/strict writers)                         | spoke     | exists on `codex/spoke-compatibility-boundary-card`, NOT on `dev` | —                | #22       |
 
 Update the Status column and PR column as each card lands. This table is the
 single source of truth for "where are we."
@@ -83,6 +83,7 @@ single source of truth for "where are we."
 ## Per-card detail
 
 ### J1 (jolt repo) - append-record enumeration + append publish
+
 - **Goal:** expose the append-record map the merge engine already builds
   (`device_writer_log.rs` `append_records: BTreeMap<path, Vec<entry>>`) over the
   app API, filtered by `(identity, path-prefix)`, plus an append publish mode.
@@ -97,7 +98,7 @@ single source of truth for "where are we."
     last-writer-wins update log, so append records coexist.
   - `POST /app/v1/enumerate` (`{ identity, path_prefix }`, capability
     `resolve:public`) returns `[{ path, content_id, device_id, device_sequence,
-    created_at, entry_hash }]` for the prefix.
+created_at, entry_hash }]` for the prefix.
   - Enumeration reads cached merged device-writer state (same boundary as
     resolve). Live remote-identity device-writer sync is still a 094 follow-up;
     until then the daemon must already hold the target's merged state.
@@ -105,6 +106,7 @@ single source of truth for "where are we."
     append-publish + Collection-read primitives behind `EnumerationSource`.
 
 ### 101 - Jolt SDK seam + monotonic store (profile tracer)
+
 - **Goal:** establish the seam. Create `src/jolt/` (pure transport ACL, strip
   Spoke domain types out of `api.ts`), the private monotonic `store.ts`, and
   `Reference` types. Prove end-to-end by routing the **profile** (simplest
@@ -116,6 +118,7 @@ single source of truth for "where are we."
   corresponding slice of `App.tsx` is deleted.
 
 ### 102 - feed vertical
+
 - **Goal:** posts + feed Projection through commands/queries/store using the
   **bridge** enumeration (a Spoke-maintained monotonic index, swappable for J1
   later). Tracer #2.
@@ -125,6 +128,7 @@ single source of truth for "where are we."
   removed.
 
 ### 091 - visible thread conversations (rewritten implementation = S3)
+
 - **Goal:** the hard vertical. Replies as Append Records under the replier's
   identity; accepted-reply references as an Append-Record Collection owned by
   the post author; author-anchored acceptance (auto-accept contacts, manual
@@ -139,6 +143,7 @@ single source of truth for "where are we."
   same tree; legacy v1 replies still render.
 
 ### 103 - messages + follows vertical
+
 - **Goal:** conversations and follow requests through the new layers.
 - **Done when:** message/follow read/write go through the seam; remaining
   protocol code leaves `App.tsx`.
@@ -162,6 +167,7 @@ single source of truth for "where are we."
     `localStorage` contacts are back-filled into the Collection once on load.
 
 ### 104 - swap bridge enumeration → J1 door
+
 - **Goal:** replace the bridge enumeration implementation with the J1-backed
   one behind the `EnumerationSource` seam (`src/feed/enumeration.ts`).
 - **J1 surface (on jolt `dev`, PR #155):**
@@ -185,7 +191,7 @@ single source of truth for "where are we."
   API; bridge + the published index Singletons removed; DTO mapping in the ACL.
 - **Landed:** transport gained `appendPublishJson` + `enumerate` and the
   `AppendRecordInfo` wire type; SDK gained `JoltAppendSdk { publishAppend,
-  enumerate }` mapping `AppendRecordInfo` -> camelCase `EnumeratedRecord` in the
+enumerate }` mapping `AppendRecordInfo` -> camelCase `EnumeratedRecord` in the
   ACL; Tauri `daemon_append` command for desktop multipart. Feed: `publishPost`
   writes via append, `createJoltEnumeration` lists `/spoke/posts/`; `/spoke/feed`
   index gone. Thread: accepted refs are append records under
@@ -194,6 +200,7 @@ single source of truth for "where are we."
   (append/enumerate endpoints) and a real desktop build of `daemon_append`.
 
 ### 105 - complete the Jolt SDK seam
+
 - **Goal:** finish card 101's stated-but-undelivered goal. Today `src/jolt/` is a
   thin wrapper that delegates to `src/api.ts`, so the "pure transport boundary"
   depends on `api.ts` instead of being it, and `api.ts` still mixes raw transport

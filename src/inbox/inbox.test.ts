@@ -140,7 +140,12 @@ describe("inbox seam", () => {
 
   it("auto-accepts a message from an accepted contact", async () => {
     const { sdk, enqueue, store, handlers, ctx } = setup();
-    await acceptFollowRequest(sdk, "alice.jolt", followRequest({ sender: "bob.jolt", displayName: "Bob" }), store);
+    await acceptFollowRequest(
+      sdk,
+      "alice.jolt",
+      followRequest({ sender: "bob.jolt", displayName: "Bob" }),
+      store
+    );
     const message: SpokeMessage = {
       schema: "spoke.message.v1",
       id: "msg_1",
@@ -252,7 +257,12 @@ describe("inbox seam: delivery failures stay recoverable", () => {
 
   it("auto-applied records stay pending when the handler fails", async () => {
     const { sdk, enqueue, accepted, store, handlers, ctx } = setup();
-    await acceptFollowRequest(sdk, "alice.jolt", followRequest({ sender: "bob.jolt", displayName: "Bob" }), store);
+    await acceptFollowRequest(
+      sdk,
+      "alice.jolt",
+      followRequest({ sender: "bob.jolt", displayName: "Bob" }),
+      store
+    );
     const message: SpokeMessage = {
       schema: "spoke.message.v1",
       id: "msg_1",
@@ -263,8 +273,8 @@ describe("inbox seam: delivery failures stay recoverable", () => {
       createdAt: "2026-06-18T12:00:00.000Z"
     };
     enqueue("ing_msg", "bob.jolt", message, "spoke.message.v1");
-    const original = sdk.publishJson;
-    sdk.publishJson = async () => {
+    const original = sdk.publishEncryptedJson;
+    sdk.publishEncryptedJson = async () => {
       throw new Error("daemon unavailable");
     };
 
@@ -272,7 +282,7 @@ describe("inbox seam: delivery failures stay recoverable", () => {
 
     expect(accepted).toEqual([]);
     expect(result.visible.map((r) => r.ingress_id)).toEqual(["ing_msg"]);
-    sdk.publishJson = original;
+    sdk.publishEncryptedJson = original;
     const retried = await processInbox(sdk, handlers, ctx);
     expect(retried.autoHandled.map((r) => r.ingress_id)).toEqual(["ing_msg"]);
     expect(accepted).toEqual(["ing_msg"]);

@@ -8,7 +8,7 @@ import {
   type PresentItem,
   type RemoteCollection,
   type SubscriptionFailureValue,
-  type SubscriptionStateValue,
+  type SubscriptionStateValue
 } from "jolt-sdk/data";
 
 import type { Post, SpokeApp } from "../data";
@@ -21,7 +21,7 @@ export type FeedPosts = SpokeApp["posts"];
 type PostSubscription = DataSubscription<Post>;
 type CreatePostSubscription = (
   identity: string,
-  posts: RemoteCollection<Post>,
+  posts: RemoteCollection<Post>
 ) => Promise<PostSubscription>;
 
 type Freshness = {
@@ -31,8 +31,7 @@ type Freshness = {
 };
 
 type FeedItemSource =
-  | { source: "local" }
-  | { source: "contact"; contact: FeedScope["contacts"][number] };
+  { source: "local" } | { source: "contact"; contact: FeedScope["contacts"][number] };
 
 type SourceDescriptor = {
   identity: string;
@@ -46,14 +45,18 @@ type TimelineSourceOptions = {
   onChange(): void;
 };
 
-export type FeedTimelineSnapshot = Readonly<Freshness & {
-  items: readonly FeedItem[];
-  sources: readonly FeedTimelineSourceSnapshot[];
-}>;
+export type FeedTimelineSnapshot = Readonly<
+  Freshness & {
+    items: readonly FeedItem[];
+    sources: readonly FeedTimelineSourceSnapshot[];
+  }
+>;
 
-export type FeedTimelineSourceSnapshot = Readonly<Freshness & {
-  identity: string;
-}>;
+export type FeedTimelineSourceSnapshot = Readonly<
+  Freshness & {
+    identity: string;
+  }
+>;
 
 export type FeedTimeline = {
   open(scope: FeedScope): Promise<void>;
@@ -85,17 +88,18 @@ function toSpokePost(item: PresentItem<Post>): SpokePost | null {
     author: value.author,
     displayName: value.displayName,
     title: value.title,
+    link: value.link,
     body: value.body,
     createdAt: value.createdAt.toISOString(),
     path: item.ref.path,
     threadPath: value.threadPath ?? `/spoke/accepted/${id}/`,
-    attachments: value.attachments as SpokeAttachment[] | undefined,
+    attachments: value.attachments as SpokeAttachment[] | undefined
   };
 }
 
 export function aggregateTimelineState(
   sources: readonly FeedTimelineSourceSnapshot[],
-  itemCount: number,
+  itemCount: number
 ): SubscriptionStateValue {
   if (sources.length === 0) return SubscriptionState.Ready;
 
@@ -155,11 +159,7 @@ function applyChange(source: TimelineSource, change: DataSubscriptionChange<Post
   }
 }
 
-export function retryDelay(
-  attempts: number,
-  baseDelayMs: number,
-  maxDelayMs: number,
-): number {
+export function retryDelay(attempts: number, baseDelayMs: number, maxDelayMs: number): number {
   return Math.min(baseDelayMs * 2 ** Math.min(attempts, 30), maxDelayMs);
 }
 
@@ -168,7 +168,7 @@ function sourceDescriptors(scope: FeedScope): Map<string, SourceDescriptor> {
   if (scope.localIdentity) {
     descriptors.set(normalizeIdentity(scope.localIdentity), {
       identity: scope.localIdentity,
-      feedSource: { source: "local" },
+      feedSource: { source: "local" }
     });
   }
   for (const contact of activeContacts(scope.contacts)) {
@@ -176,7 +176,7 @@ function sourceDescriptors(scope: FeedScope): Map<string, SourceDescriptor> {
     if (!descriptors.has(key)) {
       descriptors.set(key, {
         identity: contact.identity,
-        feedSource: { source: "contact", contact },
+        feedSource: { source: "contact", contact }
       });
     }
   }
@@ -186,7 +186,7 @@ function sourceDescriptors(scope: FeedScope): Map<string, SourceDescriptor> {
 function feedItemsFor(
   source: TimelineSource,
   identity: string,
-  feedSource: FeedItemSource,
+  feedSource: FeedItemSource
 ): FeedItem[] {
   const items: FeedItem[] = [];
   for (const item of source.items.values()) {
@@ -195,7 +195,7 @@ function feedItemsFor(
     items.push({
       ...feedSource,
       post,
-      address: `${item.ref.identity}${item.ref.path}`,
+      address: `${item.ref.identity}${item.ref.path}`
     });
   }
   return items;
@@ -203,7 +203,7 @@ function feedItemsFor(
 
 function aggregateSnapshot(
   sources: ReadonlyMap<string, TimelineSource>,
-  descriptors: ReadonlyMap<string, SourceDescriptor>,
+  descriptors: ReadonlyMap<string, SourceDescriptor>
 ): FeedTimelineSnapshot {
   const items: FeedItem[] = [];
   const sourceSnapshots: FeedTimelineSourceSnapshot[] = [];
@@ -214,22 +214,22 @@ function aggregateSnapshot(
     sourceSnapshots.push(source.snapshot());
   }
 
-  const failed = sourceSnapshots.find((source) =>
-    source.state === SubscriptionState.Stale
-      || source.state === SubscriptionState.Unavailable
+  const failed = sourceSnapshots.find(
+    (source) =>
+      source.state === SubscriptionState.Stale || source.state === SubscriptionState.Unavailable
   );
   return Object.freeze({
     items: Object.freeze(sortFeed(items)),
     state: aggregateTimelineState(sourceSnapshots, items.length),
     lastVerifiedAt: failed?.lastVerifiedAt,
     reason: failed?.reason,
-    sources: Object.freeze(sourceSnapshots),
+    sources: Object.freeze(sourceSnapshots)
   });
 }
 
 function createPostSubscription(
   _identity: string,
-  posts: RemoteCollection<Post>,
+  posts: RemoteCollection<Post>
 ): Promise<PostSubscription> {
   return Subscription.create(posts);
 }
@@ -250,7 +250,7 @@ class TimelineSource {
   constructor(
     readonly identity: string,
     private readonly posts: RemoteCollection<Post>,
-    private readonly options: TimelineSourceOptions,
+    private readonly options: TimelineSourceOptions
   ) {}
 
   snapshot(): FeedTimelineSourceSnapshot {
@@ -258,7 +258,7 @@ class TimelineSource {
       identity: this.identity,
       state: this.state,
       lastVerifiedAt: this.lastVerifiedAt,
-      reason: this.reason,
+      reason: this.reason
     });
   }
 
@@ -303,10 +303,8 @@ class TimelineSource {
   private async subscriptionForSource(): Promise<PostSubscription | undefined> {
     if (this.subscription) return this.subscription;
 
-    const pending = this.subscriptionPromise ?? this.options.createSubscription(
-      this.identity,
-      this.posts,
-    );
+    const pending =
+      this.subscriptionPromise ?? this.options.createSubscription(this.identity, this.posts);
     this.subscriptionPromise = pending;
     try {
       const subscription = await pending;
@@ -349,11 +347,9 @@ class TimelineSource {
 
   private markRefreshFailed() {
     setFreshness(this, {
-      state: this.items.size > 0
-        ? SubscriptionState.Stale
-        : SubscriptionState.Unavailable,
+      state: this.items.size > 0 ? SubscriptionState.Stale : SubscriptionState.Unavailable,
       lastVerifiedAt: this.subscription?.lastVerifiedAt ?? this.lastVerifiedAt,
-      reason: this.subscription?.reason ?? this.reason,
+      reason: this.subscription?.reason ?? this.reason
     });
   }
 
@@ -361,7 +357,7 @@ class TimelineSource {
     const delay = retryDelay(
       this.retryAttempts,
       this.options.streamRetryMs,
-      this.options.streamRetryMaxMs,
+      this.options.streamRetryMaxMs
     );
     this.retryAttempts += 1;
     this.retryTimer = setTimeout(() => {
@@ -378,12 +374,12 @@ class SpokeFeedTimeline implements FeedTimeline {
   private snapshotValue: FeedTimelineSnapshot = Object.freeze({
     items: Object.freeze([]),
     state: SubscriptionState.Loading,
-    sources: Object.freeze([]),
+    sources: Object.freeze([])
   });
 
   constructor(
     private readonly posts: FeedPosts,
-    private readonly options: Required<FeedTimelineOptions>,
+    private readonly options: Required<FeedTimelineOptions>
   ) {}
 
   async open(scope: FeedScope): Promise<void> {
@@ -394,14 +390,13 @@ class SpokeFeedTimeline implements FeedTimeline {
 
     for (const [key, descriptor] of nextDescriptors) {
       if (this.sources.has(key)) continue;
-      this.sources.set(key, new TimelineSource(
-        descriptor.identity,
-        this.posts.for(key),
-        {
+      this.sources.set(
+        key,
+        new TimelineSource(descriptor.identity, this.posts.for(descriptor.identity), {
           ...this.options,
-          onChange: () => this.rebuildSnapshot(),
-        },
-      ));
+          onChange: () => this.rebuildSnapshot()
+        })
+      );
     }
 
     this.descriptors = nextDescriptors;
@@ -439,11 +434,11 @@ class SpokeFeedTimeline implements FeedTimeline {
 
 export function createFeedTimeline(
   posts: FeedPosts,
-  options: FeedTimelineOptions = {},
+  options: FeedTimelineOptions = {}
 ): FeedTimeline {
   return new SpokeFeedTimeline(posts, {
     createSubscription: options.createSubscription ?? createPostSubscription,
     streamRetryMs: options.streamRetryMs ?? 1_000,
-    streamRetryMaxMs: options.streamRetryMaxMs ?? 30_000,
+    streamRetryMaxMs: options.streamRetryMaxMs ?? 30_000
   });
 }

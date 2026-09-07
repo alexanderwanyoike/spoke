@@ -69,14 +69,26 @@ export function MessagesView({
   const drafts = useRef<Record<string, string>>({});
   return (
     <section className="grid min-h-[calc(100vh-11rem)] overflow-hidden rounded-xl border spoke-border bg-card shadow-sm shadow-foreground/5 lg:grid-cols-[360px_minmax(0,1fr)]">
-      <aside className="border-b spoke-border bg-muted/20 lg:border-b-0 lg:border-r" aria-label="Conversations">
+      <aside
+        className="border-b spoke-border bg-muted/20 lg:border-b-0 lg:border-r"
+        aria-label="Conversations"
+      >
         <div className="space-y-3 border-b spoke-border p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="font-semibold">Messages</h2>
-              <p className="text-sm text-muted-foreground">{messageThreads.length} conversation threads</p>
+              <p className="text-sm text-muted-foreground">
+                {messageThreads.length} conversation threads
+              </p>
             </div>
-            <Button type="button" variant="outline" size="icon" onClick={onRefreshIncoming} disabled={busy === "incoming"} title="Refresh incoming">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={onRefreshIncoming}
+              disabled={busy === "incoming"}
+              title="Refresh incoming"
+            >
               <RefreshCw className="size-4" />
             </Button>
           </div>
@@ -94,16 +106,17 @@ export function MessagesView({
         <ScrollArea className="h-[280px] lg:h-[calc(100vh-18rem)]">
           <div className="grid gap-1 p-2">
             {visibleMessageThreads.map((thread) => {
-              const lastMessage = thread.conversation?.messages[
-                thread.conversation.messages.length - 1
-              ];
+              const lastMessage =
+                thread.conversation?.messages[thread.conversation.messages.length - 1];
               return (
                 <Button
                   type="button"
                   variant={activeThread?.id === thread.id ? "secondary" : "ghost"}
                   className={cn(
                     "h-auto justify-start gap-3 rounded-lg p-3 text-left",
-                    activeThread?.id === thread.id ? "border spoke-border bg-background shadow-sm" : ""
+                    activeThread?.id === thread.id
+                      ? "border spoke-border bg-background shadow-sm"
+                      : ""
                   )}
                   key={thread.id}
                   onClick={() => onSelectThread(thread.id)}
@@ -119,7 +132,10 @@ export function MessagesView({
                   </span>
                   {thread.lastMessageAt ? (
                     <time className="text-xs text-muted-foreground">
-                      {new Date(thread.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {new Date(thread.lastMessageAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit"
+                      })}
                     </time>
                   ) : null}
                 </Button>
@@ -127,7 +143,9 @@ export function MessagesView({
             })}
             {visibleMessageThreads.length === 0 ? (
               <EmptyState className="p-4">
-                {messageThreads.length === 0 ? "Accept a contact before starting messages." : "No threads match your search."}
+                {messageThreads.length === 0
+                  ? "Accept a contact before starting messages."
+                  : "No threads match your search."}
               </EmptyState>
             ) : null}
           </div>
@@ -138,7 +156,13 @@ export function MessagesView({
         {activeThread ? (
           <>
             <header className="flex items-center gap-3 border-b spoke-border bg-card/80 p-4 shadow-sm shadow-foreground/5">
-              <Button variant="ghost" size="icon" type="button" onClick={onBackToFeed} title="Back to feed">
+              <Button
+                variant="ghost"
+                size="icon"
+                type="button"
+                onClick={onBackToFeed}
+                title="Back to feed"
+              >
                 <ArrowLeft className="size-4" />
               </Button>
               <Button
@@ -152,26 +176,50 @@ export function MessagesView({
               </Button>
               <div className="min-w-0">
                 <h2 className="truncate font-semibold">{activeThread.contact.displayName}</h2>
-                <p className="truncate text-sm text-muted-foreground">{activeThread.contact.identity}</p>
+                <p className="truncate text-sm text-muted-foreground">
+                  {activeThread.contact.identity}
+                </p>
               </div>
             </header>
 
             <ScrollArea className="flex-1">
               <div className="mx-auto grid w-full max-w-4xl gap-4 p-5" aria-live="polite">
                 {activeThreadMessages.map((item) => (
-                  <div className={cn("flex", item.direction === "sent" ? "justify-end" : "justify-start")} key={item.message.id}>
-                    <div className={cn("max-w-[min(40rem,82%)] rounded-xl border p-3 shadow-sm shadow-foreground/5", item.direction === "sent" ? "spoke-border-on-primary bg-primary text-primary-foreground" : "spoke-border bg-background")}>
+                  <div
+                    className={cn(
+                      "flex",
+                      item.direction === "sent" ? "justify-end" : "justify-start"
+                    )}
+                    key={item.message.id}
+                  >
+                    <div
+                      className={cn(
+                        "max-w-[min(40rem,82%)] rounded-xl border p-3 shadow-sm shadow-foreground/5",
+                        item.direction === "sent"
+                          ? "spoke-border-on-primary bg-primary text-primary-foreground"
+                          : "spoke-border bg-background"
+                      )}
+                    >
                       <Button
                         variant="ghost"
-                        className={cn("mb-2 h-auto gap-2 p-0 hover:bg-transparent", item.direction === "sent" ? "text-primary-foreground hover:text-primary-foreground" : "")}
+                        className={cn(
+                          "mb-2 h-auto gap-2 p-0 hover:bg-transparent",
+                          item.direction === "sent"
+                            ? "text-primary-foreground hover:text-primary-foreground"
+                            : ""
+                        )}
                         type="button"
                         onClick={() => onOpenProfile(item.message.sender)}
                         title={`View ${displayNameForIdentity(item.message.sender)}`}
                       >
                         {renderAvatar(item.message.sender)}
-                        <span className="text-xs font-medium">{displayNameForIdentity(item.message.sender)}</span>
+                        <span className="text-xs font-medium">
+                          {displayNameForIdentity(item.message.sender)}
+                        </span>
                       </Button>
-                      {item.message.body ? <p className="whitespace-pre-wrap text-sm leading-6">{item.message.body}</p> : null}
+                      {item.message.body ? (
+                        <p className="whitespace-pre-wrap text-sm leading-6">{item.message.body}</p>
+                      ) : null}
                       {item.message.attachments?.length ? (
                         <div className="mt-3 grid gap-2">
                           {item.message.attachments.map((attachment) => {
@@ -191,14 +239,24 @@ export function MessagesView({
                           })}
                         </div>
                       ) : null}
-                      <time className={cn("mt-2 block text-xs", item.direction === "sent" ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                      <time
+                        className={cn(
+                          "mt-2 block text-xs",
+                          item.direction === "sent"
+                            ? "text-primary-foreground/70"
+                            : "text-muted-foreground"
+                        )}
+                      >
                         {new Date(item.message.createdAt).toLocaleString()}
                       </time>
                     </div>
                   </div>
                 ))}
                 {activeThreadMessages.length === 0 ? (
-                  <EmptyState icon={<MessageCircle className="size-8" />} title={activeThread.contact.displayName}>
+                  <EmptyState
+                    icon={<MessageCircle className="size-8" />}
+                    title={activeThread.contact.displayName}
+                  >
                     Start the encrypted one-to-one conversation.
                   </EmptyState>
                 ) : null}
@@ -225,16 +283,23 @@ export function MessagesView({
                           type="file"
                           accept="image/*"
                           multiple
-                          onChange={(event) => onAddMessageAttachments(activeThread.contact.identity, event)}
+                          onChange={(event) =>
+                            onAddMessageAttachments(activeThread.contact.identity, event)
+                          }
                         />
                       </label>
                     </Button>
-                    <span className="text-xs text-muted-foreground">Images are encrypted with the message thread</span>
+                    <span className="text-xs text-muted-foreground">
+                      Images are encrypted with the message thread
+                    </span>
                   </div>
                   <Button
                     type="button"
                     onClick={() => {
-                      void onSendMessage(activeThread.contact, drafts.current[activeThread.contact.identity] || "").then((sent) => {
+                      void onSendMessage(
+                        activeThread.contact,
+                        drafts.current[activeThread.contact.identity] || ""
+                      ).then((sent) => {
                         if (sent) drafts.current[activeThread.contact.identity] = "";
                       });
                     }}
@@ -253,8 +318,16 @@ export function MessagesView({
                         formatBytes={formatBytes}
                         imageClassName="size-16"
                         key={attachment.id}
-                        onAltChange={(alt) => onUpdateMessageAttachmentAlt(activeThread.contact.identity, attachment.id, alt)}
-                        onRemove={() => onRemoveMessageAttachment(activeThread.contact.identity, attachment.id)}
+                        onAltChange={(alt) =>
+                          onUpdateMessageAttachmentAlt(
+                            activeThread.contact.identity,
+                            attachment.id,
+                            alt
+                          )
+                        }
+                        onRemove={() =>
+                          onRemoveMessageAttachment(activeThread.contact.identity, attachment.id)
+                        }
                       />
                     ))}
                   </div>

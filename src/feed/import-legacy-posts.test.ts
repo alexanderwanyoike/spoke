@@ -6,7 +6,7 @@ import type { EnumeratedRecord, JoltAppendSdk, Reference } from "../jolt";
 import {
   importLegacyPosts,
   importLegacyPostsOnce,
-  type LegacyPostReader,
+  type LegacyPostReader
 } from "./import-legacy-posts";
 import type { SpokePost } from "./model";
 
@@ -20,14 +20,16 @@ function legacyPost(): SpokePost {
     createdAt: "2026-08-29T09:00:00.000Z",
     path: "/spoke/posts/legacy-1",
     threadPath: "/spoke/accepted/legacy-1/",
-    attachments: [{
-      id: "photo-1",
-      kind: "image",
-      contentId: "cid-photo",
-      address: null,
-      mimeType: "image/jpeg",
-      size: 1_024,
-    }],
+    attachments: [
+      {
+        id: "photo-1",
+        kind: "image",
+        contentId: "cid-photo",
+        address: null,
+        mimeType: "image/jpeg",
+        size: 1_024
+      }
+    ]
   };
 }
 
@@ -39,7 +41,7 @@ function legacyReader(post: SpokePost): LegacyPostReader {
     deviceId: "dev-legacy",
     deviceSequence: 1,
     createdAt: 1_788_000_000,
-    entryHash: "hash-legacy-post",
+    entryHash: "hash-legacy-post"
   };
   return {
     async enumerate(identity, prefix) {
@@ -47,10 +49,8 @@ function legacyReader(post: SpokePost): LegacyPostReader {
     },
     async readContent(_contentId, ref: Reference, latestSequence, decode) {
       const value = decode(post);
-      return value === null
-        ? null
-        : { ref, value, latestSequence, contentId: record.contentId };
-    },
+      return value === null ? null : { ref, value, latestSequence, contentId: record.contentId };
+    }
   } as LegacyPostReader & Pick<JoltAppendSdk, "enumerate">;
 }
 
@@ -70,7 +70,7 @@ describe("legacy post import", () => {
     expect(posts[0]?.value).toMatchObject({
       title: "Before Data SDK",
       threadPath: "/spoke/accepted/legacy-1/",
-      attachments: [{ id: "photo-1", contentId: "cid-photo" }],
+      attachments: [{ id: "photo-1", contentId: "cid-photo" }]
     });
     expect(posts[0]?.value.attachments?.[0]).not.toHaveProperty("address");
   });
@@ -83,7 +83,7 @@ describe("legacy post import", () => {
 
     await Promise.all([
       importLegacyPostsOnce(alice, "alice.jolt", reader),
-      importLegacyPostsOnce(alice, "alice.jolt", reader),
+      importLegacyPostsOnce(alice, "alice.jolt", reader)
     ]);
 
     const subscription = await Subscription.create(viewer.posts.for("alice.jolt"));
@@ -99,7 +99,7 @@ describe("legacy post import", () => {
     const values = new Map<string, string>();
     const completionStore = {
       getItem: (key: string) => values.get(key) ?? null,
-      setItem: (key: string, value: string) => values.set(key, value),
+      setItem: (key: string, value: string) => values.set(key, value)
     };
 
     await importLegacyPostsOnce(bob, "bob.jolt", reader, { completionStore });

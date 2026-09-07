@@ -1,37 +1,14 @@
 # Spoke
 
-Spoke is a small social app built on
-[Jolt](https://github.com/alexanderwanyoike/jolt): profiles, posts, a feed of
-known identities, and encrypted replies. It exists to prove that a third-party
-app can deliver a real social experience without owning identity,
-distribution, or the user's keys. Spoke never sees a private key; it requests
-scoped capabilities from the local Jolt daemon, and the user approves or
-revokes that session in Jolt Console.
+Spoke is a social application built on [Jolt](https://github.com/alexanderwanyoike/jolt).
+This branch replaces its application shell with the first functional Messages slice:
+private contact requests, one-to-one text and image messages, and encrypted history.
+Posts, feeds and the other screens will return as subsequent replacement slices.
 
-![Spoke feed with two identities posting from independent nodes](docs/assets/spoke-feed.png)
-
-*Two identities on two independent daemons: each post is signed content
-fetched from the identity that authored it, and the reply traveled between
-nodes as an encrypted object through recipient-controlled ingress.*
-
-What Spoke exercises at the Jolt boundary:
-
-- scoped app sessions (capability grants approved and revoked in Console);
-- posts as append records, discovered by enumerating each author's identity;
-- an encrypted contact graph (follow edges encrypted to the owner);
-- encrypted replies delivered through recipient-controlled ingress.
-
-Spoke keeps social concepts in app-owned JSON objects under `/spoke/*`:
-
-- `/spoke/profile` for the local display profile
-- `/spoke/posts/{id}` for public posts (append records)
-- `/spoke/contacts/{identity}` for encrypted follow edges
-- `/spoke/outgoing/{id}` for encrypted outbound reply envelopes
-- `/spoke/replies/{id}` for accepted incoming replies
-
-The Jolt protocol knows nothing about any of these: posts, profiles, contacts,
-and replies are Spoke's application schema over Jolt's signed paths, append
-records, encrypted envelopes, and ingress primitives.
+Spoke requests scoped capabilities from the local daemon. The user approves or
+revokes access in Jolt Console; Spoke never receives the identity's private key.
+Contacts and messages use application-owned schemas under `/spoke/*`, above Jolt's
+generic encrypted publication and recipient-controlled ingress APIs.
 
 ## Run
 
@@ -84,9 +61,8 @@ attribute:
 xattr -dr com.apple.quarantine "/Applications/Spoke.app"
 ```
 
-Packaged Spoke builds also check GitHub Releases for signed in-app updates.
-When a newer signed release is available, Spoke shows an update action in the
-top bar. Installing the update verifies the updater signature, applies the
+Packaged Spoke builds offer **Updates** in the sidebar to check GitHub Releases
+for signed in-app updates. Installing the update verifies the updater signature, applies the
 platform update payload, and relaunches Spoke. Before installation, Spoke
 checks the release's App API declaration against the reachable Jolt daemon. An
 incompatible or unverifiable release leaves the currently installed Spoke
@@ -100,14 +76,14 @@ not as requiring an upgrade.
 ## Desktop Development
 
 ```sh
-npm install
-npm run desktop:dev
+yarn install --frozen-lockfile
+yarn desktop:dev
 ```
 
 Build the Linux AppImage:
 
 ```sh
-npm run desktop:build
+yarn desktop:build
 ```
 
 The AppImage is written to:
@@ -119,7 +95,7 @@ src-tauri/target/release/bundle/appimage/Spoke_0.1.0_amd64.AppImage
 For web development:
 
 ```sh
-npm run dev
+yarn dev
 ```
 
 The Vite dev server listens on `http://127.0.0.1:5178` and proxies the local daemon from `VITE_JOLT_DAEMON_URL` or `http://127.0.0.1:9862`.
@@ -160,14 +136,19 @@ AppImage remains the self-updating build and the path the install script uses.
 Packaged Spoke updates are signed and verified before installation. Spoke uses
 its own updater key, separate from Jolt Console and Pastey.
 
-## Local demo shape
+## Verify Messages
 
-1. Start a Jolt daemon and Jolt Console.
-2. Open Spoke and request app access.
-3. Approve the Spoke session in Console.
-4. Publish a profile and a post.
-5. Add a known contact by `.jolt` identity.
-6. Refresh the feed and send an encrypted reply to a contact post.
-7. On the recipient Spoke instance, refresh Incoming, open the ingress item, then accept or reject it.
+```sh
+./scripts/test-local.sh
+JOLT_BINARY=/absolute/path/to/jolt yarn test:integration
+```
 
-The current reply flow uses existing daemon APIs only: Spoke encrypts and publishes an outgoing object under the sender's `/spoke/outgoing/*`, fetches the encrypted bytes by CID, then submits those bytes to the recipient daemon `/api/v1/ingress`.
+The integration harness starts two isolated real Jolt nodes, requests and accepts
+contact access, exchanges text and an image, and reopens encrypted history. It
+requires a compatible Jolt binary (verified with 0.5.3). It does not use personal
+identities or the user's running daemon.
+
+For manual use, connect Spoke to Jolt, approve access in Console, then choose
+**New conversation** to send a contact request. The recipient accepts it in their
+Spoke instance before either side sends messages. The application at `/` is the
+production entry; no fictional development entry is included.

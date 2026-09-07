@@ -2,7 +2,7 @@
 
 **Type:** HITL then AFK  
 **Milestone:** Spoke Social Network  
-**Status:** Implemented  
+**Status:** Implemented
 
 ## Why
 
@@ -31,4 +31,3 @@ Implemented in Spoke PR #16 and refined in PR #18:
 - Decide whether avatar pinning should be automatic.
 - Add stronger avatar resize/dimension policy if needed.
 - Cover profile edit modal behavior in UI tests.
-

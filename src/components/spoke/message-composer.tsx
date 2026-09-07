@@ -14,7 +14,12 @@ type MessageComposerProps = {
   onSend: (contact: Contact, body: string) => Promise<boolean>;
 };
 
-export function MessageComposer({ contact, initialValue, onDraftChange, onSend }: MessageComposerProps) {
+export function MessageComposer({
+  contact,
+  initialValue,
+  onDraftChange,
+  onSend
+}: MessageComposerProps) {
   const [draft, setDraft] = useState(initialValue);
 
   async function send() {

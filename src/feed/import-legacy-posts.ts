@@ -36,10 +36,7 @@ function defaultCompletionStore(): LegacyImportCompletionStore | undefined {
   return typeof localStorage === "undefined" ? undefined : localStorage;
 }
 
-async function readLegacyPosts(
-  reader: LegacyPostReader,
-  identity: string,
-): Promise<LegacyPosts> {
+async function readLegacyPosts(reader: LegacyPostReader, identity: string): Promise<LegacyPosts> {
   const records = await reader.enumerate(identity, POSTS_PREFIX);
   const posts: SpokePost[] = [];
   const skipped: SkippedLegacyPost[] = [];
@@ -50,7 +47,7 @@ async function readLegacyPosts(
         record.contentId,
         { identity, path: record.path },
         record.deviceSequence,
-        decodePost,
+        decodePost
       );
       if (!result) {
         skipped.push({ path: record.path, reason: "unreadable" });
@@ -77,14 +74,14 @@ function typedPostFromLegacy(post: SpokePost): Post | null {
     body: post.body,
     createdAt,
     threadPath: post.threadPath ?? `/spoke/accepted/${post.id}/`,
-    attachments: post.attachments?.map(toDataImageAttachment),
+    attachments: post.attachments?.map(toDataImageAttachment)
   };
 }
 
 async function publishMissingPosts(
   data: SpokeApp,
   posts: readonly SpokePost[],
-  knownThreads: Set<string>,
+  knownThreads: Set<string>
 ): Promise<LegacyPostImportResult> {
   let imported = 0;
   const skipped: SkippedLegacyPost[] = [];
@@ -107,18 +104,18 @@ async function publishMissingPosts(
 export async function importLegacyPosts(
   data: SpokeApp,
   identity: string,
-  reader: LegacyPostReader,
+  reader: LegacyPostReader
 ): Promise<LegacyPostImportResult> {
   const subscription = await Subscription.create(data.posts.for(identity));
   const currentPosts = await subscription.get();
   const knownThreads = new Set(
-    currentPosts.flatMap((item) => item.value.threadPath ? [item.value.threadPath] : []),
+    currentPosts.flatMap((item) => (item.value.threadPath ? [item.value.threadPath] : []))
   );
   const legacy = await readLegacyPosts(reader, identity);
   const published = await publishMissingPosts(data, legacy.posts, knownThreads);
   return {
     imported: published.imported,
-    skipped: [...legacy.skipped, ...published.skipped],
+    skipped: [...legacy.skipped, ...published.skipped]
   };
 }
 
@@ -126,7 +123,7 @@ export function importLegacyPostsOnce(
   data: SpokeApp,
   identity: string,
   reader: LegacyPostReader,
-  options: LegacyImportOptions = {},
+  options: LegacyImportOptions = {}
 ): Promise<LegacyPostImportResult> {
   const key = normalizeIdentity(identity);
   const completionStore = options.completionStore ?? defaultCompletionStore();

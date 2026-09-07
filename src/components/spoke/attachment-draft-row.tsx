@@ -34,7 +34,11 @@ export function AttachmentDraftRow({
             ? ` - ${attachment.width}x${attachment.height}`
             : ""}
         </span>
-        <Input value={attachment.alt} onChange={(event) => onAltChange(event.target.value)} placeholder="Alt text" />
+        <Input
+          value={attachment.alt}
+          onChange={(event) => onAltChange(event.target.value)}
+          placeholder="Alt text"
+        />
       </div>
       <Button type="button" variant="ghost" size="icon" onClick={onRemove} title="Remove image">
         <Trash2 className="size-4" />

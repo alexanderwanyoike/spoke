@@ -25,9 +25,19 @@ export function MediaFrame({
   errorLabel = "Image unavailable"
 }: MediaFrameProps) {
   return (
-    <figure className={cn("overflow-hidden rounded-lg border spoke-border bg-muted/30 shadow-inner", className)}>
+    <figure
+      className={cn(
+        "overflow-hidden rounded-lg border spoke-border bg-muted/30 shadow-inner",
+        className
+      )}
+    >
       {src ? (
-        <img className={cn("w-full object-cover", imageClassName)} src={src} alt={alt} onError={onError} />
+        <img
+          className={cn("w-full object-cover", imageClassName)}
+          src={src}
+          alt={alt}
+          onError={onError}
+        />
       ) : error ? (
         <div className="grid min-h-32 place-items-center bg-muted/50 p-4 text-sm text-muted-foreground">
           <div className="grid place-items-center gap-2">
@@ -46,7 +56,11 @@ export function MediaFrame({
           </div>
         </div>
       )}
-      {caption ? <figcaption className="bg-background/70 px-3 py-2 text-xs text-muted-foreground">{caption}</figcaption> : null}
+      {caption ? (
+        <figcaption className="bg-background/70 px-3 py-2 text-xs text-muted-foreground">
+          {caption}
+        </figcaption>
+      ) : null}
     </figure>
   );
 }

@@ -6,13 +6,18 @@
 // Attachments are resolved by the caller (media layer) before the message is
 // built; this seam only moves the message object.
 
-import type { JoltIngressSdk, JoltSdk } from "../jolt";
+import type { JoltIngressSdk, JoltEncryptedSdk } from "../jolt";
 import { normalizeIdentity } from "../follow";
 import { store as defaultStore, type Store } from "../common/store";
-import { makeOutgoingPath, makeReceivedPath, messageBelongsToConversation, type SpokeMessage } from "./model";
+import {
+  makeOutgoingPath,
+  makeReceivedPath,
+  messageBelongsToConversation,
+  type SpokeMessage
+} from "./model";
 
 export type MessageSender = Pick<JoltIngressSdk, "sendObject">;
-export type MessageWriter = Pick<JoltSdk, "publishJson">;
+export type MessageWriter = Pick<JoltEncryptedSdk, "publishEncryptedJson">;
 
 function foldMessage(
   store: Store,
@@ -53,7 +58,7 @@ export async function acceptReceivedMessage(
   store: Store = defaultStore
 ): Promise<SpokeMessage> {
   const path = makeReceivedPath(message.id);
-  const published = await sdk.publishJson(path, message);
+  const published = await sdk.publishEncryptedJson(path, message, [localIdentity]);
   const existing = store.get({ identity: normalizeIdentity(localIdentity), path });
   const latestSequence = Math.max(published.latestSequence, (existing?.latestSequence ?? -1) + 1);
   foldMessage(store, localIdentity, path, message, latestSequence);

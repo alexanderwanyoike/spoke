@@ -31,9 +31,11 @@ and remove Spoke vocabulary/types from the transport layer.
 ## What to build
 
 ### 1. Relocate pure Jolt transport into `src/jolt/`
+
 Move the transport core and primitives out of `api.ts` into `src/jolt/`
 (e.g. `src/jolt/transport.ts` for the wire layer, kept private behind the
 barrel):
+
 - The request core: Tauri `invoke` vs `fetch` routing, `jsonInit`/`bearerInit`,
   base-path handling.
 - Daemon operations: `getStatus`, session lifecycle (request/status/current),
@@ -51,6 +53,7 @@ The existing `JoltSdk` / `JoltEncryptedSdk` / `JoltIngressSdk` interfaces stay
 the public surface; only their implementation stops hopping through `api.ts`.
 
 ### 2. Evict Spoke domain types from the transport layer
+
 Move `SpokePost`, `SpokeProfile`, `SpokeProfileLink`, `SpokeReply`,
 `SpokeFeedIndex` into their owning feature `model.ts` files (feed/profile/thread)
 or a shared Spoke types module. The transport layer must not import Spoke domain
@@ -58,6 +61,7 @@ types; features supply `Decoder<T>` to `read`/`readEncrypted` (already the
 pattern).
 
 ### 3. Decide `api.ts`'s fate
+
 Either delete `api.ts` outright, or shrink it to a small Spoke-specific shim for
 genuinely Spoke-flavoured concerns that are not pure transport
 (`assertSpokePath`, `SPOKE_CAPABILITIES`, `makePostPath`/`makeReplyPath`/

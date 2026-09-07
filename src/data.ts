@@ -1,11 +1,4 @@
-import {
-  App,
-  Collection,
-  Document,
-  Field,
-  Read,
-  Schema,
-} from "jolt-sdk/data";
+import { App, Collection, Document, Field, Read, Schema } from "jolt-sdk/data";
 
 import type { SpokeAttachment } from "./media";
 
@@ -82,7 +75,19 @@ export class Profile {
 }
 
 @Schema({ version: 1 })
+export class PostLink {
+  @Field.string()
+  url!: string;
+
+  @Field.string()
+  title!: string;
+}
+
+@Schema({ version: 1 })
 export class Post {
+  @Field.schema(PostLink, { optional: true })
+  link?: PostLink;
+
   @Field.identity()
   author!: string;
 
@@ -109,8 +114,8 @@ const ProfileDocument = Document.create(Profile, {
   access: {
     read: Read.AnyIdentity,
     create: true,
-    update: true,
-  },
+    update: true
+  }
 });
 
 const Posts = Collection.create(Post, {
@@ -119,8 +124,8 @@ const Posts = Collection.create(Post, {
     create: true,
     update: true,
     delete: true,
-    restore: true,
-  },
+    restore: true
+  }
 });
 
 // Spoke's typed application surface. React connects once, then works through
@@ -131,8 +136,8 @@ export const SpokeData = App.create({
   namespace: "spoke",
   data: {
     profile: ProfileDocument,
-    posts: Posts,
-  },
+    posts: Posts
+  }
 });
 
 export type SpokeApp = Awaited<ReturnType<typeof SpokeData.connect>>;

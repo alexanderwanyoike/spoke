@@ -92,7 +92,9 @@ describe("Spoke follow helpers", () => {
     ];
 
     expect(hasRequestedContactForResponse(contacts, response({ sender: "bob.jolt" }))).toBe(true);
-    expect(hasRequestedContactForResponse(contacts, response({ sender: "carol.jolt" }))).toBe(false);
+    expect(hasRequestedContactForResponse(contacts, response({ sender: "carol.jolt" }))).toBe(
+      false
+    );
     expect(hasRequestedContactForResponse(contacts, response({ sender: "dave.jolt" }))).toBe(false);
   });
 
