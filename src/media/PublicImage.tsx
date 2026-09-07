@@ -1,3 +1,5 @@
+import { Dialog } from "radix-ui";
+import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { SpokeAttachment } from "../media";
 import type { PublicImages } from "./public";
@@ -5,11 +7,13 @@ import type { PublicImages } from "./public";
 export function PublicImage({
   attachment,
   images,
+  expandable = false,
   className = "public-image"
 }: {
   attachment: SpokeAttachment;
   images: PublicImages;
   className?: string;
+  expandable?: boolean;
 }) {
   const [url, setUrl] = useState("");
   const [failed, setFailed] = useState(false);
@@ -47,12 +51,36 @@ export function PublicImage({
         Loading image…
       </div>
     );
-  return (
+  const picture = (
     <img
       className={className}
       src={url}
       alt={attachment.alt || "Shared image"}
       onError={() => setFailed(true)}
     />
+  );
+  if (!expandable) return picture;
+  return (
+    <Dialog.Root>
+      <Dialog.Trigger asChild>
+        <button
+          className="public-image-trigger"
+          aria-label={`Open image: ${attachment.alt || "Shared image"}`}
+        >
+          {picture}
+        </button>
+      </Dialog.Trigger>
+      <Dialog.Portal>
+        <Dialog.Overlay className="image-overlay" />
+        <Dialog.Content className="image-viewer">
+          <Dialog.Title>{attachment.alt || "Shared image"}</Dialog.Title>
+          <Dialog.Description className="sr-only">Full size public image.</Dialog.Description>
+          <img src={url} alt={attachment.alt || "Shared image"} />
+          <Dialog.Close className="icon-button" aria-label="Close image">
+            <X size={22} />
+          </Dialog.Close>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

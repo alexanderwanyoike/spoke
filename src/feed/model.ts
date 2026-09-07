@@ -9,6 +9,7 @@ export { activeContacts };
 export type { Contact };
 
 export type SpokePost = {
+  link?: { url: string; title: string };
   schema: "spoke.post.v1" | "spoke.post.v2";
   id: string;
   author: string;
