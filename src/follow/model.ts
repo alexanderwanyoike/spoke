@@ -68,8 +68,13 @@ export function makeContactPath(identity: string) {
   return `${CONTACTS_PREFIX}${normalizeIdentity(identity)}`;
 }
 
-export function displayNameForContact(contact: Contact) {
-  return contact.displayName || contact.identity;
+export function contactNickname(contact: Contact): string | null {
+  const name = contact.displayName.trim();
+  return name && !sameIdentity(name, contact.identity) ? name : null;
+}
+
+export function displayNameForContact(contact: Contact, fallbackName?: string) {
+  return contactNickname(contact) || fallbackName?.trim() || contact.identity;
 }
 
 // Hide still-pending outbound follow requests from the active-contact set (used

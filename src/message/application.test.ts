@@ -35,7 +35,13 @@ it("resolves conversation names from profiles without replacing the saved contac
   const data = await app.load();
   const named = await app.resolveNames!(data);
   expect(named.conversations[0]).toMatchObject({ name: "Bob Laptop", canSend: true });
-  expect(named.contacts[0].displayName).toBe("bob");
+  expect(named.contacts[0].displayName).toBe("Bob Laptop");
+  expect(data.contacts[0].displayName).toBe("bob");
+  const saved = await node.client.readEncrypted(
+    { identity: node.identity, path: "/spoke/contacts/bob" },
+    (value) => value as { displayName: string }
+  );
+  expect(saved?.value.displayName).toBe("bob");
   await app.resolveNames!(data);
   expect(read).toHaveBeenCalledTimes(1);
 });

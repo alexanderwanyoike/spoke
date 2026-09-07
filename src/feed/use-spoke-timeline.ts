@@ -43,6 +43,19 @@ export function useSpokeTimeline(data: SpokeApp | null, scope: FeedScope): Spoke
   );
   const getSnapshot = useCallback(() => timeline?.getSnapshot() ?? EMPTY_TIMELINE, [timeline]);
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const namedSnapshot = useMemo(() => {
+    const contacts = new Map(
+      scope.contacts.map((contact) => [normalizeIdentity(contact.identity), contact])
+    );
+    return {
+      ...snapshot,
+      items: snapshot.items.map((item) => {
+        if (item.source !== "contact") return item;
+        const contact = contacts.get(normalizeIdentity(item.post.author));
+        return contact ? { ...item, contact } : item;
+      })
+    };
+  }, [snapshot, scope.contacts]);
 
   const refresh = useCallback(async () => {
     if (!timeline) return EMPTY_TIMELINE;
@@ -88,5 +101,5 @@ export function useSpokeTimeline(data: SpokeApp | null, scope: FeedScope): Spoke
     };
   }, [timeline]);
 
-  return { snapshot, refreshing, error, refresh };
+  return { snapshot: namedSnapshot, refreshing, error, refresh };
 }

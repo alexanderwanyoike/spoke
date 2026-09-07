@@ -1,5 +1,11 @@
 import { createStore } from "../common/store";
-import { normalizeIdentity, sameIdentity, type Contact, type SpokeFollowResponse } from "../follow";
+import {
+  normalizeIdentity,
+  contactNickname,
+  displayNameForContact,
+  type Contact,
+  type SpokeFollowResponse
+} from "../follow";
 import { createProfileNames } from "../profile";
 import { ContactRepository, ContactService } from "../contacts";
 import type { JoltEncryptedSdk, JoltIngressSdk, JoltSdk } from "../jolt";
@@ -62,14 +68,25 @@ export function createMessagesApplication(
   }
 
   async function resolveNames(data: MessagesData): Promise<MessagesData> {
-    const unnamed = data.conversations.filter((item) => sameIdentity(item.name, item.recipient));
-    const names = await profileNames.load(unnamed.map((item) => item.recipient));
+    const participants = data.conversations.map((item) => ({
+      identity: item.recipient,
+      displayName: item.name
+    }));
+    const unnamed = [...data.contacts, ...participants].filter(
+      (person) => !contactNickname(person)
+    );
+    const names = await profileNames.load(unnamed.map((person) => person.identity));
+    const nameFor = (person: Contact) =>
+      displayNameForContact(person, names.get(normalizeIdentity(person.identity)));
+    const contacts = data.contacts.map((person) => ({ ...person, displayName: nameFor(person) }));
     return {
       ...data,
-      conversations: data.conversations.map((item) => {
-        if (!sameIdentity(item.name, item.recipient)) return item;
-        return { ...item, name: names.get(normalizeIdentity(item.recipient)) || item.name };
-      })
+      contacts,
+      requestedContacts: contacts.filter((person) => person.relationship === "requested"),
+      conversations: data.conversations.map((item) => ({
+        ...item,
+        name: nameFor({ identity: item.recipient, displayName: item.name })
+      }))
     };
   }
 
