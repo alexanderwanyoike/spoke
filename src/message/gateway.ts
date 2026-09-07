@@ -14,10 +14,15 @@ export interface MessagesGateway {
   confirmed: ReadonlySet<string>;
 }
 
-export function createMessagesGateway(identity: string, token: string): MessagesGateway {
+export function createMessagesGateway(
+  identity: string,
+  token: string,
+  reviewAdditionalInbox?: Parameters<typeof createMessagesApplication>[3]
+): MessagesGateway {
   return createMessagesApplication(
     identity,
     createJoltSdk(() => token),
-    createMessageMedia(identity, token)
+    createMessageMedia(identity, token),
+    reviewAdditionalInbox
   );
 }

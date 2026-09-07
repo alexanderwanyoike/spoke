@@ -1,4 +1,5 @@
 import { createStore } from "../common/store";
+import type { Contact } from "../follow";
 import { ContactRepository, ContactService } from "../contacts";
 import type { JoltEncryptedSdk, JoltIngressSdk } from "../jolt";
 import { loadConversations } from "./loaders";
@@ -15,7 +16,11 @@ type MessagingSdk = JoltEncryptedSdk & JoltIngressSdk;
 export function createMessagesApplication(
   identity: string,
   sdk: MessagingSdk,
-  media: MessageMedia
+  media: MessageMedia,
+  reviewAdditionalInbox: (
+    contacts: Contact[],
+    signal?: AbortSignal
+  ) => Promise<void> = async () => {}
 ): MessagesGateway {
   const store = createStore();
   const contacts = new ContactRepository(sdk, identity, store);
@@ -32,6 +37,7 @@ export function createMessagesApplication(
     signal?.throwIfAborted();
     const inventory = await contacts.refresh();
     const requests = await contactService.review(signal);
+    await reviewAdditionalInbox(contacts.all(), signal);
     const pendingCount = await receiveMessages(sdk, identity, store, signal);
     const { unavailableCount } = await loadConversations(
       { ...sdk, listPublished: async () => inventory },

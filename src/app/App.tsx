@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ConnectionBoundary } from "../connection";
-import { MessageSession, MessagesPage, createMessagesGateway } from "../message";
+import { MessageSession, MessagesPage } from "../message";
 import { ProfileRoute } from "./ProfileRoute";
-import { createHomeGateway, PostPage } from "../home";
+import { PostRoute } from "./PostRoute";
+import { createRuntime } from "./runtime";
 import { HomeRoute } from "./HomeRoute";
 import { PeopleRoute } from "./PeopleRoute";
 import { AppShell } from "./AppShell";
-import { AccountIdentity, createAccountProfile, createProfilesGateway } from "../profile";
+import { AccountIdentity } from "../profile";
 
 function ConnectedApp({
   identity,
@@ -18,10 +19,9 @@ function ConnectedApp({
   token: string;
   disconnect(): void;
 }) {
-  const [home] = useState(() => createHomeGateway(token, identity));
-  const [gateway] = useState(() => createMessagesGateway(identity, token));
-  const [profile] = useState(() => createAccountProfile(identity, token));
-  const [profiles] = useState(() => createProfilesGateway(identity, token));
+  const [{ home, messages: gateway, profile, profiles, replies }] = useState(() =>
+    createRuntime(identity, token)
+  );
   const [profileVersion, refreshProfile] = useState(0);
   return (
     <AppShell
@@ -36,7 +36,9 @@ function ConnectedApp({
           />
           <Route
             path="/post/:identity/:postId"
-            element={<PostPage identity={identity} gateway={home} />}
+            element={
+              <PostRoute identity={identity} home={home} replies={replies} profiles={profiles} />
+            }
           />
           <Route path="/people" element={<PeopleRoute identity={identity} profiles={profiles} />} />
           <Route
