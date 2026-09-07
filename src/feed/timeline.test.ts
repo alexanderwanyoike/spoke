@@ -69,9 +69,9 @@ describe("feed timeline", () => {
 
   it("opens from typed Materialized Views and preserves Spoke's feed ordering", async () => {
     const world = SpokeData.testWorld();
-    const alice = world.as("alice");
-    const bob = world.as("bob");
-    const viewer = world.as("viewer");
+    const alice = world.as("alice.jolt");
+    const bob = world.as("bob.jolt");
+    const viewer = world.as("viewer.jolt");
 
     await alice.posts.create({
       author: "alice.jolt",
@@ -98,7 +98,7 @@ describe("feed timeline", () => {
     expect(view.state).toBe(SubscriptionState.Ready);
     expect(view.items.map((item) => item.post.title)).toEqual(["Newer", "Older"]);
     expect(view.items.map((item) => item.source)).toEqual(["contact", "contact"]);
-    expect(view.items[0]?.address).toMatch(/^bob\/spoke\/posts\//);
+    expect(view.items[0]?.address).toMatch(/^bob\.jolt\/spoke\/posts\//);
 
     await timeline.close();
   });
@@ -202,8 +202,8 @@ describe("feed timeline", () => {
 
   it("inserts a newly verified post from the local Change Stream", async () => {
     const world = SpokeData.testWorld();
-    const alice = world.as("alice");
-    const viewer = world.as("viewer");
+    const alice = world.as("alice.jolt");
+    const viewer = world.as("viewer.jolt");
     await alice.posts.create({
       author: "alice.jolt",
       title: "First",

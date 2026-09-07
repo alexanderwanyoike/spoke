@@ -85,6 +85,7 @@ function toSpokePost(item: PresentItem<Post>): SpokePost | null {
     author: value.author,
     displayName: value.displayName,
     title: value.title,
+    link: value.link,
     body: value.body,
     createdAt: value.createdAt.toISOString(),
     path: item.ref.path,
@@ -396,7 +397,7 @@ class SpokeFeedTimeline implements FeedTimeline {
       if (this.sources.has(key)) continue;
       this.sources.set(key, new TimelineSource(
         descriptor.identity,
-        this.posts.for(key),
+        this.posts.for(descriptor.identity),
         {
           ...this.options,
           onChange: () => this.rebuildSnapshot(),

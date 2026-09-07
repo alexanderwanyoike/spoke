@@ -2,7 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { UpdateControl } from "../update/UpdateControl";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { MessageSquare, Sun, Moon, LogOut, UserRound, UsersRound } from "lucide-react";
+import { MessageSquare, Sun, Moon, LogOut, UserRound, UsersRound, House } from "lucide-react";
 
 export function AppShell({
   account,
@@ -25,11 +25,15 @@ export function AppShell({
   return (
     <div className="spoke-shell">
       <aside className="app-rail">
-        <Link className="brand" to="/messages" aria-label="Spoke messages">
+        <Link className="brand" to="/home" aria-label="Spoke home">
           <img src="/favicon.svg" alt="" />
           <span>Spoke</span>
         </Link>
         <nav aria-label="Main navigation">
+          <NavLink className="rail-link" aria-label="Home" to="/home">
+            <House size={19} />
+            <span>Home</span>
+          </NavLink>
           <NavLink className="rail-link" aria-label="Messages" to="/messages">
             <MessageSquare size={19} />
             <span>Messages</span>

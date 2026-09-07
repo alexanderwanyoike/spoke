@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { apiErrorMessage } from "../jolt";
 import { sameIdentity } from "../follow";
@@ -15,11 +15,13 @@ import { ProfileForm } from "./ProfileForm";
 export function ProfilePage({
   identity,
   gateway,
-  onSaved
+  onSaved,
+  children
 }: {
   identity: string;
   gateway: ProfileRepository;
   onSaved(): void;
+  children?: ReactNode;
 }) {
   const params = useParams();
   const owner = params.identity || identity;
@@ -78,6 +80,7 @@ export function ProfilePage({
       {snapshot && editing && (
         <ProfileForm snapshot={snapshot} onSave={save} onCancel={() => setEditing(false)} />
       )}
+      {!editing && snapshot && children}
     </Screen>
   );
 }
