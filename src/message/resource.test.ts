@@ -4,6 +4,7 @@ import type { MessagesData } from "./view-model";
 const data: MessagesData = {
   conversations: [],
   pendingCount: 0,
+  contacts: [],
   contactRequests: [],
   requestedContacts: []
 };

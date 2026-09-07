@@ -44,6 +44,7 @@ export function createMessagesApplication(
         contacts.all(),
         readConversations(identity, store)
       ),
+      contacts: contacts.all(),
       contactRequests: requests,
       requestedContacts: contacts.all().filter((contact) => contact.relationship === "requested"),
       pendingCount: Math.max(0, pendingCount - requests.length),

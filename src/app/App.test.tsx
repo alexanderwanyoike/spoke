@@ -169,6 +169,7 @@ it("persists appearance and aborts the Messages load when access is forgotten", 
     complete({
       conversations: [conversation()],
       pendingCount: 0,
+      contacts: [],
       contactRequests: [],
       requestedContacts: []
     })

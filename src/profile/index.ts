@@ -23,3 +23,5 @@ export { createAccountProfile } from "./account";
 
 export { createProfilesGateway } from "./repository";
 export { ProfilePage } from "./ProfilePage";
+
+export type { ProfileRepository } from "./editor";

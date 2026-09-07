@@ -7,9 +7,18 @@ it.skipIf(!enabled)(
   async () => {
     const alice = await participant(Number(process.env.SPOKE_ALICE_PORT));
     const bob = await participant(Number(process.env.SPOKE_BOB_PORT));
-    await alice.app.contacts.request({ identity: bob.identity, displayName: "Bob" });
+    await alice.app.contacts.request({
+      identity: bob.identity,
+      displayName: "Bob",
+      fromDisplayName: "Alice",
+      message: "Good to meet you."
+    });
     const requests = (await bob.app.load()).contactRequests!;
     expect(requests).toHaveLength(1);
+    expect(requests[0].request).toMatchObject({
+      displayName: "Alice",
+      message: "Good to meet you."
+    });
     await bob.app.contacts.decide(requests[0].ingressId, "accepted");
     expect((await alice.app.load()).conversations[0].canSend).toBe(true);
     const id = `integration_${Date.now()}`;

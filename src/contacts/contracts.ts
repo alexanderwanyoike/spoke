@@ -3,7 +3,12 @@ import { sameIdentity } from "../follow";
 import type { IngressRecord } from "../jolt";
 
 const identity = z.string().trim().min(1);
-export const ContactInput = z.object({ identity, displayName: z.string().trim().max(100) });
+export const ContactInput = z.object({
+  identity,
+  displayName: z.string().trim().max(100),
+  message: z.string().trim().max(1000).optional(),
+  fromDisplayName: z.string().trim().max(100).optional()
+});
 export type ContactInput = z.infer<typeof ContactInput>;
 export const ContactRecord = z.object({
   schema: z.literal("spoke.contact.v1"),

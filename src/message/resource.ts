@@ -12,7 +12,13 @@ type Snapshot = {
 export class MessagesResource {
   private snapshot: Snapshot = {
     status: "loading",
-    data: { conversations: [], pendingCount: 0, contactRequests: [], requestedContacts: [] },
+    data: {
+      contacts: [],
+      conversations: [],
+      pendingCount: 0,
+      contactRequests: [],
+      requestedContacts: []
+    },
     error: "",
     updatedAt: null,
     refreshing: false

@@ -16,6 +16,13 @@ export function conversation(recipient = "bob", name = "Bob"): ConversationView 
 }
 export function gatewayFixture(conversations = [conversation(), conversation("carol", "Carol")]) {
   const data: MessagesData = {
+    contacts: conversations
+      .filter((item) => item.canSend)
+      .map((item) => ({
+        identity: item.recipient,
+        displayName: item.name,
+        relationship: "accepted"
+      })),
     conversations,
     pendingCount: 0,
     contactRequests: [],
