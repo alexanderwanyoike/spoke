@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ConnectionBoundary } from "../connection";
 import { MessageSession, MessagesPage } from "../message";
 import { ProfileRoute } from "./ProfileRoute";
+import { ActivityRoute } from "./ActivityRoute";
 import { PostRoute } from "./PostRoute";
 import { createRuntime } from "./runtime";
 import { HomeRoute } from "./HomeRoute";
@@ -19,7 +20,7 @@ function ConnectedApp({
   token: string;
   disconnect(): void;
 }) {
-  const [{ home, messages: gateway, profile, profiles, replies }] = useState(() =>
+  const [{ home, messages: gateway, profile, profiles, replies, activity }] = useState(() =>
     createRuntime(identity, token)
   );
   const [profileVersion, refreshProfile] = useState(0);
@@ -51,6 +52,10 @@ function ConnectedApp({
                 onSaved={() => refreshProfile((value) => value + 1)}
               />
             }
+          />
+          <Route
+            path="/activity"
+            element={<ActivityRoute identity={identity} gateway={activity} replies={replies} />}
           />
           <Route path="/messages/:conversationId?" element={<MessagesPage />} />
           <Route path="*" element={<Navigate to="/home" replace />} />
