@@ -3,7 +3,12 @@
 // difference between "Bran wants to follow you" and a bare identity id when
 // the sender has no public profile yet.
 
-import { isSpokeFollowRequest, isSpokeFollowResponse, type SpokeFollowRequest, type SpokeFollowResponse } from "../follow";
+import {
+  isSpokeFollowRequest,
+  isSpokeFollowResponse,
+  type SpokeFollowRequest,
+  type SpokeFollowResponse
+} from "../follow";
 import { isSpokeMessage, messagePreview, type SpokeMessage } from "../message";
 import { normalizeIdentity, sameIdentity } from "../follow";
 
@@ -32,7 +37,9 @@ export function incomingSenderName(payload: SpokeIncomingPayload): string | unde
 
 export function incomingPreview(payload: SpokeIncomingPayload): string {
   if (isSpokeFollowRequest(payload)) {
-    return payload.message || `${incomingSenderName(payload) || payload.sender} wants to follow you.`;
+    return (
+      payload.message || `${incomingSenderName(payload) || payload.sender} wants to follow you.`
+    );
   }
   if (isSpokeFollowResponse(payload)) {
     return `${payload.sender} ${payload.decision} your follow request.`;

@@ -82,18 +82,27 @@ export function postIdFromPostAddress(postAddress: string): string {
 }
 
 export function isReplyV2(value: unknown): value is SpokeReplyV2 {
-  return typeof value === "object" && value !== null &&
-    (value as { schema?: unknown }).schema === "spoke.reply.v2";
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { schema?: unknown }).schema === "spoke.reply.v2"
+  );
 }
 
 export function isReplyV1(value: unknown): value is SpokeReply {
-  return typeof value === "object" && value !== null &&
-    (value as { schema?: unknown }).schema === "spoke.reply.v1";
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { schema?: unknown }).schema === "spoke.reply.v1"
+  );
 }
 
 export function isAcceptedReplyRef(value: unknown): value is AcceptedReplyRef {
-  return typeof value === "object" && value !== null &&
-    (value as { schema?: unknown }).schema === "spoke.accepted_reply.v1";
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { schema?: unknown }).schema === "spoke.accepted_reply.v1"
+  );
 }
 
 export const decodeReplyV2: Decoder<SpokeReplyV2> = (v) => (isReplyV2(v) ? v : null);

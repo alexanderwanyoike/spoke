@@ -120,6 +120,16 @@ for value in "${required_download_contract[@]}"; do
   }
 done
 
+html_contains() {
+  python3 - "$1" <<'PYTHON'
+from pathlib import Path
+import sys
+
+html = " ".join(Path("website/index.html").read_text().split())
+raise SystemExit(0 if sys.argv[1] in html else 1)
+PYTHON
+}
+
 required_social_visual_contract=(
   'Be yourself.<br /><em>Keep your data.</em>'
   '<meta property="og:title" content="Spoke | Be yourself. Keep your data." />'
@@ -133,7 +143,7 @@ required_social_visual_contract=(
 )
 
 for value in "${required_social_visual_contract[@]}"; do
-  grep -Fq "$value" website/index.html || {
+  html_contains "$value" || {
     echo "missing application-accurate hero contract: $value" >&2
     exit 1
   }
@@ -144,7 +154,7 @@ for value in \
   'move between them' \
   'The app is<br />a view.' \
   'Install and start Jolt before opening Spoke. Then make a profile'; do
-  if grep -Fq "$value" website/index.html; then
+  if html_contains "$value"; then
     echo "misleading social hero terminology remains: $value" >&2
     exit 1
   fi

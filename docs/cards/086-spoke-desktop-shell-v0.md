@@ -2,7 +2,7 @@
 
 **Type:** AFK  
 **Milestone:** v0 Endgame  
-**Status:** Implemented  
+**Status:** Implemented
 
 ## Why
 
@@ -28,4 +28,3 @@ Implemented in Spoke PR #5:
 
 The desktop shell itself is done. Full packaged multi-identity social smoke is
 tracked through the distribution and regression harness cards.
-

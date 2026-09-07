@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.vite/
+src-tauri/target/
+yarn.lock
+src-tauri/Cargo.lock
+src-tauri/gen/

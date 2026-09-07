@@ -22,7 +22,10 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 describe("Spoke session bootstrap", () => {
   beforeEach(() => {
     isTauriMock.mockReturnValue(false);
-    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ ok: true })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ ok: true }))
+    );
   });
 
   afterEach(() => {
@@ -32,7 +35,9 @@ describe("Spoke session bootstrap", () => {
   });
 
   it("requests a session with Spoke's app identity and social + ingress capabilities", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ request_id: "req_1", status: "pending" }));
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ request_id: "req_1", status: "pending" })
+    );
 
     await expect(requestSpokeSession("alice.jolt")).resolves.toEqual({
       request_id: "req_1",
@@ -56,15 +61,17 @@ describe("Spoke session bootstrap", () => {
   });
 
   it("requests the authority and App API features declared by SpokeData", () => {
-    expect(SPOKE_CAPABILITIES).toEqual(expect.arrayContaining([
-      "publish:/spoke/*",
-      "delete:/spoke/posts/*",
-      "subscribe:any:/spoke/posts/*",
-    ]));
+    expect(SPOKE_CAPABILITIES).toEqual(
+      expect.arrayContaining([
+        "publish:/spoke/*",
+        "delete:/spoke/posts/*",
+        "subscribe:any:/spoke/posts/*"
+      ])
+    );
     expect(SPOKE_COMPATIBILITY.requiredFeatures).toEqual({
       "data.records": 5,
       "data.subscriptions": 1,
-      "data.change-streams": 1,
+      "data.change-streams": 1
     });
   });
 });

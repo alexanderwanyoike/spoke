@@ -23,7 +23,7 @@ import {
   type JoltIngressSdk,
   type JoltSdk,
   type JoltTransport,
-  type SessionRequest,
+  type SessionRequest
 } from "jolt-sdk";
 import { HttpTransport } from "jolt-sdk/transport-http";
 import { isTauriRuntime, TauriTransport } from "jolt-sdk/transport-tauri";
@@ -41,7 +41,7 @@ export type {
   PublishResult,
   Reference,
   SessionRequest,
-  Versioned,
+  Versioned
 } from "jolt-sdk";
 export type {
   AppSessionStatus,
@@ -53,7 +53,7 @@ export type {
   NodeStatus,
   PublishedContent,
   PublishResponse,
-  ResolveResponse,
+  ResolveResponse
 } from "jolt-sdk";
 
 // One transport for the whole app, chosen by runtime. Desktop goes through

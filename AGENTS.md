@@ -30,4 +30,3 @@
   - All participants can assemble and render the same nested thread from public
     Spoke/Jolt-facing data.
 - Add behavior coverage before UI polish.
-

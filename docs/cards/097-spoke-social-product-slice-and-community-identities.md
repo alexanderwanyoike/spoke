@@ -54,4 +54,3 @@ for the Jolt identity/device writer model to mature.
 - Global search.
 - Platform-wide moderation.
 - Group chat.
-

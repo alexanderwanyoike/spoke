@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SpokePost } from "./model";
-import {
-  activeContacts,
-  displayNameForFeedItem,
-  type Contact,
-  type FeedItem
-} from "./model";
+import { activeContacts, displayNameForFeedItem, type Contact, type FeedItem } from "./model";
 
 function post(overrides: Partial<SpokePost>): SpokePost {
   return {

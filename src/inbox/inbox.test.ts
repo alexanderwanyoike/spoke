@@ -140,7 +140,12 @@ describe("inbox seam", () => {
 
   it("auto-accepts a message from an accepted contact", async () => {
     const { sdk, enqueue, store, handlers, ctx } = setup();
-    await acceptFollowRequest(sdk, "alice.jolt", followRequest({ sender: "bob.jolt", displayName: "Bob" }), store);
+    await acceptFollowRequest(
+      sdk,
+      "alice.jolt",
+      followRequest({ sender: "bob.jolt", displayName: "Bob" }),
+      store
+    );
     const message: SpokeMessage = {
       schema: "spoke.message.v1",
       id: "msg_1",
@@ -252,7 +257,12 @@ describe("inbox seam: delivery failures stay recoverable", () => {
 
   it("auto-applied records stay pending when the handler fails", async () => {
     const { sdk, enqueue, accepted, store, handlers, ctx } = setup();
-    await acceptFollowRequest(sdk, "alice.jolt", followRequest({ sender: "bob.jolt", displayName: "Bob" }), store);
+    await acceptFollowRequest(
+      sdk,
+      "alice.jolt",
+      followRequest({ sender: "bob.jolt", displayName: "Bob" }),
+      store
+    );
     const message: SpokeMessage = {
       schema: "spoke.message.v1",
       id: "msg_1",

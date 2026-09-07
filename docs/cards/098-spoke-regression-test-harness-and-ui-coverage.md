@@ -41,4 +41,3 @@ manual.
 - Replacing Jolt daemon/network tests.
 - Pixel-perfect visual snapshot testing.
 - Mobile testing.
-

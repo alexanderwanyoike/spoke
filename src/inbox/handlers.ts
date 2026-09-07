@@ -43,7 +43,12 @@ function followResponseHandler(): InboxHandler {
         : "manual";
     },
     async accept(sdk, payload, ctx) {
-      await applyIncomingResponse(sdk, ctx.localIdentity, payload as SpokeFollowResponse, ctx.store);
+      await applyIncomingResponse(
+        sdk,
+        ctx.localIdentity,
+        payload as SpokeFollowResponse,
+        ctx.store
+      );
     }
   };
 }
@@ -69,7 +74,9 @@ function followRequestHandler(): InboxHandler {
 // own derived conversation. Everything else is reviewed.
 function messageHandler(): InboxHandler {
   function deliverable(message: SpokeMessage, ctx: InboxContext) {
-    return messageBelongsToConversation(message) && messageTargetsIdentity(message, ctx.localIdentity);
+    return (
+      messageBelongsToConversation(message) && messageTargetsIdentity(message, ctx.localIdentity)
+    );
   }
   return {
     match: isSpokeMessage,

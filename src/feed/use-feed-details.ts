@@ -26,14 +26,15 @@ type FeedDetailsOptions = {
 };
 
 function feedDetailsScope(options: FeedDetailsOptions): FeedDetailsScope {
-  const contactIdentities = activeContacts(options.contacts)
-    .map((contact) => normalizeIdentity(contact.identity));
+  const contactIdentities = activeContacts(options.contacts).map((contact) =>
+    normalizeIdentity(contact.identity)
+  );
   return {
     identities: [normalizeIdentity(options.localIdentity), ...contactIdentities].filter(Boolean),
     threads: options.items.map((item) => ({
       author: item.post.author,
-      postId: item.post.id,
-    })),
+      postId: item.post.id
+    }))
   };
 }
 
@@ -57,14 +58,16 @@ function useStableFeedDetails(options: FeedDetailsOptions): FeedDetailsScope {
 async function loadFeedDetails(
   scope: FeedDetailsScope,
   jolt: JoltSdk,
-  threadEnumeration: ThreadEnumeration,
+  threadEnumeration: ThreadEnumeration
 ) {
-  await Promise.all(scope.identities.map((identity) =>
-    loadProfile(jolt, identity).catch(() => null)
-  ));
-  await Promise.all(scope.threads.map((thread) =>
-    loadThread(jolt, threadEnumeration, thread.author, thread.postId).catch(() => {})
-  ));
+  await Promise.all(
+    scope.identities.map((identity) => loadProfile(jolt, identity).catch(() => null))
+  );
+  await Promise.all(
+    scope.threads.map((thread) =>
+      loadThread(jolt, threadEnumeration, thread.author, thread.postId).catch(() => {})
+    )
+  );
 }
 
 export function useFeedDetails(options: FeedDetailsOptions) {

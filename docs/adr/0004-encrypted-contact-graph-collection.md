@@ -17,8 +17,8 @@ set-as-rewritten-blob pattern ADR 0001 exists to kill, with two extra problems:
   ADR 0003 closes for every other feature.
 
 Card 103 brings messages and follows through the command/query seam, so the
-contact graph has to land on Jolt. The question this ADR settles is *how* and
-*how visibly*.
+contact graph has to land on Jolt. The question this ADR settles is _how_ and
+_how visibly_.
 
 ## Decision
 
@@ -27,7 +27,7 @@ The contact graph is a **Collection of append records, encrypted to self.**
 - Each contact edge is its own publication at `/spoke/contacts/{identity}`
   (schema `spoke.contact.v1`: `identity`, `displayName`, `relationship`
   (`local` | `requested` | `accepted`), `updatedAt`, optional `removed`).
-- The *set* is never one blob. Adding a contact is a new path (an append to the
+- The _set_ is never one blob. Adding a contact is a new path (an append to the
   Collection). Changing one edge's relationship is a last-writer-wins rewrite of
   that one edge's path, which is acceptable per-edge (it is a Singleton Object
   scoped to a single contact, not the whole graph). Removing a contact is a
@@ -52,7 +52,7 @@ traverse a user's trust relationships ("friends of friends") but is a one-way,
 content-addressed, effectively permanent exposure and a silent privacy
 regression from the local-only status quo.
 
-Friends-of-friends is a genuine feature, but it requires *other* people to read
+Friends-of-friends is a genuine feature, but it requires _other_ people to read
 your edges, which encryption deliberately prevents. It is therefore deferred to
 its own card: an explicit, opt-in **public discovery surface** (likely a
 separate minimal `/spoke/follows/{identity}` edge carrying only
