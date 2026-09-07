@@ -1,0 +1,203 @@
+.feature-page {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--canvas);
+}
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 30px 40px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.page-header h1 {
+  margin: 0;
+  font-size: 25px;
+  font-weight: 620;
+  letter-spacing: -0.8px;
+}
+.page-header p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.page-actions,
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.page-content {
+  max-width: 880px;
+  padding: 32px 40px 60px;
+  margin: 0 auto;
+}
+.page-notice {
+  padding: 15px;
+  margin-bottom: 20px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+}
+.profile-card,
+.profile-form {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.profile-banner {
+  height: 120px;
+  padding: 25px 30px;
+  color: var(--accent);
+  background: var(--selected);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+.profile-details {
+  padding: 0 30px 30px;
+}
+.profile-monogram {
+  display: grid;
+  place-items: center;
+  width: 80px;
+  height: 80px;
+  border: 5px solid var(--surface);
+  border-radius: 22px;
+  margin-top: -35px;
+  margin-bottom: 22px;
+  position: relative;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 28px;
+}
+.eyebrow {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+}
+.profile-details h2 {
+  font-size: 30px;
+  letter-spacing: -1px;
+  font-weight: 620;
+  margin: 10px 0 15px;
+  overflow-wrap: anywhere;
+}
+.profile-bio {
+  max-width: 530px;
+  white-space: pre-wrap;
+  font-size: 15px;
+  line-height: 1.75;
+}
+.subtle {
+  color: var(--muted);
+  font-size: 12px;
+}
+.profile-website {
+  display: block;
+  color: var(--accent);
+  margin-top: 12px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.identity-details {
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.identity-details summary {
+  cursor: pointer;
+}
+.identity-details code {
+  display: block;
+  overflow-wrap: anywhere;
+  margin: 15px 0;
+}
+.profile-form {
+  padding: 28px;
+}
+.profile-form fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.audience-note {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0 0 25px;
+}
+.field {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 20px;
+  font-size: 12px;
+}
+.field input,
+.field textarea,
+.search-field {
+  width: 100%;
+  border: 1px solid var(--control);
+  border-radius: 7px;
+  padding: 11px 12px;
+  color: var(--ink);
+  background: var(--surface);
+  resize: vertical;
+}
+.field small,
+[role="alert"] {
+  color: var(--error);
+}
+@media (max-width: 720px) {
+  .page-header {
+    padding: 22px 20px;
+    align-items: flex-start;
+  }
+  .page-content {
+    padding: 20px 16px 40px;
+  }
+  .profile-details {
+    padding: 0 22px 25px;
+  }
+  .profile-form {
+    padding: 22px;
+  }
+  .page-header h1 {
+    font-size: 22px;
+  }
+}
+.profile-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 17px;
+}
+.public-image {
+  display: block;
+  width: 100%;
+  max-height: 450px;
+  object-fit: contain;
+  background: var(--rail);
+}
+.media-unavailable,
+.media-loading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 15px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--rail);
+}

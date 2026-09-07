@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { IMAGE_ATTACHMENT_MIME_TYPES } from "../media";
 import type { Decoder } from "../jolt";
 import type { SpokeAttachment } from "../media";
 import type { Contact } from "../feed";
@@ -75,19 +77,38 @@ export function profileCacheKey(identity: string) {
   return normalizeIdentity(identity);
 }
 
+const ProfileRecord = z.object({
+  schema: z.enum(["spoke.profile.v1", "spoke.profile.v2"]),
+  identity: z.string().min(1),
+  displayName: z.string(),
+  bio: z.string(),
+  updatedAt: z.string(),
+  location: z.string().optional(),
+  pronouns: z.string().optional(),
+  links: z.array(z.object({ label: z.string(), url: z.string() })).optional(),
+  avatar: z
+    .object({
+      id: z.string(),
+      kind: z.literal("image"),
+      contentId: z.string().min(1),
+      address: z.string().nullable().optional(),
+      mimeType: z.enum(IMAGE_ATTACHMENT_MIME_TYPES),
+      size: z.number().nonnegative(),
+      width: z.number().positive().optional(),
+      height: z.number().positive().optional(),
+      alt: z.string().optional()
+    })
+    .optional()
+});
+
 export function isSpokeProfile(value: unknown): value is SpokeProfile {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const schema = (value as { schema?: unknown }).schema;
-  return schema === "spoke.profile.v1" || schema === "spoke.profile.v2";
+  return ProfileRecord.safeParse(value).success;
 }
 
-// Tolerant reader: validate an already-parsed JSON value into a canonical
-// profile, or null if unrecoverable. The ACL handles bytes -> JSON; this is the
-// schema-level decoder (see docs/CONTEXT.md "Tolerant readers, strict writers").
-export const decodeProfile: Decoder<SpokeProfile> = (value) =>
-  isSpokeProfile(value) ? value : null;
+export const decodeProfile: Decoder<SpokeProfile> = (value) => {
+  const parsed = ProfileRecord.safeParse(value);
+  return parsed.success ? parsed.data : null;
+};
 
 export function profileLinksFromDraft(links: ProfileDraftLink[]) {
   return links
