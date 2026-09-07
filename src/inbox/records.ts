@@ -8,10 +8,14 @@ import type { IngressRecord } from "../jolt";
 export function sameIngressRecords(current: IngressRecord[], next: IngressRecord[]): boolean {
   if (current.length !== next.length) return false;
   return current.every(
-    (record, index) => record.ingress_id === next[index].ingress_id && record.status === next[index].status
+    (record, index) =>
+      record.ingress_id === next[index].ingress_id && record.status === next[index].status
   );
 }
 
-export function reconcileIngressRecords(current: IngressRecord[], next: IngressRecord[]): IngressRecord[] {
+export function reconcileIngressRecords(
+  current: IngressRecord[],
+  next: IngressRecord[]
+): IngressRecord[] {
   return sameIngressRecords(current, next) ? current : next;
 }

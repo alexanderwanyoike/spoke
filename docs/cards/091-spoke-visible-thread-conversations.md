@@ -2,7 +2,7 @@
 
 **Type:** HITL then AFK  
 **Milestone:** Spoke Social Network  
-**Status:** In progress (rewritten to the append model)  
+**Status:** In progress (rewritten to the append model)
 
 > Rewritten from the original thread-manifest design to the append-record,
 > author-anchored model. See `docs/adr/0002` (author-anchored threads),
@@ -129,4 +129,3 @@ author's namespace):
 This remains Spoke app state. Jolt provides identity-owned publishing,
 content-addressed fetch, encrypted ingress, and app capabilities. Jolt should
 not learn about posts, replies, comments, moderation, or audiences.
-

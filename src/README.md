@@ -6,7 +6,7 @@ posts, replies, threads, messages, follows). Jolt owns identity, signed
 publishing, content-addressed fetch, encryption, and recipient-controlled
 ingress. **Jolt never learns what a post, reply, or audience is.**
 
-This file is the map. For the *why* behind the decisions, read
+This file is the map. For the _why_ behind the decisions, read
 [`docs/CONTEXT.md`](../docs/CONTEXT.md) and the ADRs in
 [`docs/adr/`](../docs/adr/); for the work history, the epic in
 [`docs/cards/100-spoke-architecture-refactor-epic.md`](../docs/cards/100-spoke-architecture-refactor-epic.md).
@@ -14,7 +14,7 @@ This file is the map. For the *why* behind the decisions, read
 ## The one rule
 
 > Durable signed publications on Jolt are the source of truth. React state is a
-> disposable cache of *Projections* built from them. **A stale or incomplete
+> disposable cache of _Projections_ built from them. **A stale or incomplete
 > read must never overwrite a newer confirmed write.**
 
 Everything below exists to make that rule structurally impossible to break.
@@ -109,19 +109,19 @@ Writes flow **down** through commands; reads come **up** through loaders → sto
 
 ## Core concepts (glossary in miniature)
 
-| Concept | What it is | Where |
-|---|---|---|
-| **Reference** | `(identity, path)` — the stable id of a publication. The store keys everything by this. | `src/jolt` |
-| **Singleton Object** | "current value at a path", last-writer-wins. Fine for the profile. | `/spoke/profile` |
-| **Append Record** | one element of a *growing* set; each is its own object at its own path so concurrent writers coexist. | posts, replies, messages, contact edges |
-| **Collection** | every append record sharing a path prefix (e.g. all of an author's posts). | `/spoke/posts/`, `/spoke/accepted/{post}/` |
-| **Enumeration** | listing a Collection. Done via Jolt's `enumerate` (J1). | `feed/enumeration.ts`, `thread/enumeration.ts` |
-| **Projection** | a read-side view model folded from the store (a feed, a thread tree, a conversation). Derived, never authoritative. | `*/queries.ts` |
-| **Monotonic store** | the cache: upsert-by-version, additive reads, removal only via tombstone. | `src/common/store.ts` |
-| **Tombstone** | an append record marking another removed (un-accept, remove contact). The only way a record leaves a Projection. | store entries with `tombstone: true` |
-| **Tolerant readers** | every fetched object is `unknown` until a `Decoder` validates it; bad objects are skipped, never poison a Projection. | `*/model.ts` decoders |
+| Concept              | What it is                                                                                                            | Where                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| **Reference**        | `(identity, path)` — the stable id of a publication. The store keys everything by this.                               | `src/jolt`                                     |
+| **Singleton Object** | "current value at a path", last-writer-wins. Fine for the profile.                                                    | `/spoke/profile`                               |
+| **Append Record**    | one element of a _growing_ set; each is its own object at its own path so concurrent writers coexist.                 | posts, replies, messages, contact edges        |
+| **Collection**       | every append record sharing a path prefix (e.g. all of an author's posts).                                            | `/spoke/posts/`, `/spoke/accepted/{post}/`     |
+| **Enumeration**      | listing a Collection. Done via Jolt's `enumerate` (J1).                                                               | `feed/enumeration.ts`, `thread/enumeration.ts` |
+| **Projection**       | a read-side view model folded from the store (a feed, a thread tree, a conversation). Derived, never authoritative.   | `*/queries.ts`                                 |
+| **Monotonic store**  | the cache: upsert-by-version, additive reads, removal only via tombstone.                                             | `src/common/store.ts`                          |
+| **Tombstone**        | an append record marking another removed (un-accept, remove contact). The only way a record leaves a Projection.      | store entries with `tombstone: true`           |
+| **Tolerant readers** | every fetched object is `unknown` until a `Decoder` validates it; bad objects are skipped, never poison a Projection. | `*/model.ts` decoders                          |
 
-**The core rule of thumb:** anything that *grows* is an Append Record, never a
+**The core rule of thumb:** anything that _grows_ is an Append Record, never a
 rewritten Singleton. A singleton set-blob silently loses concurrent writes; a
 Collection of append records does not. See
 [`docs/adr/0001`](../docs/adr/0001-append-records-not-rewritten-singletons.md).
@@ -150,15 +150,15 @@ remain separate in [`src/session.ts`](./session.ts).
 
 ### How Spoke reaches the daemon
 
-| Concern | Daemon route (`/app/v1`) | SDK operation |
-|---|---|---|
-| Session | `/sessions/request`, `/session` | `requestSession`, `getCurrentSession` |
-| Public read | `/resolve` + `/fetch` | `read` (via `resolveAddress`, `fetchTarget`) |
-| Publish (singleton) | `/publish` | `publishJson`, `publishBinary` |
-| **Append (Collection)** | `/append` | `appendPublishJson` |
-| **Enumerate (Collection)** | `/enumerate` | `enumerate` |
-| Encrypted | `/encrypted/publish`, `/encrypted/decrypt` | `publishEncrypted*`, `readEncrypted` |
-| Ingress (DMs/follows) | `/ingress/*` | `sendObject`, `listPendingIngress`, … |
+| Concern                    | Daemon route (`/app/v1`)                   | SDK operation                                |
+| -------------------------- | ------------------------------------------ | -------------------------------------------- |
+| Session                    | `/sessions/request`, `/session`            | `requestSession`, `getCurrentSession`        |
+| Public read                | `/resolve` + `/fetch`                      | `read` (via `resolveAddress`, `fetchTarget`) |
+| Publish (singleton)        | `/publish`                                 | `publishJson`, `publishBinary`               |
+| **Append (Collection)**    | `/append`                                  | `appendPublishJson`                          |
+| **Enumerate (Collection)** | `/enumerate`                               | `enumerate`                                  |
+| Encrypted                  | `/encrypted/publish`, `/encrypted/decrypt` | `publishEncrypted*`, `readEncrypted`         |
+| Ingress (DMs/follows)      | `/ingress/*`                               | `sendObject`, `listPendingIngress`, …        |
 
 On **web** these are `fetch` calls through the `/jolt-api` dev proxy. On
 **desktop** `jolt-sdk` invokes the audited commands supplied by the shared
@@ -168,15 +168,15 @@ the approved session capabilities.
 
 ## Features at a glance
 
-| Folder | Owns | Notes |
-|---|---|---|
-| `profile/` | the profile Singleton | simplest case; `useProfile`/`useProfiles` |
-| `feed/`    | posts + the timeline | posts are append records under `/spoke/posts/`; `useFeed` |
+| Folder     | Owns                                 | Notes                                                                                                                                                       |
+| ---------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profile/` | the profile Singleton                | simplest case; `useProfile`/`useProfiles`                                                                                                                   |
+| `feed/`    | posts + the timeline                 | posts are append records under `/spoke/posts/`; `useFeed`                                                                                                   |
 | `thread/`  | replies + author-anchored acceptance | replies live under the replier; accepted refs are append records under the author at `/spoke/accepted/{post}/`; `useThread` builds a nested tree (ADR 0002) |
-| `message/` | direct messages | each message an append record; `useConversations` groups by conversation, direction by path prefix |
-| `follow/`  | the contact graph | append records **encrypted to self** under `/spoke/contacts/` (ADR 0004); `useContacts` |
-| `inbox/`   | the ingress door | `processInbox` lists pending ingress and dispatches to per-feature handlers (auto-accept vs manual review) |
-| `media/`   | image attachments | encrypted binary publish + fetch |
+| `message/` | direct messages                      | each message an append record; `useConversations` groups by conversation, direction by path prefix                                                          |
+| `follow/`  | the contact graph                    | append records **encrypted to self** under `/spoke/contacts/` (ADR 0004); `useContacts`                                                                     |
+| `inbox/`   | the ingress door                     | `processInbox` lists pending ingress and dispatches to per-feature handlers (auto-accept vs manual review)                                                  |
+| `media/`   | image attachments                    | encrypted binary publish + fetch                                                                                                                            |
 
 ### The inbox path (incoming DMs / follow requests / replies)
 
@@ -189,7 +189,7 @@ command an auto-accept would, so both paths converge on one code path.
 
 ## Testing
 
-Because every feature depends on a narrow SDK *interface*, tests pass a small fake
+Because every feature depends on a narrow SDK _interface_, tests pass a small fake
 object (a `Map`-backed stand-in) instead of a real daemon — no network, no Tauri.
 Domain tests (`*/domain.test.ts`) exercise commands/loaders/queries against fakes;
 Spoke's SDK binding is covered in `jolt/sdk.test.ts`, while generic transport

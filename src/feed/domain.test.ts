@@ -52,12 +52,12 @@ function fakeSdk(opts: {
         : { ref, value, latestSequence: hit.latestSequence, contentId: hit.contentId };
     },
     async readContent(contentId, ref, latestSequence, decode) {
-      const hit = contentReads[contentId] || Object.values(reads).find((item) => item.contentId === contentId);
+      const hit =
+        contentReads[contentId] ||
+        Object.values(reads).find((item) => item.contentId === contentId);
       if (!hit) return null;
       const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(hit.bytes))));
-      return value === null
-        ? null
-        : { ref, value, latestSequence, contentId };
+      return value === null ? null : { ref, value, latestSequence, contentId };
     },
     async publishAppend(path, body) {
       opts.onPublishAppend?.(path, body);
@@ -66,17 +66,18 @@ function fakeSdk(opts: {
     async enumerate(identity, pathPrefix) {
       return (enumerations[identity] || [])
         .filter((path) => path.startsWith(pathPrefix))
-        .map(
-          (path, index): EnumeratedRecord => ({
-            identity,
-            path,
-            contentId: reads[`${identity}${path}`]?.contentId || `cid_${path}`,
-            deviceId: "dev_1",
-            deviceSequence: reads[`${identity}${path}`]?.latestSequence ?? contentReads[`cid_${path}`]?.latestSequence ?? index,
-            createdAt: 1_780_704_000,
-            entryHash: `hash_${path}`
-          })
-        );
+        .map((path, index): EnumeratedRecord => ({
+          identity,
+          path,
+          contentId: reads[`${identity}${path}`]?.contentId || `cid_${path}`,
+          deviceId: "dev_1",
+          deviceSequence:
+            reads[`${identity}${path}`]?.latestSequence ??
+            contentReads[`cid_${path}`]?.latestSequence ??
+            index,
+          createdAt: 1_780_704_000,
+          entryHash: `hash_${path}`
+        }));
     }
   };
 }
@@ -99,11 +100,24 @@ describe("feed commands", () => {
 describe("feed loaders", () => {
   it("loadFeed enumerates, reads, and folds posts scoped to local + active contacts, newest first", async () => {
     const store = createStore();
-    const local = post({ id: "p_local", author: "alice.jolt", createdAt: "2026-06-06T12:00:00.000Z" });
-    const bob = post({ id: "p_bob", author: "bob.jolt", path: "/spoke/posts/p_bob", createdAt: "2026-06-06T11:00:00.000Z" });
+    const local = post({
+      id: "p_local",
+      author: "alice.jolt",
+      createdAt: "2026-06-06T12:00:00.000Z"
+    });
+    const bob = post({
+      id: "p_bob",
+      author: "bob.jolt",
+      path: "/spoke/posts/p_bob",
+      createdAt: "2026-06-06T11:00:00.000Z"
+    });
     const sdk = fakeSdk({
       reads: {
-        "alice.jolt/spoke/posts/p_local": { latestSequence: 1, contentId: "c1", bytes: encode(local) },
+        "alice.jolt/spoke/posts/p_local": {
+          latestSequence: 1,
+          contentId: "c1",
+          bytes: encode(local)
+        },
         "bob.jolt/spoke/posts/p_bob": { latestSequence: 1, contentId: "c2", bytes: encode(bob) }
       },
       enumerations: {
@@ -157,14 +171,20 @@ describe("feed loaders", () => {
     const store = createStore();
     const sdk = fakeSdk({
       reads: {
-        "mallory.jolt/spoke/posts/junk": { latestSequence: 1, contentId: "c", bytes: encode({ nope: true }) }
+        "mallory.jolt/spoke/posts/junk": {
+          latestSequence: 1,
+          contentId: "c",
+          bytes: encode({ nope: true })
+        }
       },
       enumerations: { "mallory.jolt": ["/spoke/posts/junk"] }
     });
 
     await loadFeed(sdk, createJoltEnumeration(sdk), ["mallory.jolt"], store);
 
-    expect(selectFeed(store.getSnapshot(), { localIdentity: "x", contacts: [contact("mallory.jolt")] })).toEqual([]);
+    expect(
+      selectFeed(store.getSnapshot(), { localIdentity: "x", contacts: [contact("mallory.jolt")] })
+    ).toEqual([]);
   });
 });
 
@@ -175,8 +195,16 @@ describe("feed queries", () => {
     const requested = post({ id: "p_r", author: "carol.jolt", path: "/spoke/posts/p_r" });
     const sdk = fakeSdk({
       reads: {
-        "stranger.jolt/spoke/posts/p_s": { latestSequence: 1, contentId: "cs", bytes: encode(stranger) },
-        "carol.jolt/spoke/posts/p_r": { latestSequence: 1, contentId: "cr", bytes: encode(requested) }
+        "stranger.jolt/spoke/posts/p_s": {
+          latestSequence: 1,
+          contentId: "cs",
+          bytes: encode(stranger)
+        },
+        "carol.jolt/spoke/posts/p_r": {
+          latestSequence: 1,
+          contentId: "cr",
+          bytes: encode(requested)
+        }
       },
       enumerations: {
         "stranger.jolt": ["/spoke/posts/p_s"],
@@ -195,8 +223,18 @@ describe("feed queries", () => {
 
   it("a stale feed refetch cannot drop a post the store already knows (monotonic)", async () => {
     const store = createStore();
-    const p1 = post({ id: "p1", author: "bob.jolt", path: "/spoke/posts/p1", createdAt: "2026-06-06T09:00:00.000Z" });
-    const p2 = post({ id: "p2", author: "bob.jolt", path: "/spoke/posts/p2", createdAt: "2026-06-06T10:00:00.000Z" });
+    const p1 = post({
+      id: "p1",
+      author: "bob.jolt",
+      path: "/spoke/posts/p1",
+      createdAt: "2026-06-06T09:00:00.000Z"
+    });
+    const p2 = post({
+      id: "p2",
+      author: "bob.jolt",
+      path: "/spoke/posts/p2",
+      createdAt: "2026-06-06T10:00:00.000Z"
+    });
     const enumerations: Record<string, string[]> = {
       "bob.jolt": ["/spoke/posts/p1", "/spoke/posts/p2"]
     };
@@ -231,6 +269,10 @@ describe("jolt enumeration", () => {
 
     // Only records under /spoke/posts/ are posts; the contact edge is excluded.
     expect(refs.map((r) => r.path)).toEqual(["/spoke/posts/p1"]);
-    expect(refs[0]).toMatchObject({ id: "p1", author: "bob.jolt", contentId: "cid_/spoke/posts/p1" });
+    expect(refs[0]).toMatchObject({
+      id: "p1",
+      author: "bob.jolt",
+      contentId: "cid_/spoke/posts/p1"
+    });
   });
 });

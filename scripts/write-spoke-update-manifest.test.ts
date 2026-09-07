@@ -30,7 +30,7 @@ describe("write-spoke-update-manifest", () => {
       required_features: {
         "data.records": 5,
         "data.subscriptions": 1,
-        "data.change-streams": 1,
+        "data.change-streams": 1
       },
       optional_features: {}
     });

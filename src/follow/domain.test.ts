@@ -38,7 +38,9 @@ function fakeJolt(localIdentity: string) {
       const rec = published.get(ref.path);
       if (!rec) return null;
       const value = decode(JSON.parse(JSON.stringify(rec.body)));
-      return value === null ? null : { ref, value, latestSequence: rec.seq, contentId: rec.contentId };
+      return value === null
+        ? null
+        : { ref, value, latestSequence: rec.seq, contentId: rec.contentId };
     },
     async listPublished() {
       return [...published.entries()].map(([path, rec]) => ({

@@ -18,7 +18,7 @@ export type SpokeDataOptions = {
 export function useSpokeData(options: SpokeDataOptions): SpokeDataConnection {
   const [connection, setConnection] = useState<SpokeDataConnection>({
     data: null,
-    error: null,
+    error: null
   });
 
   useEffect(() => {
@@ -49,7 +49,7 @@ async function connectSpokeData(identity: string, sessionToken: string) {
   const getSessionToken = () => sessionToken;
   const data = await SpokeData.connect({
     identity,
-    client: createJoltDataClient(getSessionToken),
+    client: createJoltDataClient(getSessionToken)
   });
   void importLegacyPostsInBackground(data, identity, getSessionToken);
   return data;
@@ -58,7 +58,7 @@ async function connectSpokeData(identity: string, sessionToken: string) {
 async function importLegacyPostsInBackground(
   data: SpokeApp,
   identity: string,
-  getSessionToken: () => string,
+  getSessionToken: () => string
 ) {
   try {
     const result = await importLegacyPostsOnce(data, identity, createJoltSdk(getSessionToken));

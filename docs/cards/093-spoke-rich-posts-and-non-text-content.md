@@ -2,7 +2,7 @@
 
 **Type:** HITL then AFK  
 **Milestone:** Spoke Social Network  
-**Status:** Partially implemented  
+**Status:** Partially implemented
 
 ## Why
 
@@ -41,4 +41,3 @@ Implemented in Spoke PR #15 and expanded by the UI PR:
 - Automatic Open Graph fetching.
 - Transcoding.
 - Protocol-level media semantics.
-

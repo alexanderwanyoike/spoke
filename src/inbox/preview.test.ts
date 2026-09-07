@@ -24,10 +24,14 @@ describe("incoming follow request presentation", () => {
   it("falls back to the identity when the sender declared no real name", () => {
     expect(incomingSenderName(request({ displayName: "" }))).toBeUndefined();
     expect(incomingSenderName(request({ displayName: "carol.jolt" }))).toBeUndefined();
-    expect(incomingPreview(request({ displayName: "carol.jolt" }))).toBe("carol.jolt wants to follow you.");
+    expect(incomingPreview(request({ displayName: "carol.jolt" }))).toBe(
+      "carol.jolt wants to follow you."
+    );
   });
 
   it("prefers the sender's own message when there is one", () => {
-    expect(incomingPreview(request({ message: "Hi, it's me from the meetup" }))).toBe("Hi, it's me from the meetup");
+    expect(incomingPreview(request({ message: "Hi, it's me from the meetup" }))).toBe(
+      "Hi, it's me from the meetup"
+    );
   });
 });

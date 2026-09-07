@@ -2,9 +2,7 @@ import type { AppCompatibilityResult } from "jolt-sdk";
 import { checkSpokeCompatibility, SPOKE_COMPATIBILITY } from "./jolt";
 import { isJoltUnavailableError } from "./jolt/errors";
 
-export type SpokeStartupCompatibility =
-  | AppCompatibilityResult
-  | { status: "unavailable" };
+export type SpokeStartupCompatibility = AppCompatibilityResult | { status: "unavailable" };
 
 export async function enterSpokeRuntime(
   continueStartup: (compatibility: AppCompatibilityResult) => Promise<void>

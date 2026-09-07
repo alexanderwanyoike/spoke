@@ -37,10 +37,14 @@ export async function loadConversations(
       // decryption. Skip anything the store already holds at this version so an
       // unchanged inventory costs one listing and nothing else.
       if (alreadyLoaded(store.get({ identity: owner, path }), item)) return;
-      const isMessage = path.startsWith(MESSAGES_OUTGOING_PREFIX) || path.startsWith(MESSAGES_RECEIVED_PREFIX);
+      const isMessage =
+        path.startsWith(MESSAGES_OUTGOING_PREFIX) || path.startsWith(MESSAGES_RECEIVED_PREFIX);
       if (!isMessage) return;
       const hit = await sdk.readEncrypted({ identity: localIdentity, path }, decodeMessage);
-      if (!hit) { unavailableCount++; return; }
+      if (!hit) {
+        unavailableCount++;
+        return;
+      }
       store.upsert({
         identity: owner,
         path,

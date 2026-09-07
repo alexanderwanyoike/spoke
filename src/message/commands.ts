@@ -9,7 +9,12 @@
 import type { JoltIngressSdk, JoltEncryptedSdk } from "../jolt";
 import { normalizeIdentity } from "../follow";
 import { store as defaultStore, type Store } from "../common/store";
-import { makeOutgoingPath, makeReceivedPath, messageBelongsToConversation, type SpokeMessage } from "./model";
+import {
+  makeOutgoingPath,
+  makeReceivedPath,
+  messageBelongsToConversation,
+  type SpokeMessage
+} from "./model";
 
 export type MessageSender = Pick<JoltIngressSdk, "sendObject">;
 export type MessageWriter = Pick<JoltEncryptedSdk, "publishEncryptedJson">;

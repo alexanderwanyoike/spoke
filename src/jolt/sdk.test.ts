@@ -88,26 +88,28 @@ describe("Jolt SDK ACL", () => {
   });
 
   it("binds the advanced Data client to Spoke's existing authorized session", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({
-      id: "sub_alice_posts",
-      identity: "alice.jolt",
-      prefix: "/spoke/posts/",
-      lifecycle: "dormant",
-      refresh: { status: "loading" },
-      created_at: 1_788_000_000,
-    }));
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        id: "sub_alice_posts",
+        identity: "alice.jolt",
+        prefix: "/spoke/posts/",
+        lifecycle: "dormant",
+        refresh: { status: "loading" },
+        created_at: 1_788_000_000
+      })
+    );
 
     const client = createJoltDataClient(() => "token-1");
     await expect(
-      client.createDataSubscription("alice.jolt", "/spoke/posts/"),
+      client.createDataSubscription("alice.jolt", "/spoke/posts/")
     ).resolves.toMatchObject({ id: "sub_alice_posts", identity: "alice.jolt" });
 
     expect(fetch).toHaveBeenCalledWith(
       "/jolt-api/data-subscriptions",
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({ Authorization: "Bearer token-1" }),
-      }),
+        headers: expect.objectContaining({ Authorization: "Bearer token-1" })
+      })
     );
   });
 });

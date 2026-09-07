@@ -8,6 +8,9 @@ import { hasAcceptedContactForIdentity } from "../follow";
 
 export type AcceptanceDecision = "auto" | "manual";
 
-export function acceptanceDecision(input: { sender: string; contacts: Contact[] }): AcceptanceDecision {
+export function acceptanceDecision(input: {
+  sender: string;
+  contacts: Contact[];
+}): AcceptanceDecision {
   return hasAcceptedContactForIdentity(input.contacts, input.sender) ? "auto" : "manual";
 }

@@ -70,9 +70,9 @@ describe("Spoke media helpers", () => {
     expect(mediaPath("media_1")).toBe("/spoke/media/media_1");
     expect(messageMediaPath("msg_1", "media_1")).toBe("/spoke/messages/media/msg_1/media_1");
     expect(attachmentFetchTarget(attachment)).toBe("cid_media");
-    expect(attachmentFetchTarget({ ...attachment, address: "alice.jolt/spoke/media/media_1" })).toBe(
-      "alice.jolt/spoke/media/media_1"
-    );
+    expect(
+      attachmentFetchTarget({ ...attachment, address: "alice.jolt/spoke/media/media_1" })
+    ).toBe("alice.jolt/spoke/media/media_1");
   });
 
   it("creates encrypted attachment references for messages", () => {

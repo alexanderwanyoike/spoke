@@ -61,7 +61,9 @@ function fakeSdk(
       const hit = reads[`${ref.identity}${ref.path}`];
       if (!hit) return null;
       const value = decode(JSON.parse(new TextDecoder().decode(new Uint8Array(hit.bytes))));
-      return value === null ? null : { ref, value, latestSequence: hit.latestSequence, contentId: hit.contentId };
+      return value === null
+        ? null
+        : { ref, value, latestSequence: hit.latestSequence, contentId: hit.contentId };
     }
   };
 }
@@ -88,7 +90,10 @@ function memoryEnumeration(): ThreadEnumeration {
     },
     async recordAccepted(postId, ref) {
       seq += 1;
-      byPost.set(postId, [ref, ...(byPost.get(postId) ?? []).filter((e) => e.replyId !== ref.replyId)]);
+      byPost.set(postId, [
+        ref,
+        ...(byPost.get(postId) ?? []).filter((e) => e.replyId !== ref.replyId)
+      ]);
       return seq;
     }
   };
@@ -115,10 +120,18 @@ describe("thread commands", () => {
 
     // A third party sees nothing until the author accepts.
     expect(
-      selectThread(store.getSnapshot(), { postId: "p1", postAuthor: "alice.jolt", localIdentity: "carol.jolt" })
+      selectThread(store.getSnapshot(), {
+        postId: "p1",
+        postAuthor: "alice.jolt",
+        localIdentity: "carol.jolt"
+      })
     ).toEqual([]);
     // The replier sees their own pending reply (outbox overlay).
-    const own = selectThread(store.getSnapshot(), { postId: "p1", postAuthor: "alice.jolt", localIdentity: "bob.jolt" });
+    const own = selectThread(store.getSnapshot(), {
+      postId: "p1",
+      postAuthor: "alice.jolt",
+      localIdentity: "bob.jolt"
+    });
     expect(own.map((n) => n.id)).toEqual(["r_bob"]);
   });
 
@@ -132,7 +145,11 @@ describe("thread commands", () => {
     const accepted = await enumeration.listAccepted("alice.jolt", "p1");
     expect(accepted.entries.map((e) => e.ref.replyId)).toContain("r_bob");
     // Now visible to a third party.
-    const tree = selectThread(store.getSnapshot(), { postId: "p1", postAuthor: "alice.jolt", localIdentity: "carol.jolt" });
+    const tree = selectThread(store.getSnapshot(), {
+      postId: "p1",
+      postAuthor: "alice.jolt",
+      localIdentity: "carol.jolt"
+    });
     expect(tree.map((n) => n.id)).toEqual(["r_bob"]);
   });
 
@@ -145,7 +162,11 @@ describe("thread commands", () => {
     await unacceptReply(fakeSdk(), enumeration, "alice.jolt", ref, store);
 
     expect(
-      selectThread(store.getSnapshot(), { postId: "p1", postAuthor: "alice.jolt", localIdentity: "carol.jolt" })
+      selectThread(store.getSnapshot(), {
+        postId: "p1",
+        postAuthor: "alice.jolt",
+        localIdentity: "carol.jolt"
+      })
     ).toEqual([]);
   });
 });
@@ -153,11 +174,29 @@ describe("thread commands", () => {
 describe("thread loaders", () => {
   it("loadThread builds the nested tree from accepted references", async () => {
     const store = createStore();
-    const bob = replyV2({ id: "r_bob", sender: "bob.jolt", parent: "p1", createdAt: "2026-06-06T10:00:00.000Z" });
-    const carol = replyV2({ id: "r_carol", sender: "carol.jolt", parent: "r_bob", createdAt: "2026-06-06T10:05:00.000Z" });
+    const bob = replyV2({
+      id: "r_bob",
+      sender: "bob.jolt",
+      parent: "p1",
+      createdAt: "2026-06-06T10:00:00.000Z"
+    });
+    const carol = replyV2({
+      id: "r_carol",
+      sender: "carol.jolt",
+      parent: "r_bob",
+      createdAt: "2026-06-06T10:05:00.000Z"
+    });
     const sdk = fakeSdk({
-      [`bob.jolt${makeReplyPath("p1", "r_bob")}`]: { latestSequence: 1, contentId: "c1", bytes: encode(bob) },
-      [`carol.jolt${makeReplyPath("p1", "r_carol")}`]: { latestSequence: 1, contentId: "c2", bytes: encode(carol) }
+      [`bob.jolt${makeReplyPath("p1", "r_bob")}`]: {
+        latestSequence: 1,
+        contentId: "c1",
+        bytes: encode(bob)
+      },
+      [`carol.jolt${makeReplyPath("p1", "r_carol")}`]: {
+        latestSequence: 1,
+        contentId: "c2",
+        bytes: encode(carol)
+      }
     });
     const enumeration = staticEnumeration([acceptedRef(bob), acceptedRef(carol)], 2);
 
@@ -172,14 +211,28 @@ describe("thread loaders", () => {
     const store = createStore();
     const enumeration = memoryEnumeration();
     const bob = replyV2({ id: "r_bob", sender: "bob.jolt" });
-    const dana = replyV2({ id: "r_dana", sender: "dana.jolt", createdAt: "2026-06-06T11:00:00.000Z" });
+    const dana = replyV2({
+      id: "r_dana",
+      sender: "dana.jolt",
+      createdAt: "2026-06-06T11:00:00.000Z"
+    });
     await acceptReply(fakeSdk(), enumeration, bob, store);
     await acceptReply(fakeSdk(), enumeration, dana, store);
 
     // A later, incomplete refresh only reports r_bob at an older sequence.
-    await loadThread(fakeSdk(), staticEnumeration([acceptedRef(bob)], 1), "alice.jolt", "p1", store);
+    await loadThread(
+      fakeSdk(),
+      staticEnumeration([acceptedRef(bob)], 1),
+      "alice.jolt",
+      "p1",
+      store
+    );
 
-    const tree = selectThread(store.getSnapshot(), { postId: "p1", postAuthor: "alice.jolt", localIdentity: "carol.jolt" });
+    const tree = selectThread(store.getSnapshot(), {
+      postId: "p1",
+      postAuthor: "alice.jolt",
+      localIdentity: "carol.jolt"
+    });
     expect(tree.map((n) => n.id).sort()).toEqual(["r_bob", "r_dana"]);
   });
 });
@@ -188,13 +241,40 @@ describe("Bob/Alice/Carol recursive thread", () => {
   it("assembles the same nested tree from public references", async () => {
     const store = createStore();
     // Alice posts p1. Bob replies to the post; Alice replies to Bob; Carol replies to Bob.
-    const bob = replyV2({ id: "r_bob", sender: "bob.jolt", parent: "p1", createdAt: "2026-06-06T10:00:00.000Z" });
-    const aliceReply = replyV2({ id: "r_alice", sender: "alice.jolt", parent: "r_bob", createdAt: "2026-06-06T10:01:00.000Z" });
-    const carol = replyV2({ id: "r_carol", sender: "carol.jolt", parent: "r_bob", createdAt: "2026-06-06T10:02:00.000Z" });
+    const bob = replyV2({
+      id: "r_bob",
+      sender: "bob.jolt",
+      parent: "p1",
+      createdAt: "2026-06-06T10:00:00.000Z"
+    });
+    const aliceReply = replyV2({
+      id: "r_alice",
+      sender: "alice.jolt",
+      parent: "r_bob",
+      createdAt: "2026-06-06T10:01:00.000Z"
+    });
+    const carol = replyV2({
+      id: "r_carol",
+      sender: "carol.jolt",
+      parent: "r_bob",
+      createdAt: "2026-06-06T10:02:00.000Z"
+    });
     const sdk = fakeSdk({
-      [`bob.jolt${makeReplyPath("p1", "r_bob")}`]: { latestSequence: 1, contentId: "c1", bytes: encode(bob) },
-      [`alice.jolt${makeReplyPath("p1", "r_alice")}`]: { latestSequence: 1, contentId: "c2", bytes: encode(aliceReply) },
-      [`carol.jolt${makeReplyPath("p1", "r_carol")}`]: { latestSequence: 1, contentId: "c3", bytes: encode(carol) }
+      [`bob.jolt${makeReplyPath("p1", "r_bob")}`]: {
+        latestSequence: 1,
+        contentId: "c1",
+        bytes: encode(bob)
+      },
+      [`alice.jolt${makeReplyPath("p1", "r_alice")}`]: {
+        latestSequence: 1,
+        contentId: "c2",
+        bytes: encode(aliceReply)
+      },
+      [`carol.jolt${makeReplyPath("p1", "r_carol")}`]: {
+        latestSequence: 1,
+        contentId: "c3",
+        bytes: encode(carol)
+      }
     });
     const enumeration = staticEnumeration(
       [acceptedRef(bob), acceptedRef(aliceReply), acceptedRef(carol)],
@@ -230,7 +310,11 @@ describe("legacy compatibility", () => {
       value: legacy
     });
 
-    const tree = selectThread(store.getSnapshot(), { postId: "p1", postAuthor: "alice.jolt", localIdentity: "carol.jolt" });
+    const tree = selectThread(store.getSnapshot(), {
+      postId: "p1",
+      postAuthor: "alice.jolt",
+      localIdentity: "carol.jolt"
+    });
     expect(tree.map((n) => n.id)).toEqual(["r_legacy"]);
   });
 });

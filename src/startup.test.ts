@@ -64,9 +64,7 @@ describe("Spoke startup compatibility gate", () => {
 
   it("treats a failed web proxy as unavailable", async () => {
     const continueStartup = vi.fn(async () => undefined);
-    checkSpokeCompatibility.mockRejectedValue(
-      new JoltApiError("Bad gateway", { status: 502 })
-    );
+    checkSpokeCompatibility.mockRejectedValue(new JoltApiError("Bad gateway", { status: 502 }));
 
     await expect(enterSpokeRuntime(continueStartup)).resolves.toEqual({
       status: "unavailable"
@@ -76,13 +74,9 @@ describe("Spoke startup compatibility gate", () => {
 
   it("does not hide an unexpected TypeError as unavailable", async () => {
     const continueStartup = vi.fn(async () => undefined);
-    checkSpokeCompatibility.mockRejectedValue(
-      new TypeError("Application decoder bug")
-    );
+    checkSpokeCompatibility.mockRejectedValue(new TypeError("Application decoder bug"));
 
-    await expect(enterSpokeRuntime(continueStartup)).rejects.toThrow(
-      "Application decoder bug"
-    );
+    await expect(enterSpokeRuntime(continueStartup)).rejects.toThrow("Application decoder bug");
     expect(continueStartup).not.toHaveBeenCalled();
   });
 });

@@ -37,8 +37,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <div style={{ maxWidth: 460, textAlign: "center" }}>
             <h1 style={{ fontSize: 20, marginBottom: 8 }}>Spoke hit a snag</h1>
             <p style={{ opacity: 0.7, marginBottom: 16 }}>
-              Something in your data could not be displayed. The app stayed up so
-              you can retry.
+              Something in your data could not be displayed. The app stayed up so you can retry.
             </p>
             <pre
               style={{

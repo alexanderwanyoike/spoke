@@ -62,8 +62,9 @@ export function normalizeConversationParticipant(identity: string) {
 }
 
 export function conversationIdForParticipants(participants: string[]) {
-  const normalized = [...new Set(participants.map(normalizeConversationParticipant).filter(Boolean))]
-    .sort();
+  const normalized = [
+    ...new Set(participants.map(normalizeConversationParticipant).filter(Boolean))
+  ].sort();
   if (normalized.length !== 2) {
     throw new Error("A one-to-one conversation needs exactly two participants.");
   }
@@ -72,10 +73,10 @@ export function conversationIdForParticipants(participants: string[]) {
 
 export function messageBelongsToConversation(message: SpokeMessage) {
   try {
-    return message.conversationId === conversationIdForParticipants([
-      message.sender,
-      ...message.recipients
-    ]);
+    return (
+      message.conversationId ===
+      conversationIdForParticipants([message.sender, ...message.recipients])
+    );
   } catch {
     return false;
   }
@@ -89,7 +90,7 @@ export function isSpokeMessage(value: unknown): value is SpokeMessage {
   return MessageRecord.safeParse(value).success;
 }
 
-export const decodeMessage: Decoder<SpokeMessage> = value => {
+export const decodeMessage: Decoder<SpokeMessage> = (value) => {
   const parsed = MessageRecord.safeParse(value);
   return parsed.success ? parsed.data : null;
 };
@@ -98,7 +99,8 @@ export function messagePreview(message: SpokeMessage) {
   if (message.body.trim()) {
     return message.body;
   }
-  const imageCount = message.attachments?.filter((attachment) => attachment.kind === "image").length || 0;
+  const imageCount =
+    message.attachments?.filter((attachment) => attachment.kind === "image").length || 0;
   if (imageCount === 1) {
     return "Image";
   }
@@ -147,5 +149,7 @@ export function conversationsFromMessages(messages: ConversationMessage[]) {
 }
 
 export function otherParticipants(conversation: Conversation, localIdentity: string) {
-  return conversation.participants.filter((participant) => !sameIdentity(participant, localIdentity));
+  return conversation.participants.filter(
+    (participant) => !sameIdentity(participant, localIdentity)
+  );
 }

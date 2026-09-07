@@ -1,21 +1,13 @@
 import { Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle
-} from "@/components/ui/card";
+import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiErrorMessage } from "./jolt";
 import { JOLT_UNAVAILABLE_MESSAGE } from "./jolt/errors";
 import { enterSpokeRuntime, type SpokeStartupCompatibility } from "./startup";
 
 type SpokeStartupState =
-  | SpokeStartupCompatibility
-  | { status: "checking" }
-  | { status: "error"; message: string };
+  SpokeStartupCompatibility | { status: "checking" } | { status: "error"; message: string };
 
 function startupCopy(startup: SpokeStartupState) {
   switch (startup.status) {
@@ -24,7 +16,8 @@ function startupCopy(startup: SpokeStartupState) {
     case "checking":
       return {
         title: "Checking Jolt compatibility",
-        message: "Spoke is checking the generic App API behavior provided by your local Jolt daemon."
+        message:
+          "Spoke is checking the generic App API behavior provided by your local Jolt daemon."
       };
     case "incompatible":
       return {

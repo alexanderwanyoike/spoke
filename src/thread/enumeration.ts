@@ -44,7 +44,9 @@ export function createJoltThreadEnumeration(sdk: ThreadEnumerationSdk): ThreadEn
           return { ref: hit.value, latestSequence: hit.latestSequence };
         })
       );
-      return { entries: entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null) };
+      return {
+        entries: entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      };
     },
     async recordAccepted(postId, ref) {
       const published = await sdk.publishAppend(makeAcceptedRefPath(postId, ref.replyId), ref);

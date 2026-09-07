@@ -13,7 +13,9 @@
     "tauri": "tauri",
     "test": "vitest run",
     "verify:distribution": "node scripts/verify-distribution.mjs",
-    "test:integration": "node scripts/test-messages-integration.mjs"
+    "test:integration": "node scripts/test-messages-integration.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
