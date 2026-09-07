@@ -660,6 +660,11 @@ textarea {
   border-bottom: 1px solid var(--line);
   font-size: 11px;
 }
+.history-notice {
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+  flex-shrink: 0;
+}
 .connection-warning {
   position: fixed;
   z-index: 5;

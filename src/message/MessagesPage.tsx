@@ -31,12 +31,6 @@ export function MessagesPage() {
           messages from accepted contacts.
         </div>
       )}
-      {Boolean(snapshot.data.unavailableCount) && (
-        <div className="pending-notice" role="status">
-          {snapshot.data.unavailableCount} saved{" "}
-          {snapshot.data.unavailableCount === 1 ? "message" : "messages"} could not be opened.
-        </div>
-      )}
       <div className="messages-layout" data-thread-open={Boolean(conversation)}>
         <ConversationList />
         {conversation && <ConversationPanel key={conversation.id} conversation={conversation} />}
@@ -49,6 +43,12 @@ export function MessagesPage() {
           </section>
         )}
       </div>
+      {Boolean(snapshot.data.unavailableCount) && (
+        <div className="pending-notice history-notice" role="status">
+          {snapshot.data.unavailableCount} saved{" "}
+          {snapshot.data.unavailableCount === 1 ? "message" : "messages"} could not be opened.
+        </div>
+      )}
     </main>
   );
 }

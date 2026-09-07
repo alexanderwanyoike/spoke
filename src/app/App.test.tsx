@@ -61,6 +61,11 @@ it.each([1, 17])("reports unreadable history without guessing its cause", async 
   const noun = count === 1 ? "message" : "messages";
   expect(await screen.findByText(`${count} saved ${noun} could not be opened.`)).toBeVisible();
   expect(screen.queryByText(/Public copies from older Spoke/)).not.toBeInTheDocument();
+  const notice = screen.getByText(`${count} saved ${noun} could not be opened.`);
+  expect(
+    screen.getByRole("link", { name: /Bob/ }).compareDocumentPosition(notice) &
+      Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
   expect(screen.getByRole("link", { name: /Bob/ })).toBeVisible();
 });
 afterEach(() => {
