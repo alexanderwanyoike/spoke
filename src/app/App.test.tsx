@@ -9,6 +9,7 @@ import { sessionApi } from "../connection/api";
 import { createMessagesGateway } from "../message/gateway";
 import { SPOKE_CAPABILITIES } from "../session";
 import { conversation, gatewayFixture } from "../test/messages";
+import { createAccountProfile } from "../profile/account";
 
 vi.mock("../connection/api", () => ({
   sessionApi: {
@@ -20,8 +21,12 @@ vi.mock("../connection/api", () => ({
   }
 }));
 vi.mock("../message/gateway", () => ({ createMessagesGateway: vi.fn() }));
+vi.mock("../profile/account", () => ({ createAccountProfile: vi.fn() }));
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(createAccountProfile).mockReturnValue({
+    load: vi.fn().mockResolvedValue("Alice Jones")
+  });
   localStorage.clear();
   localStorage.setItem("spoke.appearance", "light");
   localStorage.setItem(
@@ -38,6 +43,25 @@ beforeEach(() => {
     status: "active",
     granted_capabilities: [...SPOKE_CAPABILITIES]
   });
+});
+
+it("shows the saved profile name in the account panel", async () => {
+  vi.mocked(createMessagesGateway).mockReturnValue(gatewayFixture().gateway);
+  render(<App />);
+  expect(await screen.findByText("Alice Jones")).toBeVisible();
+  expect(createAccountProfile).toHaveBeenCalledWith("alice", "token");
+});
+
+it.each([1, 17])("reports unreadable history without guessing its cause", async (count) => {
+  const { gateway } = gatewayFixture();
+  const data = await gateway.load();
+  gateway.load.mockResolvedValue({ ...data, unavailableCount: count });
+  vi.mocked(createMessagesGateway).mockReturnValue(gateway);
+  render(<App />);
+  const noun = count === 1 ? "message" : "messages";
+  expect(await screen.findByText(`${count} saved ${noun} could not be opened.`)).toBeVisible();
+  expect(screen.queryByText(/Public copies from older Spoke/)).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /Bob/ })).toBeVisible();
 });
 afterEach(() => {
   cleanup();

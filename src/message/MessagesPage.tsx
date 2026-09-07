@@ -33,8 +33,8 @@ export function MessagesPage() {
       )}
       {Boolean(snapshot.data.unavailableCount) && (
         <div className="pending-notice" role="status">
-          {snapshot.data.unavailableCount} saved message copy/copies could not be decrypted or read.
-          Public copies from older Spoke versions are not imported here.
+          {snapshot.data.unavailableCount} saved{" "}
+          {snapshot.data.unavailableCount === 1 ? "message" : "messages"} could not be opened.
         </div>
       )}
       <div className="messages-layout" data-thread-open={Boolean(conversation)}>

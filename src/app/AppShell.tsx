@@ -5,11 +5,11 @@ import { Link } from "react-router-dom";
 import { MessageSquare, Sun, Moon, LogOut } from "lucide-react";
 
 export function AppShell({
-  identity,
+  account,
   disconnect,
   children
 }: {
-  identity: string;
+  account: ReactNode;
   disconnect(): void;
   children: ReactNode;
 }) {
@@ -45,13 +45,7 @@ export function AppShell({
             {dark ? <Sun size={18} /> : <Moon size={18} />}
             <span>Appearance</span>
           </button>
-          <div className="rail-account">
-            <span className="account-mark">{identity.slice(0, 1).toUpperCase()}</span>
-            <div>
-              <strong>{identity}</strong>
-              <small>Your Jolt identity</small>
-            </div>
-          </div>
+          {account}
           <button
             className="rail-link"
             aria-label="Forget access"
