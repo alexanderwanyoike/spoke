@@ -201,3 +201,109 @@
   color: var(--muted);
   background: var(--rail);
 }
+.people-section {
+  margin-top: 30px;
+}
+.people-section h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 15px;
+}
+.people-section h2 span {
+  font-weight: 400;
+  margin-left: 8px;
+  color: var(--muted);
+}
+.people-list {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.people-list:empty {
+  display: none;
+}
+.person-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.person-row:last-child {
+  border-bottom: 0;
+}
+.person-detail {
+  flex: 1;
+  min-width: 0;
+}
+.person-detail a {
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.person-detail small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-label {
+  font-size: 10px;
+  color: var(--muted);
+}
+.text-action {
+  color: var(--accent);
+  font-size: 12px;
+  text-decoration: none;
+}
+.feature-empty {
+  padding: 45px 20px;
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.feature-empty svg {
+  color: var(--accent);
+}
+.feature-empty h3 {
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 550;
+}
+.feature-empty p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.find-person-dialog {
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.lookup-form {
+  padding-top: 20px;
+}
+.lookup-result {
+  padding-top: 20px;
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.lookup-result h3 {
+  margin: 0;
+  font-size: 19px;
+}
+.lookup-result > p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 12px 0 22px;
+}
+.plain-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}

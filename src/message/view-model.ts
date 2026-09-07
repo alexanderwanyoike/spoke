@@ -14,6 +14,7 @@ export type ConversationView = Conversation & {
   canSend: boolean;
 };
 export type MessagesData = {
+  contacts: Contact[];
   conversations: ConversationView[];
   pendingCount: number;
   contactRequests: ContactRequest[];

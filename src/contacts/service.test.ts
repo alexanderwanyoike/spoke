@@ -96,3 +96,21 @@ it("does not downgrade an accepted contact by requesting them again", async () =
   );
   expect(sdk.sendObject).not.toHaveBeenCalled();
 });
+
+it("sends the introduction and sender name without replacing the recipient's local nickname", async () => {
+  const { service, sdk, store } = fixture();
+  await service.request({
+    identity: "bob",
+    displayName: "Bob at the bookshop",
+    fromDisplayName: "Alice",
+    message: "Good to meet you."
+  });
+  expect(sdk.sendObject).toHaveBeenCalledWith(
+    "bob",
+    expect.any(String),
+    expect.objectContaining({ displayName: "Alice", message: "Good to meet you." })
+  );
+  expect(readContacts("alice", store)).toMatchObject([
+    { identity: "bob", displayName: "Bob at the bookshop", relationship: "requested" }
+  ]);
+});

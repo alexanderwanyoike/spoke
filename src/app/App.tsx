@@ -2,6 +2,7 @@ import { useState } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ConnectionBoundary } from "../connection";
 import { MessageSession, MessagesPage, createMessagesGateway } from "../message";
+import { PeopleRoute } from "./PeopleRoute";
 import { AppShell } from "./AppShell";
 import {
   AccountIdentity,
@@ -30,6 +31,7 @@ function ConnectedApp({
     >
       <MessageSession gateway={gateway}>
         <Routes>
+          <Route path="/people" element={<PeopleRoute identity={identity} profiles={profiles} />} />
           <Route
             path="/profile/:identity?"
             element={
