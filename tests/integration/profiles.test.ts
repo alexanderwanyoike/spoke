@@ -34,6 +34,18 @@ it.skipIf(process.env.SPOKE_INTEGRATION !== "1")(
       (await createProfileRepository(bob.identity, bob.sdk).load(alice.identity)).profile
         ?.displayName
     ).toBe("Alice");
+    const named = await bob.app.resolveNames!({
+      contacts: [{ identity: alice.identity, displayName: alice.identity, relationship: "local" }],
+      conversations: [],
+      contactRequests: [],
+      requestedContacts: [],
+      pendingCount: 0
+    });
+    expect(named.contacts[0]).toMatchObject({
+      identity: alice.identity,
+      displayName: "Alice",
+      relationship: "local"
+    });
     const png = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1cAAAAASUVORK5CYII=",
       "base64"

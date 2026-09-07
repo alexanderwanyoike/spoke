@@ -25,6 +25,19 @@ function contact(overrides: Partial<Contact>): Contact {
 }
 
 describe("Spoke feed helpers", () => {
+  it.each(["alice", "alice.jolt", "", "  alice.jolt  "])(
+    "does not let an identity placeholder hide the author's published name",
+    (displayName) => {
+      expect(
+        displayNameForFeedItem({
+          source: "contact",
+          contact: contact({ displayName }),
+          post: post({ displayName: "Alex" }),
+          address: "alice.jolt/spoke/posts/post_1"
+        })
+      ).toBe("Alex");
+    }
+  );
   it("uses the current contact alias ahead of the stale display name baked into a post", () => {
     const item: FeedItem = {
       source: "contact",
