@@ -1,3 +1,4 @@
+import { ProfileAvatar } from "../profile";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { UsersRound } from "lucide-react";
@@ -107,9 +108,7 @@ function PersonRow({ person, owner }: { person: Contact; owner: string }) {
   const name = person.displayName || person.identity;
   return (
     <article className="person-row">
-      <span className="person-avatar" aria-hidden="true">
-        {name.slice(0, 1).toUpperCase()}
-      </span>
+      <ProfileAvatar identity={person.identity} name={name} />
       <div className="person-detail">
         <Link to={`/profile/${encodeURIComponent(person.identity)}`}>{name}</Link>
         <small>{person.identity}</small>

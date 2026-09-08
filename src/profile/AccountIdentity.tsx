@@ -1,3 +1,4 @@
+import { ProfileAvatar } from "./ProfileAvatar";
 import { useEffect, useState } from "react";
 import type { AccountProfile } from "./account";
 
@@ -28,9 +29,7 @@ export function AccountIdentity({
   const label = name || identity;
   return (
     <div className="rail-account" aria-label="Your profile" title={identity}>
-      <span className="account-mark" aria-hidden="true">
-        {label.slice(0, 1).toUpperCase()}
-      </span>
+      <ProfileAvatar identity={identity} name={label} className="account-mark" />
       <div>
         <strong>{label}</strong>
         <small>Your Jolt identity</small>
