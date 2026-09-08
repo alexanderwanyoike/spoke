@@ -1,3 +1,4 @@
+import { ProfileAvatar } from "../profile";
 import { Link } from "react-router-dom";
 import { displayNameForFeedItem, type FeedItem } from "../feed/model";
 import { PublicImage } from "../media/PublicImage";
@@ -26,9 +27,7 @@ export function PostCard({
   return (
     <article className="post-card" aria-label={`Post by ${name}`}>
       <header>
-        <span className="person-avatar" aria-hidden="true">
-          {name.slice(0, 1).toUpperCase()}
-        </span>
+        <ProfileAvatar identity={post.author} name={name} />
         <div>
           <Link to={`/profile/${encodeURIComponent(post.author)}`}>{name}</Link>
           <p>

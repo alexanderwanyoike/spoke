@@ -9,7 +9,7 @@ import { createRuntime } from "./runtime";
 import { HomeRoute } from "./HomeRoute";
 import { PeopleRoute } from "./PeopleRoute";
 import { AppShell } from "./AppShell";
-import { AccountIdentity } from "../profile";
+import { AccountIdentity, ProfileAvatarsProvider } from "../profile";
 
 function ConnectedApp({
   identity,
@@ -20,48 +20,56 @@ function ConnectedApp({
   token: string;
   disconnect(): void;
 }) {
-  const [{ home, messages: gateway, profile, profiles, replies, activity }] = useState(() =>
-    createRuntime(identity, token)
+  const [{ home, messages: gateway, profile, profiles, replies, activity, avatars }] = useState(
+    () => createRuntime(identity, token)
   );
   const [profileVersion, refreshProfile] = useState(0);
   return (
-    <AppShell
-      account={<AccountIdentity key={profileVersion} identity={identity} profile={profile} />}
-      disconnect={disconnect}
-    >
-      <MessageSession gateway={gateway}>
-        <Routes>
-          <Route
-            path="/home"
-            element={<HomeRoute identity={identity} gateway={home} profiles={profiles} />}
-          />
-          <Route
-            path="/post/:identity/:postId"
-            element={
-              <PostRoute identity={identity} home={home} replies={replies} profiles={profiles} />
-            }
-          />
-          <Route path="/people" element={<PeopleRoute identity={identity} profiles={profiles} />} />
-          <Route
-            path="/profile/:identity?"
-            element={
-              <ProfileRoute
-                identity={identity}
-                profiles={profiles}
-                home={home}
-                onSaved={() => refreshProfile((value) => value + 1)}
-              />
-            }
-          />
-          <Route
-            path="/activity"
-            element={<ActivityRoute identity={identity} gateway={activity} replies={replies} />}
-          />
-          <Route path="/messages/:conversationId?" element={<MessagesPage />} />
-          <Route path="*" element={<Navigate to="/home" replace />} />
-        </Routes>
-      </MessageSession>
-    </AppShell>
+    <ProfileAvatarsProvider source={avatars}>
+      <AppShell
+        account={<AccountIdentity key={profileVersion} identity={identity} profile={profile} />}
+        disconnect={disconnect}
+      >
+        <MessageSession gateway={gateway}>
+          <Routes>
+            <Route
+              path="/home"
+              element={<HomeRoute identity={identity} gateway={home} profiles={profiles} />}
+            />
+            <Route
+              path="/post/:identity/:postId"
+              element={
+                <PostRoute identity={identity} home={home} replies={replies} profiles={profiles} />
+              }
+            />
+            <Route
+              path="/people"
+              element={<PeopleRoute identity={identity} profiles={profiles} />}
+            />
+            <Route
+              path="/profile/:identity?"
+              element={
+                <ProfileRoute
+                  identity={identity}
+                  profiles={profiles}
+                  home={home}
+                  onSaved={() => {
+                    avatars.invalidate(identity);
+                    refreshProfile((value) => value + 1);
+                  }}
+                />
+              }
+            />
+            <Route
+              path="/activity"
+              element={<ActivityRoute identity={identity} gateway={activity} replies={replies} />}
+            />
+            <Route path="/messages/:conversationId?" element={<MessagesPage />} />
+            <Route path="*" element={<Navigate to="/home" replace />} />
+          </Routes>
+        </MessageSession>
+      </AppShell>
+    </ProfileAvatarsProvider>
   );
 }
 export default function App() {

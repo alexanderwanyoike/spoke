@@ -3,10 +3,11 @@ import { createJoltSdk } from "../jolt";
 import { createActivityGateway } from "../activity/gateway";
 import { createHomeGateway } from "../home";
 import { createMessagesGateway } from "../message";
-import { createAccountProfile, createProfilesGateway } from "../profile";
+import { createAccountProfile, createProfilesGateway, createProfileAvatars } from "../profile";
 import { createRepliesGateway } from "../replies/gateway";
 
 export function createRuntime(identity: string, token: string) {
+  const profiles = createProfilesGateway(identity, token);
   const home = createHomeGateway(token, identity);
   const replies = createRepliesGateway(identity, token, home);
   const activityRepository = new ActivityRepository(
@@ -27,6 +28,7 @@ export function createRuntime(identity: string, token: string) {
     replies,
     messages,
     profile: createAccountProfile(identity, token),
-    profiles: createProfilesGateway(identity, token)
+    profiles,
+    avatars: createProfileAvatars(profiles)
   };
 }

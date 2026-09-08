@@ -3,7 +3,7 @@ import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { Search, RefreshCw } from "lucide-react";
 import { useMessagesServices, useMessagesSnapshot } from "../context";
-import { Avatar } from "./Avatar";
+import { ProfileAvatar } from "../../profile";
 
 export function ConversationList() {
   const snapshot = useMessagesSnapshot();
@@ -61,7 +61,7 @@ export function ConversationList() {
             to={`/messages/${encodeURIComponent(item.id)}`}
             className="conversation-row"
           >
-            <Avatar name={item.name} />
+            <ProfileAvatar identity={item.recipient} name={item.name} />
             <span className="conversation-summary">
               <strong>{item.name}</strong>
               <span>{item.preview}</span>
