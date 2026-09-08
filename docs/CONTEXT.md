@@ -1,4 +1,9 @@
-# Spoke Context
+# Spoke domain design notes
+
+These notes preserve the earlier domain design. For the current application,
+including typed Data SDK usage and feature-owned runtime state, see the
+[architecture guide](architecture.md). The layout and rollout descriptions below
+are historical.
 
 Spoke is a social application built as a replaceable view over content published
 to the Jolt network. Spoke owns all social concepts (profiles, posts, replies,

@@ -15,7 +15,8 @@ const files = {
   packageJson: readFileSync("package.json", "utf8"),
   app: readFileSync("src/update/UpdateControl.tsx", "utf8"),
   updateClient: readFileSync("src/update/client.ts", "utf8"),
-  readme: readFileSync("README.md", "utf8")
+  readme: readFileSync("README.md", "utf8"),
+  installation: readFileSync("docs/installation.md", "utf8")
 };
 
 const requiredMarkers = {
@@ -132,7 +133,8 @@ const requiredMarkers = {
   packageJson: ["@tauri-apps/plugin-updater", "@tauri-apps/plugin-process", "jolt-sdk"],
   app: ["client.check()", "client.installAndRelaunch()", "Update available"],
   updateClient: ["check()", "downloadAndInstall", "relaunch"],
-  readme: [
+  readme: ["docs/installation.md", "Jolt Console", "releases/latest/download/spoke-amd64.deb"],
+  installation: [
     "curl -fsSL",
     "scripts/install-spoke.sh",
     "Jolt Console",
