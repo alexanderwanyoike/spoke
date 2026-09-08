@@ -26,3 +26,6 @@ export { createProfilesGateway } from "./repository";
 export { ProfilePage } from "./ProfilePage";
 
 export type { ProfileRepository } from "./editor";
+
+export { ProfileAvatar, ProfileAvatarsProvider } from "./ProfileAvatar";
+export { createProfileAvatars } from "./avatars";

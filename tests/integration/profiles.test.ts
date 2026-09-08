@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { operations } from "jolt-sdk";
 import { participant } from "./participant";
+import { createProfileAvatars } from "../../src/profile/avatars";
 import { createProfileRepository } from "../../src/profile/repository";
 import { createPublicImages } from "../../src/media/public";
 
@@ -60,6 +61,29 @@ it.skipIf(process.env.SPOKE_INTEGRATION !== "1")(
     expect(Buffer.from(await (await images.load(updated.profile!.avatar!)).arrayBuffer())).toEqual(
       png
     );
+    const remoteImages = createPublicImages(bob.token, {
+      publish: async (token, path, file, options) =>
+        operations.publishBytes(
+          bob.sdk.transport,
+          token,
+          path,
+          new Uint8Array(await file.arrayBuffer()),
+          options
+        ),
+      fetch: (token, target) => operations.fetchTarget(bob.sdk.transport, token, target)
+    });
+    const remoteProfiles = createProfileRepository(bob.identity, bob.sdk, remoteImages);
+    // Resolving cached remote state starts background sync; updates are eventually visible.
+    await expect
+      .poll(async () => (await remoteProfiles.load(alice.identity)).profile?.avatar?.contentId, {
+        timeout: 30_000,
+        interval: 500
+      })
+      .toBe(updated.profile!.avatar!.contentId);
+    const remoteAvatars = createProfileAvatars(remoteProfiles);
+    const remotePicture = await remoteAvatars.load(alice.identity);
+    expect(remotePicture).not.toBeNull();
+    expect(Buffer.from(await remotePicture!.arrayBuffer())).toEqual(png);
     await expect(profiles.save(input, saved.contentId)).rejects.toThrow(/changed/);
   },
   120_000

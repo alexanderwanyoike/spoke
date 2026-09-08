@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowLeft, LockKeyhole } from "lucide-react";
 import type { ConversationView } from "../view-model";
 import { useMessagesServices } from "../context";
-import { Avatar } from "./Avatar";
+import { ProfileAvatar } from "../../profile";
 import { MessageComposer } from "./MessageComposer";
 import { MessageList } from "./MessageList";
 
@@ -18,7 +18,7 @@ export function ConversationPanel({ conversation }: { conversation: Conversation
         >
           <ArrowLeft size={20} />
         </Link>
-        <Avatar name={conversation.name} />
+        <ProfileAvatar identity={conversation.recipient} name={conversation.name} />
         <div>
           <h2>{conversation.name}</h2>
           <p>{conversation.recipient}</p>
