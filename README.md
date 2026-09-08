@@ -54,6 +54,6 @@ JOLT_BINARY=/absolute/path/to/jolt yarn test:integration
 The integration tests start disposable nodes and cover messages, profiles, posts
 and replies. They do not use your personal identity.
 
-[Architecture](docs/CONTEXT.md) · [Source layout](src/README.md) · [Releases](https://github.com/alexanderwanyoike/spoke/releases) · [Screenshot credits](docs/assets/README.md)
+[Architecture](docs/architecture.md) · [Source layout](src/README.md) · [Releases](https://github.com/alexanderwanyoike/spoke/releases) · [Screenshot credits](docs/assets/README.md)
 
 Spoke is early software. Expect rough edges. MIT licensed.
